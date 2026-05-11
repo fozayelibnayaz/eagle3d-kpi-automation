@@ -1,0 +1,47 @@
+name: Daily KPI Pipeline
+
+on:
+  schedule:
+    # Runs at 9:00 AM UTC daily (adjust for your timezone)
+    - cron: '0 9 * * *'
+  workflow_dispatch:  # allows manual trigger from GitHub UI
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install Playwright browsers
+        run: playwright install --with-deps chromium
+
+      - name: Restore Google credentials
+        run: |
+          echo '${{ secrets.GOOGLE_CREDS_JSON }}' > google_creds.json
+
+      - name: Restore Stripe cookies
+        run: |
+          echo '${{ secrets.STRIPE_COOKIES_JSON }}' > stripe_cookies.json
+
+      - name: Restore KPI session cookies
+        run: |
+          echo '${{ secrets.KPI_COOKIES_JSON }}' > kpi_cookies.json
+
+      - name: Run pipeline (headless)
+        env:
+          HEADLESS_MODE: "true"
+        run: |
+          python daily_pipeline.py

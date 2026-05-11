@@ -1,0 +1,24 @@
+# Sensitive
+google_creds.json
+stripe_cookies.json
+*.env
+.env
+
+# Browser sessions / debug
+browser_session/
+stripe_session/
+data/debug/
+data/*.log
+data/*.html
+
+# Python
+venv/
+__pycache__/
+*.pyc
+.DS_Store
+
+# Models
+models/
+
+# Local CSVs (we don't use them but just in case)
+*.csv
