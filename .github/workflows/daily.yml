@@ -2,9 +2,8 @@ name: Daily KPI Pipeline
 
 on:
   schedule:
-    # Runs at 9:00 AM UTC daily (adjust for your timezone)
     - cron: '0 9 * * *'
-  workflow_dispatch:  # allows manual trigger from GitHub UI
+  workflow_dispatch:
 
 jobs:
   run-pipeline:
@@ -23,7 +22,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements-pipeline.txt
 
       - name: Install Playwright browsers
         run: playwright install --with-deps chromium
@@ -35,10 +34,6 @@ jobs:
       - name: Restore Stripe cookies
         run: |
           echo '${{ secrets.STRIPE_COOKIES_JSON }}' > stripe_cookies.json
-
-      - name: Restore KPI session cookies
-        run: |
-          echo '${{ secrets.KPI_COOKIES_JSON }}' > kpi_cookies.json
 
       - name: Run pipeline (headless)
         env:
