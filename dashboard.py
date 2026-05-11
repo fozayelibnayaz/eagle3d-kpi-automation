@@ -15,6 +15,31 @@ from google.oauth2.service_account import Credentials
 
 from config import GOOGLE_CREDS_FILE, MASTER_SHEET_URL
 
+import json
+import os
+import tempfile
+
+def _ensure_creds_file():
+    """Use local google_creds.json if present, else write from Streamlit secrets."""
+    local_path = str(GOOGLE_CREDS_FILE)
+    if os.path.exists(local_path):
+        return local_path
+    try:
+        creds_str = st.secrets["GOOGLE_CREDS_JSON"]
+        tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
+        if isinstance(creds_str, str):
+            tmp.write(creds_str)
+        else:
+            json.dump(dict(creds_str), tmp)
+        tmp.close()
+        return tmp.name
+    except Exception as e:
+        st.error(f"No Google credentials available: {e}")
+        st.stop()
+
+CREDS_PATH = _ensure_creds_file()
+
+
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets",
           "https://www.googleapis.com/auth/drive"]
 
@@ -26,7 +51,7 @@ st.set_page_config(page_title="Eagle3D KPI Dashboard", page_icon="E", layout="wi
 
 @st.cache_data(ttl=300)
 def load(tab):
-    creds = Credentials.from_service_account_file(str(GOOGLE_CREDS_FILE), scopes=SCOPES)
+    creds = Credentials.from_service_account_file(CREDS_PATH, scopes=SCOPES)
     gc = gspread.authorize(creds)
     sh = gc.open_by_url(MASTER_SHEET_URL)
     try:
