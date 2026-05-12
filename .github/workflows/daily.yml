@@ -2,7 +2,6 @@ name: Daily KPI Pipeline
 
 on:
   schedule:
-    # Multiple times so a missed run by GitHub gets caught
     - cron: '0 8 * * *'
     - cron: '0 9 * * *'
     - cron: '0 10 * * *'
@@ -22,6 +21,15 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Show repo contents
+        run: |
+          pwd
+          ls -la
+          echo "--- Python files ---"
+          ls -la *.py
+          echo "--- Requirements ---"
+          ls -la requirements*.txt
+
       - name: Install dependencies
         run: |
           pip install --upgrade pip
@@ -31,62 +39,28 @@ jobs:
         run: playwright install --with-deps chromium
 
       - name: Restore Google credentials
+        env:
+          CREDS: ${{ secrets.GOOGLE_CREDS_JSON }}
         run: |
-          cat <<'CREDS_EOF' > google_creds.json
-          ${{ secrets.GOOGLE_CREDS_JSON }}
-          CREDS_EOF
+          if [ -z "$CREDS" ]; then
+            echo "ERROR: GOOGLE_CREDS_JSON is empty"
+            exit 1
+          fi
+          echo "$CREDS" > google_creds.json
+          echo "google_creds.json size: $(wc -c < google_creds.json) bytes"
 
       - name: Restore Stripe cookies
+        env:
+          COOKIES: ${{ secrets.STRIPE_COOKIES_JSON }}
         run: |
-          cat <<'COOKIES_EOF' > stripe_cookies.json
-          ${{ secrets.STRIPE_COOKIES_JSON }}
-          COOKIES_EOF
+          if [ -z "$COOKIES" ]; then
+            echo "WARNING: STRIPE_COOKIES_JSON empty, Stripe will be skipped"
+          else
+            echo "$COOKIES" > stripe_cookies.json
+            echo "stripe_cookies.json size: $(wc -c < stripe_cookies.json) bytes"
+          fi
 
-      - name: Run pipeline (headless)
-        id: pipeline
+      - name: Run pipeline
         env:
           HEADLESS_MODE: "true"
-        run: |
-          python daily_pipeline.py 2>&1 | tee pipeline_output.log
-          echo "exit_code=$?" >> $GITHUB_OUTPUT
-
-      - name: Send success email
-        if: success()
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.gmail.com
-          server_port: 465
-          secure: true
-          username: ${{ secrets.NOTIFY_EMAIL_FROM }}
-          password: ${{ secrets.NOTIFY_EMAIL_PASSWORD }}
-          subject: "[Eagle3D KPI] Pipeline succeeded - ${{ github.run_number }}"
-          to: ${{ secrets.NOTIFY_EMAIL_TO }}
-          from: ${{ secrets.NOTIFY_EMAIL_FROM }}
-          body: |
-            Pipeline run #${{ github.run_number }} completed successfully.
-
-            Check dashboard: https://eagle3d-kpi-automation.streamlit.app/
-
-            View run logs: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
-
-      - name: Send failure email
-        if: failure()
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.gmail.com
-          server_port: 465
-          secure: true
-          username: ${{ secrets.NOTIFY_EMAIL_FROM }}
-          password: ${{ secrets.NOTIFY_EMAIL_PASSWORD }}
-          subject: "[Eagle3D KPI] Pipeline FAILED - ${{ github.run_number }}"
-          to: ${{ secrets.NOTIFY_EMAIL_TO }}
-          from: ${{ secrets.NOTIFY_EMAIL_FROM }}
-          body: |
-            Pipeline run #${{ github.run_number }} FAILED.
-
-            Most common causes:
-            - KPI Dashboard cookies expired (re-run kpi_login.py locally and update KPI cookies secret)
-            - Stripe cookies expired (re-export and update STRIPE_COOKIES_JSON secret)
-            - Master sheet not shared with service account
-
-            View error logs: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: python daily_pipeline.py

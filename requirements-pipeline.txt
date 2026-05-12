@@ -1,0 +1,11 @@
+playwright==1.47.0
+gspread==6.1.2
+google-auth==2.34.0
+pandas==2.2.3
+python-dateutil==2.9.0
+email-validator==2.2.0
+dnspython==2.6.1
+requests==2.32.3
+scikit-learn==1.5.1
+numpy==1.26.4
+joblib==1.4.2
