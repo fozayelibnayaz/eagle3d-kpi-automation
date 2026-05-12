@@ -1,6 +1,10 @@
 """
-DASHBOARD v8 - Eagle3D KPI
-Complete edition: all controls restored, daily delta, sidebar settings.
+DASHBOARD v9 - Eagle3D KPI
+- Fixed AttrDict bug (st.secrets returns dict, not JSON string)
+- Uses Daily_Counts (true per-day counts by sign-up date)
+- Browse Data tab shows actual emails/usernames/etc
+- Sidebar with Run Now, Refresh, Diagnostics
+- Works whether Daily_Counts exists or not
 """
 import json
 import os
@@ -19,24 +23,43 @@ st.set_page_config(page_title="Eagle3D KPI Dashboard", page_icon="🦅",
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets",
           "https://www.googleapis.com/auth/drive"]
-METRIC_COLS = ["SignUps", "FirstUploads", "PaidSubscribers"]
-LEGACY_METRIC_COLS = ["SignUps_Accepted", "FirstUploads_Accepted", "PaidSubscribers_Accepted"]
 
 
-# ─── SECRETS ───────────────────────────────────────────────────
+# ─── SECRETS ─────────────────────────────────────────────────────
 def get_creds_path():
+    """Resolve Google credentials from local file OR Streamlit secrets."""
     if os.path.exists("google_creds.json"):
         return "google_creds.json"
+
+    # Try [GOOGLE_CREDS] TOML section
     try:
         if "GOOGLE_CREDS" in st.secrets:
-            creds = dict(st.secrets["GOOGLE_CREDS"])
+            raw = st.secrets["GOOGLE_CREDS"]
+            # st.secrets returns AttrDict (dict-like), so just convert it
+            if isinstance(raw, str):
+                creds = json.loads(raw)
+            else:
+                creds = dict(raw)
             tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
             json.dump(creds, tmp)
             tmp.close()
             return tmp.name
+    except Exception as e:
+        st.error(f"Failed to read GOOGLE_CREDS: {e}")
+        st.stop()
+
+    # Try GOOGLE_CREDS_JSON (legacy)
+    try:
+        raw = st.secrets["GOOGLE_CREDS_JSON"]
+        creds = json.loads(raw) if isinstance(raw, str) else dict(raw)
+        tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
+        json.dump(creds, tmp)
+        tmp.close()
+        return tmp.name
     except Exception:
         pass
-    st.error("Google credentials not found.")
+
+    st.error("Google credentials not found in any expected location.")
     st.stop()
 
 
@@ -63,7 +86,7 @@ GITHUB_REPO = get_secret("GITHUB_REPO", "fozayelibnayaz/eagle3d-kpi-automation")
 WORKFLOW_FILE = get_secret("WORKFLOW_FILE", "daily.yml")
 
 
-# ─── DATA LOADING ──────────────────────────────────────────────
+# ─── DATA LOADING ────────────────────────────────────────────────
 @st.cache_data(ttl=120)
 def load_sheet(tab):
     creds = Credentials.from_service_account_file(CREDS_PATH, scopes=SCOPES)
@@ -90,7 +113,7 @@ def load_sheet(tab):
         return pd.DataFrame()
 
 
-# ─── GITHUB API ────────────────────────────────────────────────
+# ─── GITHUB API ──────────────────────────────────────────────────
 def github_headers():
     return {
         "Accept": "application/vnd.github+json",
@@ -125,19 +148,6 @@ def get_workflow_runs(limit=10):
     return []
 
 
-def list_workflows():
-    if not GITHUB_TOKEN:
-        return []
-    url = f"https://api.github.com/repos/{GITHUB_REPO}/actions/workflows"
-    try:
-        r = requests.get(url, headers=github_headers(), timeout=15)
-        if r.status_code == 200:
-            return r.json().get("workflows", [])
-    except Exception:
-        pass
-    return []
-
-
 def format_age(iso_str):
     if not iso_str:
         return "?"
@@ -145,18 +155,15 @@ def format_age(iso_str):
         ts = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
         age = datetime.now(timezone.utc) - ts
         s = age.total_seconds()
-        if s < 60:
-            return f"{int(s)}s ago"
-        if s < 3600:
-            return f"{int(s//60)}m ago"
-        if s < 86400:
-            return f"{int(s//3600)}h ago"
+        if s < 60: return f"{int(s)}s ago"
+        if s < 3600: return f"{int(s//60)}m ago"
+        if s < 86400: return f"{int(s//3600)}h ago"
         return f"{int(s//86400)}d ago"
     except Exception:
         return iso_str
 
 
-# ─── HELPERS ───────────────────────────────────────────────────
+# ─── HELPERS ─────────────────────────────────────────────────────
 def card(label, value, color, sub=None):
     sub_html = f"<div style=\"font-size:13px;opacity:0.85;margin-top:4px;\">{sub}</div>" if sub else ""
     html = f"<div style=\"background:{color};color:white;padding:25px;border-radius:12px;text-align:center;\">"
@@ -217,61 +224,22 @@ def get_date_range(preset):
     return None
 
 
-def filter_daily(df, dr):
-    if df.empty:
-        return df
-    df = df.copy()
-    if "Date" in df.columns:
-        df["_dt"] = pd.to_datetime(df["Date"], errors="coerce").dt.date
-    elif "Timestamp" in df.columns:
-        df["_dt"] = pd.to_datetime(df["Timestamp"], errors="coerce").dt.date
-    else:
-        return df.iloc[0:0]
-    df = df.dropna(subset=["_dt"])
-    if dr is None:
-        return df
-    return df[(df["_dt"] >= dr[0]) & (df["_dt"] <= dr[1])]
-
-
-def collapse_to_latest_per_day(df):
-    """For Daily_Counts: true daily counts, no collapsing needed (one row per date)."""
-    if df.empty or "_dt" not in df.columns:
-        return df
-    df = df.copy()
-    # Detect schema
+def detect_metric_columns(df):
+    """Return tuple (signups_col, uploads_col, paid_col) detecting which schema."""
     if "SignUps" in df.columns:
-        # New schema (Daily_Counts) - already one row per date
-        df["SignUps"] = safe_int_col(df, "SignUps")
-        df["FirstUploads"] = safe_int_col(df, "FirstUploads")
-        df["PaidSubscribers"] = safe_int_col(df, "PaidSubscribers")
-        return df.groupby("_dt", as_index=False).agg({
-            "SignUps": "sum",
-            "FirstUploads": "sum",
-            "PaidSubscribers": "sum",
-        })
-    else:
-        # Legacy (Daily_Report) - take max per day
-        df["SignUps_Accepted"] = safe_int_col(df, "SignUps_Accepted")
-        df["FirstUploads_Accepted"] = safe_int_col(df, "FirstUploads_Accepted")
-        df["PaidSubscribers_Accepted"] = safe_int_col(df, "PaidSubscribers_Accepted")
-        return df.groupby("_dt", as_index=False).agg({
-            "SignUps_Accepted": "max",
-            "FirstUploads_Accepted": "max",
-            "PaidSubscribers_Accepted": "max",
-        })
+        return ("SignUps", "FirstUploads", "PaidSubscribers")
+    return ("SignUps_Accepted", "FirstUploads_Accepted", "PaidSubscribers_Accepted")
 
 
 # ════════════════════════════════════════════════════════════════
-#  SIDEBAR - controls
+#  SIDEBAR
 # ════════════════════════════════════════════════════════════════
-
 with st.sidebar:
     st.title("🦅 Eagle3D KPIs")
 
     st.divider()
     st.subheader("⚙️ Pipeline Control")
 
-    # Status
     runs = get_workflow_runs(limit=5)
     if runs:
         latest = runs[0]
@@ -289,8 +257,7 @@ with st.sidebar:
     else:
         st.warning("No runs found")
 
-    # Run Now button
-    if st.button("🚀 Run Pipeline Now", type="primary", use_container_width=True):
+    if st.button("🚀 Run Pipeline Now", type="primary"):
         with st.spinner("Triggering..."):
             ok, msg = trigger_workflow()
         if ok:
@@ -298,8 +265,7 @@ with st.sidebar:
         else:
             st.error(msg)
 
-    # Refresh button
-    if st.button("🔄 Refresh Dashboard", use_container_width=True):
+    if st.button("🔄 Refresh Dashboard"):
         st.cache_data.clear()
         st.rerun()
 
@@ -308,7 +274,7 @@ with st.sidebar:
     PRESETS = ["Today", "This Week", "Last Week", "Last 7 Days", "Last 15 Days",
                "Last 28 Days", "This Month", "Last Month", "Last 3 Months",
                "Last 6 Months", "This Year", "Last Year", "All Time", "Custom"]
-    preset = st.selectbox("View Range", PRESETS, index=6)
+    preset = st.selectbox("View Range", PRESETS, index=12)  # default All Time
 
     if preset == "Custom":
         custom_start = st.date_input("Start", value=datetime.now().date() - timedelta(days=30))
@@ -323,27 +289,23 @@ with st.sidebar:
                     label_visibility="collapsed")
 
     st.divider()
-    st.caption("Pipeline auto-runs daily 10:00 AM Bangladesh time.")
-    st.caption("v8 • Built with Streamlit")
+    st.caption("Pipeline auto-runs daily at 10 AM Bangladesh.")
 
 
 # ════════════════════════════════════════════════════════════════
 #  MAIN
 # ════════════════════════════════════════════════════════════════
-
 st.title("🦅 Eagle3D Streaming — KPI Dashboard")
 
 if date_range:
     st.caption(f"Showing: **{date_range[0]}** to **{date_range[1]}** ({preset})")
 else:
-    st.caption(f"Showing: **All Time**")
+    st.caption("Showing: **All Time**")
 
 
-# ─── DIAGNOSTICS PAGE ──────────────────────────────────────────
+# ─── DIAGNOSTICS PAGE ────────────────────────────────────────────
 if page == "🛠 Diagnostics":
     st.header("System Diagnostics")
-
-    st.subheader("1. Secrets Configuration")
     expected = ["MASTER_SHEET_URL", "GOOGLE_CREDS", "GITHUB_TOKEN", "GITHUB_REPO", "WORKFLOW_FILE"]
     rows = []
     for k in expected:
@@ -353,7 +315,7 @@ if page == "🛠 Diagnostics":
             if k == "GITHUB_TOKEN" and val:
                 shown = val[:12] + "..." + val[-4:]
             elif k == "GOOGLE_CREDS":
-                shown = "✓ TOML section present"
+                shown = "✓ TOML section"
             elif isinstance(val, str) and len(val) > 60:
                 shown = val[:50] + "..."
             else:
@@ -365,58 +327,17 @@ if page == "🛠 Diagnostics":
         rows.append({"Secret": k, "Status": status, "Value": shown})
     st.table(pd.DataFrame(rows))
 
-    st.subheader("2. GitHub API Tests")
-    if st.button("🧪 Run API Tests"):
-        with st.spinner("Running tests..."):
-            try:
-                r = requests.get("https://api.github.com/user", headers=github_headers(), timeout=10)
-                if r.status_code == 200:
-                    st.success(f"✅ Auth: logged in as {r.json().get('login')}")
-                else:
-                    st.error(f"❌ Auth failed: {r.status_code}")
-            except Exception as e:
-                st.error(f"❌ Auth: {e}")
-
-            try:
-                r = requests.get(f"https://api.github.com/repos/{GITHUB_REPO}", headers=github_headers(), timeout=10)
-                if r.status_code == 200:
-                    st.success(f"✅ Can access repo {GITHUB_REPO}")
-                else:
-                    st.error(f"❌ Repo access: {r.status_code}")
-            except Exception as e:
-                st.error(f"❌ Repo: {e}")
-
-            workflows = list_workflows()
-            if workflows:
-                names = [w.get("path", "").split("/")[-1] for w in workflows]
-                if WORKFLOW_FILE in names:
-                    st.success(f"✅ Workflow {WORKFLOW_FILE} exists")
-                else:
-                    st.error(f"❌ Workflow not found. Available: {names}")
-
-            runs = get_workflow_runs(limit=5)
-            if runs:
-                st.success(f"✅ Found {len(runs)} recent runs")
-                run_data = [{
-                    "Run": r.get("run_number"),
-                    "Status": r.get("status"),
-                    "Result": r.get("conclusion") or "-",
-                    "When": format_age(r.get("created_at")),
-                    "URL": r.get("html_url"),
-                } for r in runs]
-                st.dataframe(pd.DataFrame(run_data), use_container_width=True, hide_index=True)
-
-    st.subheader("3. Sheet Read Test")
-    if st.button("📄 Test Sheet Read"):
-        df = load_sheet("Daily_Report")
-        if df.empty:
-            st.warning("Daily_Report is empty")
-        else:
-            st.success(f"✅ Read {len(df)} rows from Daily_Report")
-            st.dataframe(df, use_container_width=True)
+    if st.button("🧪 Test Sheet Read"):
+        for tab_name in ["Daily_Counts", "Daily_Report", "Verified_FREE",
+                        "Verified_FIRST_UPLOAD", "Verified_STRIPE"]:
+            df = load_sheet(tab_name)
+            if df.empty:
+                st.warning(f"❌ {tab_name}: empty or not found")
+            else:
+                st.success(f"✅ {tab_name}: {len(df)} rows")
 
 
-# ─── BROWSE DATA PAGE ──────────────────────────────────────────
+# ─── BROWSE DATA PAGE ────────────────────────────────────────────
 elif page == "🔍 Browse Data":
     st.header("Browse Customer Data")
     free = load_sheet("Verified_FREE")
@@ -463,39 +384,70 @@ elif page == "🔍 Browse Data":
             m3.metric("Disposable", n_rejected_for(filt, "isposable"))
             m4.metric("Duplicate", n_rejected_for(filt, "database"))
 
-            st.dataframe(filt, use_container_width=True, height=500, hide_index=True)
+            st.dataframe(filt, height=500, hide_index=True)
             csv = filt.to_csv(index=False).encode("utf-8")
             st.download_button(f"⬇️ Download {label}", data=csv,
                               file_name=f"{label.lower().replace(' ', '_')}.csv",
                               mime="text/csv", key=f"dl_{label}")
 
 
-# ─── DASHBOARD PAGE ────────────────────────────────────────────
+# ─── DASHBOARD PAGE ──────────────────────────────────────────────
 else:
     free = load_sheet("Verified_FREE")
     upload = load_sheet("Verified_FIRST_UPLOAD")
     stripe = load_sheet("Verified_STRIPE")
-    # Load TRUE daily counts (grouped by actual sign-up date)
+
+    # PRIMARY source: Daily_Counts (true per-day from sign-up dates)
     daily = load_sheet("Daily_Counts")
     if daily.empty:
-        # Fallback to old format
-        daily = load_sheet("Daily_Report")
+        st.warning("Daily_Counts not yet populated. Run pipeline once to generate it.")
+        daily = load_sheet("Daily_Report")  # fallback
 
-    daily_filtered = filter_daily(daily, date_range)
-    daily_collapsed = collapse_to_latest_per_day(daily_filtered)
+    if daily.empty:
+        st.error("No daily data available. Trigger the pipeline first.")
+        st.stop()
 
-    # Daily_Counts has TRUE per-day counts grouped by sign-up date
-    # So we just SUM them (no max-per-month needed - they're already daily totals)
-    if daily_collapsed.empty:
-        sum_signups = sum_uploads = sum_paid = 0
+    sc, uc, pc = detect_metric_columns(daily)
+    st.caption(f"Data source columns: {sc}, {uc}, {pc}")
+
+    # Build _dt
+    if "Date" in daily.columns:
+        daily["_dt"] = pd.to_datetime(daily["Date"], errors="coerce").dt.date
+    elif "Timestamp" in daily.columns:
+        daily["_dt"] = pd.to_datetime(daily["Timestamp"], errors="coerce").dt.date
+    daily = daily.dropna(subset=["_dt"])
+
+    # Filter by date range
+    if date_range:
+        daily_filtered = daily[(daily["_dt"] >= date_range[0]) & (daily["_dt"] <= date_range[1])]
     else:
-        # Detect column names (new vs legacy)
-        sc = "SignUps" if "SignUps" in daily_collapsed.columns else "SignUps_Accepted"
-        uc = "FirstUploads" if "FirstUploads" in daily_collapsed.columns else "FirstUploads_Accepted"
-        pc = "PaidSubscribers" if "PaidSubscribers" in daily_collapsed.columns else "PaidSubscribers_Accepted"
-        sum_signups = int(safe_int_col(daily_collapsed, sc).sum())
-        sum_uploads = int(safe_int_col(daily_collapsed, uc).sum())
-        sum_paid = int(safe_int_col(daily_collapsed, pc).sum())
+        daily_filtered = daily
+
+    # Convert to int
+    daily_filtered = daily_filtered.copy()
+    daily_filtered["_signups"] = safe_int_col(daily_filtered, sc)
+    daily_filtered["_uploads"] = safe_int_col(daily_filtered, uc)
+    daily_filtered["_paid"] = safe_int_col(daily_filtered, pc)
+
+    # Compute totals based on schema
+    if "SignUps" in daily.columns:
+        # Daily_Counts: each row = real daily count → SUM
+        sum_signups = int(daily_filtered["_signups"].sum())
+        sum_uploads = int(daily_filtered["_uploads"].sum())
+        sum_paid = int(daily_filtered["_paid"].sum())
+    else:
+        # Daily_Report (legacy): cumulative snapshot → MAX per day, then sum across months
+        per_day = daily_filtered.groupby("_dt", as_index=False).agg({
+            "_signups": "max", "_uploads": "max", "_paid": "max"
+        })
+        per_day["_dt"] = pd.to_datetime(per_day["_dt"])
+        per_day["_ym"] = per_day["_dt"].dt.strftime("%Y-%m")
+        per_month = per_day.groupby("_ym").agg({
+            "_signups": "max", "_uploads": "max", "_paid": "max"
+        })
+        sum_signups = int(per_month["_signups"].sum())
+        sum_uploads = int(per_month["_uploads"].sum())
+        sum_paid = int(per_month["_paid"].sum())
 
     st.markdown(f"### 📊 Totals for: {preset}")
     c1, c2, c3 = st.columns(3)
@@ -508,7 +460,7 @@ else:
 
     st.divider()
 
-    st.markdown("### 🔴 Live (current month from sheet)")
+    st.markdown("### 🔴 Live Snapshot (current month)")
     l1, l2, l3 = st.columns(3)
     with l1:
         card("Sign-ups", n_accepted(free), "#3b82f6")
@@ -519,52 +471,52 @@ else:
 
     st.divider()
 
-    st.markdown("### 🆕 Daily New (delta vs previous day)")
-    if not daily_collapsed.empty and len(daily_collapsed) > 0:
-        delta = daily_collapsed.copy()
-        delta["_dt"] = pd.to_datetime(delta["_dt"])
-        delta = delta.sort_values("_dt").reset_index(drop=True)
-        delta["NewSignUps"] = delta["SignUps_Accepted"].diff().fillna(delta["SignUps_Accepted"]).clip(lower=0).astype(int)
-        delta["NewUploads"] = delta["FirstUploads_Accepted"].diff().fillna(delta["FirstUploads_Accepted"]).clip(lower=0).astype(int)
-        delta["NewPaid"] = delta["PaidSubscribers_Accepted"].diff().fillna(delta["PaidSubscribers_Accepted"]).clip(lower=0).astype(int)
-
-        latest = delta.iloc[-1]
-        d1, d2, d3 = st.columns(3)
-        with d1:
-            card("New Sign-ups Today", int(latest["NewSignUps"]), "#1d4ed8")
-        with d2:
-            card("New Uploads Today", int(latest["NewUploads"]), "#15803d")
-        with d3:
-            card("New Paid Today", int(latest["NewPaid"]), "#c2410c")
-
-        if len(delta) > 1:
-            chart_df = delta.set_index("_dt")[["NewSignUps", "NewUploads", "NewPaid"]]
-            st.plotly_chart(px.bar(chart_df, title="Daily New Counts", barmode="group"),
-                          use_container_width=True)
-
-        with st.expander("📋 Daily details"):
-            show = delta[["_dt", "NewSignUps", "NewUploads", "NewPaid",
-                         "SignUps_Accepted", "FirstUploads_Accepted",
-                         "PaidSubscribers_Accepted"]].copy()
-            show.columns = ["Date", "New SignUps", "New Uploads", "New Paid",
-                           "Cumulative SignUps", "Cumulative Uploads", "Cumulative Paid"]
-            st.dataframe(show, use_container_width=True, hide_index=True)
-    else:
-        st.info("Need at least 2 days of data for daily-new view.")
-
-    st.divider()
-
-    st.markdown("### 📈 Trend Over Period")
-    if not daily_collapsed.empty:
-        chart_df = daily_collapsed.copy()
-        chart_df["_dt"] = pd.to_datetime(chart_df["_dt"])
-        chart = chart_df.set_index("_dt")[METRIC_COLS]
-        st.plotly_chart(px.line(chart, title="Cumulative Daily Snapshots", markers=True),
-                       use_container_width=True)
+    # Trend chart
+    st.markdown("### 📈 Daily Trend")
+    if not daily_filtered.empty:
+        chart_df = daily_filtered[["_dt", "_signups", "_uploads", "_paid"]].copy()
+        chart_df.columns = ["Date", "Sign-ups", "First Uploads", "Paid"]
+        chart_df["Date"] = pd.to_datetime(chart_df["Date"])
+        chart_df = chart_df.sort_values("Date")
+        chart = chart_df.set_index("Date")
+        st.plotly_chart(px.line(chart, title=f"Daily Trend - {preset}", markers=True))
 
         funnel_df = pd.DataFrame({
             "Stage": ["Sign-ups", "First Upload", "Paid"],
             "Count": [sum_signups, sum_uploads, sum_paid],
         })
-        st.plotly_chart(px.funnel(funnel_df, x="Count", y="Stage", title="Funnel"),
-                       use_container_width=True)
+        st.plotly_chart(px.funnel(funnel_df, x="Count", y="Stage", title=f"Funnel - {preset}"))
+
+    # Daily breakdown table
+    st.markdown("### 📋 Daily Breakdown")
+    if not daily_filtered.empty:
+        show_df = daily_filtered[["_dt", "_signups", "_uploads", "_paid"]].copy()
+        show_df.columns = ["Date", "Sign-ups", "First Uploads", "Paid Subscribers"]
+        show_df = show_df.sort_values("Date", ascending=False)
+        st.dataframe(show_df, hide_index=True, height=400)
+
+    st.divider()
+
+    # Group by
+    st.markdown("### 🗓️ Grouped Analysis")
+    group_by = st.radio("Group by:", ["Day", "Week", "Month", "Year"], horizontal=True)
+
+    if not daily_filtered.empty:
+        gdf = daily_filtered[["_dt", "_signups", "_uploads", "_paid"]].copy()
+        gdf["_dt"] = pd.to_datetime(gdf["_dt"])
+        if group_by == "Day":
+            gdf["bucket"] = gdf["_dt"].dt.strftime("%Y-%m-%d")
+        elif group_by == "Week":
+            gdf["bucket"] = gdf["_dt"].dt.strftime("%Y-W%U")
+        elif group_by == "Month":
+            gdf["bucket"] = gdf["_dt"].dt.strftime("%Y-%m")
+        else:
+            gdf["bucket"] = gdf["_dt"].dt.strftime("%Y")
+
+        grouped = gdf.groupby("bucket").agg({
+            "_signups": "sum", "_uploads": "sum", "_paid": "sum"
+        }).reset_index()
+        grouped.columns = ["Period", "Sign-ups", "First Uploads", "Paid"]
+        st.plotly_chart(px.bar(grouped, x="Period", y=["Sign-ups", "First Uploads", "Paid"],
+                              title=f"Grouped by {group_by}", barmode="group"))
+        st.dataframe(grouped, hide_index=True)
