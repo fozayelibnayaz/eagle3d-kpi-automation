@@ -77,8 +77,20 @@ def debug_shot(page, tag):
 
 
 def scrape():
-    if not STRIPE_SESSION_DIR.exists() or not any(STRIPE_SESSION_DIR.iterdir()):
-        raise RuntimeError("No Stripe session. Run: python stripe_load_cookies.py")
+    # Try persistent session first; if missing, try loading from stripe_cookies.json
+    import json as _json
+    from pathlib import Path as _Path
+    cookies_file = _Path("stripe_cookies.json")
+    has_session = STRIPE_SESSION_DIR.exists() and any(STRIPE_SESSION_DIR.iterdir())
+    has_cookies = cookies_file.exists() and cookies_file.stat().st_size > 0
+
+    if not has_session and not has_cookies:
+        log("WARNING: No Stripe session or cookies. Skipping Stripe scrape.")
+        return []
+
+    if not has_session and has_cookies:
+        log("Loading cookies from stripe_cookies.json into fresh session...")
+        STRIPE_SESSION_DIR.mkdir(parents=True, exist_ok=True)
 
     log(f"URL: {STRIPE_CUSTOMERS_URL}")
     log(f"Filter: {NOW.strftime('%B %Y')} only (auto-updates each month)")
@@ -106,6 +118,37 @@ def scrape():
             launch_args["executable_path"] = chrome_exec
 
         ctx = p.chromium.launch_persistent_context(**launch_args)
+
+        # Inject cookies if we have them
+        try:
+            cookies_file = _Path("stripe_cookies.json")
+            if cookies_file.exists() and cookies_file.stat().st_size > 0:
+                raw_cookies = _json.loads(cookies_file.read_text())
+                normalized = []
+                for c in raw_cookies:
+                    cookie = {
+                        "name": c.get("name"),
+                        "value": c.get("value"),
+                        "domain": c.get("domain"),
+                        "path": c.get("path", "/"),
+                    }
+                    if "expirationDate" in c:
+                        cookie["expires"] = float(c["expirationDate"])
+                    if "httpOnly" in c:
+                        cookie["httpOnly"] = bool(c["httpOnly"])
+                    if "secure" in c:
+                        cookie["secure"] = bool(c["secure"])
+                    ss = str(c.get("sameSite", "no_restriction")).lower()
+                    cookie["sameSite"] = {"no_restriction": "None", "lax": "Lax",
+                                         "strict": "Strict", "unspecified": "Lax",
+                                         "none": "None"}.get(ss, "Lax")
+                    if cookie["name"] and cookie["value"] is not None:
+                        normalized.append(cookie)
+                ctx.add_cookies(normalized)
+                log(f"Injected {len(normalized)} cookies from stripe_cookies.json")
+        except Exception as _e:
+            log(f"Cookie injection skipped: {_e}")
+
         page = ctx.new_page()
         page.goto(STRIPE_CUSTOMERS_URL, wait_until="domcontentloaded")
         log(f"Waiting {STRIPE_PAGE_LOAD_WAIT}s for table...")

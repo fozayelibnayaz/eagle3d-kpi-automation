@@ -1,81 +1,82 @@
-# sheets_writer.py
-
+"""
+Google Sheets writer - the canonical interface for writing to master sheet.
+"""
 import gspread
-from datetime import datetime
 from google.oauth2.service_account import Credentials
+from datetime import datetime
+import pandas as pd
 from config import GOOGLE_CREDS_FILE, MASTER_SHEET_URL
 
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/drive"
+    "https://www.googleapis.com/auth/drive",
 ]
 
 
-def log(msg):
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] [SheetsWriter] {msg}", flush=True)
+def _client():
+    creds = Credentials.from_service_account_file(str(GOOGLE_CREDS_FILE), scopes=SCOPES)
+    return gspread.authorize(creds)
 
 
-def get_sheet_client():
-    creds = Credentials.from_service_account_file(
-        str(GOOGLE_CREDS_FILE), scopes=SCOPES
-    )
-    gc = gspread.authorize(creds)
+def _open_sheet():
+    gc = _client()
     return gc.open_by_url(MASTER_SHEET_URL)
 
 
-def write_tab_data(sh, tab_name: str, rows: list):
-    """
-    Append-only writer — never clears existing data.
-    - Creates tab + header row if tab does not exist yet.
-    - Checks existing header to keep columns consistent.
-    - Appends only NEW rows below existing data.
-    """
+def _get_or_create_worksheet(sh, title, rows=2000, cols=20):
+    try:
+        return sh.worksheet(title)
+    except gspread.WorksheetNotFound:
+        return sh.add_worksheet(title=title, rows=rows, cols=cols)
+
+
+def write_tab_data(tab_label, rows):
+    """Write scraped rows to Raw_<TAB> tab. Always overwrites."""
     if not rows:
-        log(f"No rows to write for {tab_name}, skipping.")
+        print(f"   [Sheets] No rows to write for {tab_label}.")
         return
 
-    headers = list(rows[0].keys())
+    sh = _open_sheet()
+    ws_title = f"Raw_{tab_label.replace(' ', '_')}"
+    ws = _get_or_create_worksheet(sh, ws_title, rows=max(2000, len(rows) + 100))
 
-    try:
-        ws = sh.worksheet(tab_name)
-        existing_values = ws.get_all_values()
+    df = pd.DataFrame(rows)
+    cols = [c for c in df.columns if not c.startswith("__")] + \
+           [c for c in df.columns if c.startswith("__")]
+    df = df[cols]
 
-        if existing_values:
-            existing_headers = existing_values[0]
-            if existing_headers != headers:
-                log(
-                    f"[WARN] {tab_name} header mismatch. "
-                    f"Sheet has {existing_headers}, writer has {headers}. "
-                    f"Using sheet existing header order."
-                )
-                headers = existing_headers
-        else:
-            ws.update(
-                range_name="A1",
-                values=[headers],
-                value_input_option="USER_ENTERED"
-            )
-            log(f"{tab_name}: wrote header row (tab was empty).")
+    ws.clear()
+    values = [df.columns.tolist()] + df.astype(str).values.tolist()
+    ws.update(range_name="A1", values=values, value_input_option="USER_ENTERED")
+    print(f"   [Sheets] Wrote {len(df)} rows to '{ws_title}'.")
 
-    except gspread.WorksheetNotFound:
-        ws = sh.add_worksheet(
-            title=tab_name,
-            rows=max(5000, len(rows) + 100),
-            cols=max(30, len(headers) + 5)
-        )
-        ws.update(
-            range_name="A1",
-            values=[headers],
-            value_input_option="USER_ENTERED"
-        )
-        log(f"{tab_name}: created new tab + header row.")
 
-    new_rows = [
-        [str(row.get(h, "")) for h in headers]
-        for row in rows
+def write_run_summary(summary):
+    """Append a one-line summary of this run to Run_Log tab."""
+    sh = _open_sheet()
+    ws = _get_or_create_worksheet(sh, "Run_Log", rows=2000, cols=10)
+    existing = ws.get_all_values()
+    if not existing:
+        ws.update(range_name="A1", values=[["Timestamp", "FREE", "PAID",
+                                            "500_MIN", "FIRST_UPLOAD", "Total"]])
+    row = [
+        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        summary.get("FREE", 0),
+        summary.get("PAID", 0),
+        summary.get("500 MIN", 0),
+        summary.get("FIRST UPLOAD", 0),
+        sum(int(v) if str(v).isdigit() else 0 for v in summary.values()),
     ]
+    ws.append_row(row, value_input_option="USER_ENTERED")
+    print("   [Sheets] Run logged to 'Run_Log'.")
 
-    for row_values in new_rows:
-        ws.append_row(row_values, value_input_option="USER_ENTERED")
 
-    log(f"{tab_name}: appended {len(new_rows)} rows. Raw data preserved.")
+def test_connection():
+    """Verify we can connect to the master sheet."""
+    try:
+        sh = _open_sheet()
+        print(f"Connected to Google Sheet: '{sh.title}'")
+        return True
+    except Exception as e:
+        print(f"Google Sheets connection failed: {e}")
+        return False

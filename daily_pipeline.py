@@ -1,9 +1,10 @@
 """
 DAILY PIPELINE
-Runs 3 stages in order:
-  1. Scrape KPI dashboard -> Raw_FREE, Raw_FIRST_UPLOAD, etc.
-  2. Scrape Stripe -> Raw_STRIPE
-  3. Process all Raw_* tabs -> Verified_* + Daily_Report
+Runs all stages in order:
+  1. Scrape KPI dashboard -> Raw sheets
+  2. Scrape Stripe -> Raw_STRIPE sheet
+  3. Process ALL Raw rows -> Verified + Daily_Report
+  4. Build Daily_Counts (true per-day from sign-up dates)
 """
 import traceback
 from datetime import datetime
@@ -41,27 +42,18 @@ def main():
         from process_data import main as f
         f()
 
-    stage("STAGE 1 - Scrape KPI dashboard -> Raw sheets", s1)
-    stage("STAGE 2 - Scrape Stripe -> Raw_STRIPE sheet", s2)
-    stage("STAGE 3 - Process all Raw sheets -> Verified + Daily_Report", s3)
-
-    print()
-    
-
-    try:
-        print()
-        print("=" * 70)
-        print(">>> STAGE 4 — Compute true daily counts from sign-up dates")
-        print("=" * 70)
+    def s4():
         from daily_counts import build_daily_counts_table
         build_daily_counts_table()
-        print("OK: Daily counts updated")
-    except Exception as e:
-        print(f"FAILED: Daily counts - {e}")
-        traceback.print_exc()
 
+    stage("STAGE 1 - Scrape KPI dashboard", s1)
+    stage("STAGE 2 - Scrape Stripe customers", s2)
+    stage("STAGE 3 - Process all rows -> Verified + Daily_Report", s3)
+    stage("STAGE 4 - Build Daily_Counts (true per-day)", s4)
+
+    print()
     print("=" * 70)
-    print("PIPELINE COMPLETE - dashboard now has fresh data")
+    print("PIPELINE COMPLETE")
     print("=" * 70)
 
 

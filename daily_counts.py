@@ -1,9 +1,7 @@
 """
-DAILY COUNTS ANALYTICS v2
-Reads Verified_* tabs and computes:
-  1. Daily_Counts: per-day counts grouped by actual sign-up date
-  2. Monthly_Counts: monthly rollups
-  3. Includes emails/usernames per date for context
+DAILY COUNTS ANALYTICS
+Reads Verified_* tabs and computes TRUE per-day counts from Account Created On dates.
+Writes Daily_Counts (with email details) and Monthly_Counts.
 """
 import gspread
 import pandas as pd
@@ -34,7 +32,6 @@ def parse_date_safe(val):
 
 
 def find_col(headers, *kw_groups):
-    """Return column index matching any keyword in any group."""
     for kw in kw_groups:
         for i, h in enumerate(headers):
             if kw in (h or "").strip().lower():
@@ -42,62 +39,52 @@ def find_col(headers, *kw_groups):
     return -1
 
 
-def collect_per_day(df, date_kw_groups, label_for_logs):
-    """
-    Returns dict {date_iso: {"count": N, "details": [list of email/name strings]}}.
-    Only counts ACCEPTED rows.
-    """
+def collect_per_day(df, date_kw_groups, label):
     if df.empty:
         return {}
-
     headers = list(df.columns)
     date_idx = -1
     for kw in date_kw_groups:
         date_idx = find_col(headers, kw)
         if date_idx != -1:
             break
-
     if date_idx == -1:
-        log(f"   {label_for_logs}: no date column found in {headers}")
+        log(f"   {label}: no date col in {headers}")
         return {}
 
     email_idx = find_col(headers, "email")
     name_idx = find_col(headers, "username", "customer", "name")
 
-    log(f"   {label_for_logs}: date col={headers[date_idx]}, email col={headers[email_idx] if email_idx != -1 else None}")
-
     counts = {}
     for _, row in df.iterrows():
         if "final_status" in row and str(row["final_status"]).upper() != "ACCEPTED":
             continue
-
         d = parse_date_safe(row.iloc[date_idx])
         if d is None:
             continue
-
         key = d.isoformat()
         if key not in counts:
             counts[key] = {"count": 0, "details": []}
         counts[key]["count"] += 1
 
-        # Build a detail string: "name <email>"
         email = str(row.iloc[email_idx]).strip() if email_idx != -1 else ""
         name = str(row.iloc[name_idx]).strip() if name_idx != -1 else ""
         if name and email:
-            detail = f"{name} <{email}>"
+            d_str = f"{name} <{email}>"
         elif email:
-            detail = email
+            d_str = email
         elif name:
-            detail = name
+            d_str = name
         else:
-            detail = ""
-        if detail:
-            counts[key]["details"].append(detail)
+            d_str = ""
+        if d_str:
+            counts[key]["details"].append(d_str)
 
     return counts
 
 
-def build_daily_counts():
+def build_daily_counts_table():
+    """Main function called by daily_pipeline.py"""
     log("=" * 60)
     log("Building Daily_Counts and Monthly_Counts")
     log("=" * 60)
@@ -126,7 +113,7 @@ def build_daily_counts():
     upload_data = collect_per_day(upload, ["upload", "created", "date"], "Upload")
     stripe_data = collect_per_day(stripe, ["created", "date"], "Stripe")
 
-    log(f"Free dates: {len(free_data)}, Upload dates: {len(upload_data)}, Stripe dates: {len(stripe_data)}")
+    log(f"Free dates: {len(free_data)} | Upload dates: {len(upload_data)} | Stripe dates: {len(stripe_data)}")
 
     all_dates = sorted(set(free_data) | set(upload_data) | set(stripe_data))
 
@@ -142,7 +129,7 @@ def build_daily_counts():
             "SignUps": f["count"],
             "FirstUploads": u["count"],
             "PaidSubscribers": s["count"],
-            "SignUp_Details": "; ".join(f["details"][:50]),  # truncate long lists
+            "SignUp_Details": "; ".join(f["details"][:50]),
             "Upload_Details": "; ".join(u["details"][:50]),
             "Paid_Details": "; ".join(s["details"][:50]),
         })
@@ -157,7 +144,6 @@ def build_daily_counts():
     df_out["CumPaidSubscribers"] = df_out["PaidSubscribers"].cumsum()
     df_out["LastUpdated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    # Reorder columns
     col_order = ["Date", "Year", "Month",
                 "SignUps", "FirstUploads", "PaidSubscribers",
                 "CumSignUps", "CumFirstUploads", "CumPaidSubscribers",
@@ -173,9 +159,8 @@ def build_daily_counts():
     ws.clear()
     values = [df_out.columns.tolist()] + df_out.astype(str).values.tolist()
     ws.update(range_name="A1", values=values, value_input_option="USER_ENTERED")
-    log(f"Wrote {len(df_out)} daily rows to Daily_Counts (with email details)")
+    log(f"Wrote {len(df_out)} daily rows to Daily_Counts")
 
-    # Monthly rollup
     df_month = df_out.groupby("Month").agg({
         "SignUps": "sum",
         "FirstUploads": "sum",
@@ -194,8 +179,9 @@ def build_daily_counts():
     log(f"Wrote {len(df_month)} monthly rows to Monthly_Counts")
 
 
-def main():
-    build_daily_counts()
+# Aliases for compatibility
+build_daily_counts = build_daily_counts_table
+main = build_daily_counts_table
 
 
 if __name__ == "__main__":
