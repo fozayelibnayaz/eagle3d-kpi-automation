@@ -1,5 +1,6 @@
 # dashboard.py — Eagle3D KPI Dashboard
 # FIX: Live Right Now reads latest row only, not sum of all rows
+# FIX2: st.secrets["GOOGLE_CREDS"] is already a dict — no json.loads() needed
 
 import streamlit as st
 import gspread
@@ -28,16 +29,51 @@ MASTER_SHEET_URL = (
 @st.cache_resource(ttl=300)
 def get_sheet_client():
     """
-    Supports local (google_creds.json) and
-    Streamlit Cloud (st.secrets) deployments.
+    Streamlit Cloud: st.secrets["GOOGLE_CREDS"] is already parsed
+    as a dict by Streamlit — json.loads() must NOT be called on it.
+
+    Two supported formats in secrets.toml:
+      Option A — nested TOML (recommended):
+        [GOOGLE_CREDS]
+        type = "service_account"
+        project_id = "..."
+        private_key_id = "..."
+        private_key = "..."
+        client_email = "..."
+        ...
+
+      Option B — raw JSON string:
+        GOOGLE_CREDS = '{"type": "service_account", ...}'
+
+    This function handles both automatically.
+    Local dev: falls back to google_creds.json file on disk.
     """
     if "GOOGLE_CREDS" in st.secrets:
-        creds_dict = json.loads(st.secrets["GOOGLE_CREDS"])
+        raw = st.secrets["GOOGLE_CREDS"]
+
+        # Streamlit parsed TOML → already a dict-like object
+        if hasattr(raw, "to_dict"):
+            creds_dict = raw.to_dict()
+        elif isinstance(raw, dict):
+            creds_dict = dict(raw)
+        elif isinstance(raw, str):
+            # stored as a raw JSON string in secrets
+            creds_dict = json.loads(raw)
+        else:
+            st.error(
+                f"GOOGLE_CREDS secret has unexpected type: {type(raw)}. "
+                f"Expected dict or JSON string."
+            )
+            st.stop()
+
         creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+
     else:
+        # Local development — use file on disk
         creds = Credentials.from_service_account_file(
             "google_creds.json", scopes=SCOPES
         )
+
     gc = gspread.authorize(creds)
     return gc.open_by_url(MASTER_SHEET_URL)
 
@@ -76,8 +112,8 @@ def load_daily_report() -> pd.DataFrame:
 def get_latest_row(df: pd.DataFrame):
     """
     Returns the single most recent row from Daily_Report.
-    FIX: dashboard previously summed ALL rows here which produced
-    an inflated cumulative number shown as todays live figure.
+    FIX: dashboard previously summed ALL rows — inflated cumulative
+    number shown as today's live figure.
     Now returns df.iloc[-1] — last row = most recent pipeline run.
     """
     if df.empty:
@@ -123,8 +159,7 @@ def render_live_now(latest: pd.Series):
 def render_summary_all_time(df: pd.DataFrame):
     """
     All-time cumulative totals across every row in Daily_Report.
-    Clearly labelled as ALL-TIME so it is never confused with
-    today's live numbers.
+    Clearly labelled as ALL-TIME so never confused with today's numbers.
     """
     st.header("🏆 All-Time Totals")
 
@@ -132,18 +167,18 @@ def render_summary_all_time(df: pd.DataFrame):
         st.info("No data yet.")
         return
 
-    total_signups    = int(df["SignUps_Accepted"].sum())
-    total_uploads    = int(df["FirstUploads_Accepted"].sum())
-    total_paid       = int(df["PaidSubscribers_Accepted"].sum())
-    total_days       = df["Date"].nunique() if "Date" in df.columns else len(df)
-    first_date       = df["Date"].min().strftime("%d %b %Y") if "Date" in df.columns else "—"
-    last_date        = df["Date"].max().strftime("%d %b %Y") if "Date" in df.columns else "—"
+    total_signups = int(df["SignUps_Accepted"].sum())
+    total_uploads = int(df["FirstUploads_Accepted"].sum())
+    total_paid    = int(df["PaidSubscribers_Accepted"].sum())
+    total_days    = df["Date"].nunique() if "Date" in df.columns else len(df)
+    first_date    = df["Date"].min().strftime("%d %b %Y") if "Date" in df.columns else "—"
+    last_date     = df["Date"].max().strftime("%d %b %Y") if "Date" in df.columns else "—"
 
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric("Total Sign-Ups (all time)",       total_signups)
+        st.metric("Total Sign-Ups (all time)",        total_signups)
     with col2:
-        st.metric("Total First Uploads (all time)",  total_uploads)
+        st.metric("Total First Uploads (all time)",   total_uploads)
     with col3:
         st.metric("Total Paid Subscribers (all time)", total_paid)
 
@@ -154,7 +189,7 @@ def render_summary_all_time(df: pd.DataFrame):
 
 
 def render_trend_chart(df: pd.DataFrame):
-    """Day-by-day trend chart — uses full history (correct for a time series)."""
+    """Day-by-day trend chart — uses full history."""
     st.header("📈 Day-by-Day Trend")
 
     if df.empty or "Date" not in df.columns:
@@ -162,7 +197,8 @@ def render_trend_chart(df: pd.DataFrame):
         return
 
     chart_df = df[
-        ["Date", "SignUps_Accepted", "FirstUploads_Accepted", "PaidSubscribers_Accepted"]
+        ["Date", "SignUps_Accepted",
+         "FirstUploads_Accepted", "PaidSubscribers_Accepted"]
     ].copy().set_index("Date")
 
     st.line_chart(chart_df)
@@ -199,13 +235,13 @@ def main():
         st.warning("Could not read latest row.")
         return
 
-    render_live_now(latest)          # today only — latest row
+    render_live_now(latest)         # today only — latest row
     st.divider()
-    render_summary_all_time(df)      # all-time totals — sum of all rows
+    render_summary_all_time(df)     # all-time totals — sum of all rows
     st.divider()
-    render_trend_chart(df)           # full history line chart
+    render_trend_chart(df)          # full history line chart
     st.divider()
-    render_data_table(df)            # raw table
+    render_data_table(df)           # raw table
 
 
 if __name__ == "__main__":
