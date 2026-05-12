@@ -2,9 +2,11 @@ name: Daily KPI Pipeline
 
 on:
   schedule:
-    - cron: '0 8 * * *'
-    - cron: '0 9 * * *'
-    - cron: '0 10 * * *'
+    # 10:00 AM Bangladesh time = 04:00 UTC
+    - cron: '0 4 * * *'
+    # Backups: 04:30 and 05:00 UTC in case GitHub delays the first
+    - cron: '30 4 * * *'
+    - cron: '0 5 * * *'
   workflow_dispatch:
 
 jobs:
@@ -21,15 +23,6 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Show repo contents
-        run: |
-          pwd
-          ls -la
-          echo "--- Python files ---"
-          ls -la *.py
-          echo "--- Requirements ---"
-          ls -la requirements*.txt
-
       - name: Install dependencies
         run: |
           pip install --upgrade pip
@@ -43,21 +36,17 @@ jobs:
           CREDS: ${{ secrets.GOOGLE_CREDS_JSON }}
         run: |
           if [ -z "$CREDS" ]; then
-            echo "ERROR: GOOGLE_CREDS_JSON is empty"
+            echo "ERROR: GOOGLE_CREDS_JSON empty"
             exit 1
           fi
           echo "$CREDS" > google_creds.json
-          echo "google_creds.json size: $(wc -c < google_creds.json) bytes"
 
       - name: Restore Stripe cookies
         env:
           COOKIES: ${{ secrets.STRIPE_COOKIES_JSON }}
         run: |
-          if [ -z "$COOKIES" ]; then
-            echo "WARNING: STRIPE_COOKIES_JSON empty, Stripe will be skipped"
-          else
+          if [ -n "$COOKIES" ]; then
             echo "$COOKIES" > stripe_cookies.json
-            echo "stripe_cookies.json size: $(wc -c < stripe_cookies.json) bytes"
           fi
 
       - name: Run pipeline
