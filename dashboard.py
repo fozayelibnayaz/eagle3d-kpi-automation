@@ -19,7 +19,8 @@ st.set_page_config(page_title="Eagle3D KPI Dashboard", page_icon="🦅",
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets",
           "https://www.googleapis.com/auth/drive"]
-METRIC_COLS = ["SignUps_Accepted", "FirstUploads_Accepted", "PaidSubscribers_Accepted"]
+METRIC_COLS = ["SignUps", "FirstUploads", "PaidSubscribers"]
+LEGACY_METRIC_COLS = ["SignUps_Accepted", "FirstUploads_Accepted", "PaidSubscribers_Accepted"]
 
 
 # ─── SECRETS ───────────────────────────────────────────────────
@@ -233,17 +234,31 @@ def filter_daily(df, dr):
 
 
 def collapse_to_latest_per_day(df):
+    """For Daily_Counts: true daily counts, no collapsing needed (one row per date)."""
     if df.empty or "_dt" not in df.columns:
         return df
     df = df.copy()
-    df["SignUps_Accepted"] = safe_int_col(df, "SignUps_Accepted")
-    df["FirstUploads_Accepted"] = safe_int_col(df, "FirstUploads_Accepted")
-    df["PaidSubscribers_Accepted"] = safe_int_col(df, "PaidSubscribers_Accepted")
-    return df.groupby("_dt", as_index=False).agg({
-        "SignUps_Accepted": "max",
-        "FirstUploads_Accepted": "max",
-        "PaidSubscribers_Accepted": "max",
-    })
+    # Detect schema
+    if "SignUps" in df.columns:
+        # New schema (Daily_Counts) - already one row per date
+        df["SignUps"] = safe_int_col(df, "SignUps")
+        df["FirstUploads"] = safe_int_col(df, "FirstUploads")
+        df["PaidSubscribers"] = safe_int_col(df, "PaidSubscribers")
+        return df.groupby("_dt", as_index=False).agg({
+            "SignUps": "sum",
+            "FirstUploads": "sum",
+            "PaidSubscribers": "sum",
+        })
+    else:
+        # Legacy (Daily_Report) - take max per day
+        df["SignUps_Accepted"] = safe_int_col(df, "SignUps_Accepted")
+        df["FirstUploads_Accepted"] = safe_int_col(df, "FirstUploads_Accepted")
+        df["PaidSubscribers_Accepted"] = safe_int_col(df, "PaidSubscribers_Accepted")
+        return df.groupby("_dt", as_index=False).agg({
+            "SignUps_Accepted": "max",
+            "FirstUploads_Accepted": "max",
+            "PaidSubscribers_Accepted": "max",
+        })
 
 
 # ════════════════════════════════════════════════════════════════
@@ -460,25 +475,27 @@ else:
     free = load_sheet("Verified_FREE")
     upload = load_sheet("Verified_FIRST_UPLOAD")
     stripe = load_sheet("Verified_STRIPE")
-    daily = load_sheet("Daily_Report")
+    # Load TRUE daily counts (grouped by actual sign-up date)
+    daily = load_sheet("Daily_Counts")
+    if daily.empty:
+        # Fallback to old format
+        daily = load_sheet("Daily_Report")
 
     daily_filtered = filter_daily(daily, date_range)
     daily_collapsed = collapse_to_latest_per_day(daily_filtered)
 
+    # Daily_Counts has TRUE per-day counts grouped by sign-up date
+    # So we just SUM them (no max-per-month needed - they're already daily totals)
     if daily_collapsed.empty:
         sum_signups = sum_uploads = sum_paid = 0
     else:
-        df_calc = daily_collapsed.copy()
-        df_calc["_dt"] = pd.to_datetime(df_calc["_dt"])
-        df_calc["_ym"] = df_calc["_dt"].dt.strftime("%Y-%m")
-        per_month = df_calc.groupby("_ym").agg({
-            "SignUps_Accepted": "max",
-            "FirstUploads_Accepted": "max",
-            "PaidSubscribers_Accepted": "max",
-        }).reset_index()
-        sum_signups = int(per_month["SignUps_Accepted"].sum())
-        sum_uploads = int(per_month["FirstUploads_Accepted"].sum())
-        sum_paid = int(per_month["PaidSubscribers_Accepted"].sum())
+        # Detect column names (new vs legacy)
+        sc = "SignUps" if "SignUps" in daily_collapsed.columns else "SignUps_Accepted"
+        uc = "FirstUploads" if "FirstUploads" in daily_collapsed.columns else "FirstUploads_Accepted"
+        pc = "PaidSubscribers" if "PaidSubscribers" in daily_collapsed.columns else "PaidSubscribers_Accepted"
+        sum_signups = int(safe_int_col(daily_collapsed, sc).sum())
+        sum_uploads = int(safe_int_col(daily_collapsed, uc).sum())
+        sum_paid = int(safe_int_col(daily_collapsed, pc).sum())
 
     st.markdown(f"### 📊 Totals for: {preset}")
     c1, c2, c3 = st.columns(3)

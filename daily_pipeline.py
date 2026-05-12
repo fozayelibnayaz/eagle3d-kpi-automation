@@ -46,6 +46,20 @@ def main():
     stage("STAGE 3 - Process all Raw sheets -> Verified + Daily_Report", s3)
 
     print()
+    
+
+    try:
+        print()
+        print("=" * 70)
+        print(">>> STAGE 4 — Compute true daily counts from sign-up dates")
+        print("=" * 70)
+        from daily_counts import build_daily_counts_table
+        build_daily_counts_table()
+        print("OK: Daily counts updated")
+    except Exception as e:
+        print(f"FAILED: Daily counts - {e}")
+        traceback.print_exc()
+
     print("=" * 70)
     print("PIPELINE COMPLETE - dashboard now has fresh data")
     print("=" * 70)

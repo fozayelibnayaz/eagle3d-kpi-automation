@@ -42,7 +42,7 @@ import os as _os
 HEADLESS = _os.environ.get("HEADLESS_MODE", "false").lower() == "true"
 SLOW_MO_MS = 100
 TABS = ["FREE", "PAID", "500 MIN", "FIRST UPLOAD"]
-MONTH_FILTER = "Current Month"
+MONTH_FILTER = "All Time"
 DROPDOWN_ENABLE_TIMEOUT = 180
 DATA_REFRESH_WAIT = 60
 
