@@ -1,7 +1,9 @@
 """
-DASHBOARD - Eagle3D KPI
-Standalone, reads from master Google Sheet only.
-Run: streamlit run dashboard.py
+DASHBOARD - Eagle3D KPI v6
+- Per-day dedup (fixes doubling bug)
+- Run Now button (triggers GitHub Action)
+- Pipeline status widget
+- Cookie freshness warnings
 """
 import json
 import os
@@ -12,6 +14,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import gspread
+import requests
 from google.oauth2.service_account import Credentials
 
 st.set_page_config(page_title="Eagle3D KPI Dashboard", page_icon="E", layout="wide")
@@ -22,11 +25,10 @@ SCOPES = ["https://www.googleapis.com/auth/spreadsheets",
 METRIC_COLS = ["SignUps_Accepted", "FirstUploads_Accepted", "PaidSubscribers_Accepted"]
 
 
+# ─── CREDENTIAL & SECRETS LOADING ────────────────────────────────
 def get_creds_path():
-    """Load Google credentials from any available source."""
     if os.path.exists("google_creds.json"):
         return "google_creds.json"
-
     try:
         if "GOOGLE_CREDS" in st.secrets:
             creds = dict(st.secrets["GOOGLE_CREDS"])
@@ -36,45 +38,37 @@ def get_creds_path():
             return tmp.name
     except Exception:
         pass
-
     try:
         raw = st.secrets["GOOGLE_CREDS_JSON"]
-        if isinstance(raw, str):
-            creds = json.loads(raw)
-        else:
-            creds = dict(raw)
+        creds = json.loads(raw) if isinstance(raw, str) else dict(raw)
         tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
         json.dump(creds, tmp)
         tmp.close()
         return tmp.name
     except Exception:
         pass
-
-    st.error("Google credentials not found in Streamlit secrets.")
-    st.info("Add a [GOOGLE_CREDS] TOML section in Settings -> Secrets.")
+    st.error("Google credentials not found.")
     st.stop()
 
 
-def get_master_sheet_url():
+def get_secret(key, default=None):
     try:
-        if "MASTER_SHEET_URL" in st.secrets:
-            return st.secrets["MASTER_SHEET_URL"]
+        if key in st.secrets:
+            return st.secrets[key]
     except Exception:
         pass
-    try:
-        from config import MASTER_SHEET_URL
-        return MASTER_SHEET_URL
-    except Exception:
-        pass
-    st.error("MASTER_SHEET_URL missing. Add it to Streamlit secrets.")
-    st.stop()
+    return default
 
 
 CREDS_PATH = get_creds_path()
-MASTER_SHEET_URL = get_master_sheet_url()
+MASTER_SHEET_URL = get_secret("MASTER_SHEET_URL")
+GITHUB_TOKEN = get_secret("GITHUB_TOKEN")
+GITHUB_REPO = get_secret("GITHUB_REPO", "fozayelibnayaz/eagle3d-kpi-automation")
+WORKFLOW_FILE = get_secret("WORKFLOW_FILE", "daily.yml")
 
 
-@st.cache_data(ttl=300)
+# ─── DATA LOADING ────────────────────────────────────────────────
+@st.cache_data(ttl=180)
 def load(tab):
     creds = Credentials.from_service_account_file(CREDS_PATH, scopes=SCOPES)
     gc = gspread.authorize(creds)
@@ -86,20 +80,60 @@ def load(tab):
             return pd.DataFrame()
         headers = data[0]
         seen = {}
-        clean_headers = []
+        clean = []
         for h in headers:
             h = h.strip() if h else "unknown"
             if h in seen:
                 seen[h] += 1
-                clean_headers.append(f"{h}_{seen[h]}")
+                clean.append(f"{h}_{seen[h]}")
             else:
                 seen[h] = 0
-                clean_headers.append(h)
-        return pd.DataFrame(data[1:], columns=clean_headers)
+                clean.append(h)
+        return pd.DataFrame(data[1:], columns=clean)
     except gspread.WorksheetNotFound:
         return pd.DataFrame()
 
 
+# ─── GITHUB ACTIONS API ──────────────────────────────────────────
+def trigger_github_workflow():
+    if not GITHUB_TOKEN:
+        return False, "GITHUB_TOKEN not configured in secrets"
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/actions/workflows/{WORKFLOW_FILE}/dispatches"
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "Authorization": f"Bearer {GITHUB_TOKEN}",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    payload = {"ref": "main"}
+    try:
+        r = requests.post(url, headers=headers, json=payload, timeout=10)
+        if r.status_code == 204:
+            return True, "Workflow triggered successfully"
+        return False, f"GitHub API returned {r.status_code}: {r.text}"
+    except Exception as e:
+        return False, f"Request failed: {e}"
+
+
+def get_last_workflow_run():
+    if not GITHUB_TOKEN:
+        return None
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/actions/workflows/{WORKFLOW_FILE}/runs?per_page=1"
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "Authorization": f"Bearer {GITHUB_TOKEN}",
+    }
+    try:
+        r = requests.get(url, headers=headers, timeout=10)
+        if r.status_code == 200:
+            runs = r.json().get("workflow_runs", [])
+            if runs:
+                return runs[0]
+    except Exception:
+        pass
+    return None
+
+
+# ─── HELPERS ─────────────────────────────────────────────────────
 def card(label, value, color, sub=None):
     sub_html = f'<div style="font-size:13px;opacity:0.85;margin-top:4px;">{sub}</div>' if sub else ""
     html = f'<div style="background:{color};color:white;padding:25px;border-radius:12px;text-align:center;">'
@@ -160,15 +194,54 @@ def get_date_range(preset):
     return None
 
 
+# ─── HEADER ──────────────────────────────────────────────────────
 st.title("Eagle3D Streaming - KPI Dashboard")
-st.caption(f"Loaded at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | cache 5 min")
+st.caption(f"Loaded at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
-cols = st.columns([1, 5])
-with cols[0]:
-    if st.button("Refresh"):
+# ─── TOP CONTROL BAR ─────────────────────────────────────────────
+ctrl1, ctrl2, ctrl3, ctrl4 = st.columns([1.2, 1.2, 1.5, 4])
+
+with ctrl1:
+    if st.button("Refresh View", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
 
+with ctrl2:
+    if st.button("Run Pipeline Now", use_container_width=True, type="primary"):
+        with st.spinner("Triggering pipeline..."):
+            ok, msg = trigger_github_workflow()
+        if ok:
+            st.success(f"Pipeline triggered. Takes ~10 minutes. {msg}")
+        else:
+            st.error(f"Could not trigger: {msg}")
+
+with ctrl3:
+    last_run = get_last_workflow_run()
+    if last_run:
+        status = last_run.get("status", "?")
+        conclusion = last_run.get("conclusion", "?")
+        created = last_run.get("created_at", "")
+        try:
+            ts = datetime.fromisoformat(created.replace("Z", "+00:00"))
+            age = datetime.now(ts.tzinfo) - ts
+            ago = f"{int(age.total_seconds()//3600)}h ago" if age.total_seconds() > 3600 else f"{int(age.total_seconds()//60)}m ago"
+        except Exception:
+            ago = "?"
+        if status == "completed" and conclusion == "success":
+            st.success(f"Last run: SUCCESS ({ago})")
+        elif status == "in_progress":
+            st.info(f"Pipeline running now... ({ago})")
+        else:
+            st.warning(f"Last run: {conclusion} ({ago})")
+    else:
+        st.info("No workflow runs yet")
+
+with ctrl4:
+    pass  # reserved
+
+st.divider()
+
+# ─── DATE FILTER ─────────────────────────────────────────────────
 st.markdown("### Date Range")
 PRESETS = ["Today", "This Week", "Last Week", "Last 7 Days", "Last 15 Days",
            "Last 28 Days", "This Month", "Last Month", "Last 3 Months",
@@ -188,6 +261,7 @@ if date_range:
 else:
     st.info("Showing all-time data")
 
+# ─── LOAD DATA ───────────────────────────────────────────────────
 free = load("Verified_FREE")
 upload = load("Verified_FIRST_UPLOAD")
 stripe = load("Verified_STRIPE")
@@ -212,19 +286,26 @@ def filter_daily(df, dr):
 
 daily_filtered = filter_daily(daily, date_range)
 
+# ── BUG FIX: collapse multiple runs per day to LATEST entry only ──
 sum_signups = sum_uploads = sum_paid = 0
 if not daily_filtered.empty:
-    metric_data = pd.DataFrame({
-        "_dt": daily_filtered["_dt"],
-        "SignUps_Accepted": safe_int_col(daily_filtered, "SignUps_Accepted"),
-        "FirstUploads_Accepted": safe_int_col(daily_filtered, "FirstUploads_Accepted"),
-        "PaidSubscribers_Accepted": safe_int_col(daily_filtered, "PaidSubscribers_Accepted"),
-    })
-    per_day = metric_data.groupby("_dt").max()
-    sum_signups = int(per_day["SignUps_Accepted"].sum())
-    sum_uploads = int(per_day["FirstUploads_Accepted"].sum())
-    sum_paid = int(per_day["PaidSubscribers_Accepted"].sum())
+    df_calc = daily_filtered.copy()
+    df_calc["SignUps_Accepted"] = safe_int_col(df_calc, "SignUps_Accepted")
+    df_calc["FirstUploads_Accepted"] = safe_int_col(df_calc, "FirstUploads_Accepted")
+    df_calc["PaidSubscribers_Accepted"] = safe_int_col(df_calc, "PaidSubscribers_Accepted")
 
+    # If there's a Timestamp column, sort by it and keep last per day (latest run wins)
+    if "Timestamp" in df_calc.columns:
+        df_calc["_ts"] = pd.to_datetime(df_calc["Timestamp"], errors="coerce")
+        df_calc = df_calc.sort_values("_ts").groupby("_dt").tail(1)
+    else:
+        df_calc = df_calc.groupby("_dt").max(numeric_only=True).reset_index()
+
+    sum_signups = int(df_calc["SignUps_Accepted"].sum())
+    sum_uploads = int(df_calc["FirstUploads_Accepted"].sum())
+    sum_paid = int(df_calc["PaidSubscribers_Accepted"].sum())
+
+# ─── TOP CARDS ───────────────────────────────────────────────────
 st.markdown(f"### Totals for: {preset}")
 c1, c2, c3 = st.columns(3)
 with c1:
@@ -247,23 +328,25 @@ with l3:
 
 st.divider()
 
+# ─── TREND ───────────────────────────────────────────────────────
 st.markdown("### Trend Over Selected Period")
 if daily_filtered.empty:
     st.info("No daily report data in this range yet.")
 else:
-    metric_data = pd.DataFrame({
-        "_dt": daily_filtered["_dt"],
-        "SignUps_Accepted": safe_int_col(daily_filtered, "SignUps_Accepted"),
-        "FirstUploads_Accepted": safe_int_col(daily_filtered, "FirstUploads_Accepted"),
-        "PaidSubscribers_Accepted": safe_int_col(daily_filtered, "PaidSubscribers_Accepted"),
-    })
-    per_day = metric_data.groupby("_dt").max().reset_index()
-    per_day["_dt"] = pd.to_datetime(per_day["_dt"])
-    chart = per_day.set_index("_dt")
+    df_chart = daily_filtered.copy()
+    df_chart["SignUps_Accepted"] = safe_int_col(df_chart, "SignUps_Accepted")
+    df_chart["FirstUploads_Accepted"] = safe_int_col(df_chart, "FirstUploads_Accepted")
+    df_chart["PaidSubscribers_Accepted"] = safe_int_col(df_chart, "PaidSubscribers_Accepted")
+    if "Timestamp" in df_chart.columns:
+        df_chart["_ts"] = pd.to_datetime(df_chart["Timestamp"], errors="coerce")
+        df_chart = df_chart.sort_values("_ts").groupby("_dt").tail(1)
+    else:
+        df_chart = df_chart.groupby("_dt").max(numeric_only=True).reset_index()
+    df_chart["_dt"] = pd.to_datetime(df_chart["_dt"])
+    chart = df_chart.set_index("_dt")[METRIC_COLS]
     st.plotly_chart(px.line(chart, title=f"Daily Trend - {preset}", markers=True),
                     use_container_width=True)
 
-    st.markdown("### Conversion Funnel")
     funnel_df = pd.DataFrame({
         "Stage": ["Sign-ups", "First Upload", "Paid"],
         "Count": [sum_signups, sum_uploads, sum_paid],
@@ -274,16 +357,25 @@ else:
 
 st.divider()
 
+# ─── GROUP BY ────────────────────────────────────────────────────
 st.markdown("### Grouped Analysis")
 group_by = st.radio("Group by:", ["Day", "Week", "Month", "Year"], horizontal=True)
 
 if not daily_filtered.empty:
-    df = pd.DataFrame({
-        "_dt": pd.to_datetime(daily_filtered["_dt"]),
-        "SignUps_Accepted": safe_int_col(daily_filtered, "SignUps_Accepted"),
-        "FirstUploads_Accepted": safe_int_col(daily_filtered, "FirstUploads_Accepted"),
-        "PaidSubscribers_Accepted": safe_int_col(daily_filtered, "PaidSubscribers_Accepted"),
-    })
+    df = daily_filtered.copy()
+    df["_dt"] = pd.to_datetime(df["_dt"])
+    df["SignUps_Accepted"] = safe_int_col(df, "SignUps_Accepted")
+    df["FirstUploads_Accepted"] = safe_int_col(df, "FirstUploads_Accepted")
+    df["PaidSubscribers_Accepted"] = safe_int_col(df, "PaidSubscribers_Accepted")
+
+    # Latest per day first
+    if "Timestamp" in df.columns:
+        df["_ts"] = pd.to_datetime(df["Timestamp"], errors="coerce")
+        df = df.sort_values("_ts").groupby(df["_dt"].dt.date).tail(1)
+    else:
+        df = df.groupby(df["_dt"].dt.date).max(numeric_only=True).reset_index()
+    df["_dt"] = pd.to_datetime(df["_dt"])
+
     if group_by == "Day":
         df["bucket"] = df["_dt"].dt.strftime("%Y-%m-%d")
     elif group_by == "Week":
@@ -293,9 +385,7 @@ if not daily_filtered.empty:
     else:
         df["bucket"] = df["_dt"].dt.strftime("%Y")
 
-    per_day_per_bucket = df.groupby(["bucket", df["_dt"].dt.date])[METRIC_COLS].max().reset_index()
-    grouped = per_day_per_bucket.groupby("bucket")[METRIC_COLS].sum().reset_index()
-
+    grouped = df.groupby("bucket")[METRIC_COLS].sum().reset_index()
     st.plotly_chart(px.bar(grouped, x="bucket", y=METRIC_COLS,
                           title=f"Grouped by {group_by}", barmode="group"),
                     use_container_width=True)
@@ -303,8 +393,9 @@ if not daily_filtered.empty:
 
 st.divider()
 
+# ─── BROWSE ──────────────────────────────────────────────────────
 st.markdown("## Browse Customer Data")
-st.caption("Search and filter through actual emails, usernames, plans.")
+st.caption("Search and filter through emails, usernames, plans, dates.")
 
 browse_tabs = st.tabs(["Sign-ups", "First Uploads", "Paid Subscribers"])
 
@@ -373,4 +464,15 @@ for tab, (label, df) in zip(browse_tabs, [
                           mime="text/csv", key=f"dl_{label}")
 
 st.divider()
-st.caption("Pipeline runs daily 9 AM. Click Refresh after a manual run.")
+
+# ─── COOKIE / SESSION HEALTH ─────────────────────────────────────
+st.markdown("### Session Health")
+st.caption("If runs start failing, your KPI or Stripe cookies probably expired. Re-upload them as GitHub secrets.")
+sh1, sh2 = st.columns(2)
+with sh1:
+    st.info("**KPI Dashboard cookies** typically last ~30 days. To refresh: run `python kpi_login.py` locally, then update the GitHub secret.")
+with sh2:
+    st.info("**Stripe cookies** typically last ~14 days. To refresh: re-export via Cookie-Editor extension, then update the GitHub secret.")
+
+st.divider()
+st.caption("Pipeline runs daily 8/9/10 AM UTC + on-demand. Click 'Run Pipeline Now' for instant update.")

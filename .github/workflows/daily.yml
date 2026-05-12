@@ -2,7 +2,10 @@ name: Daily KPI Pipeline
 
 on:
   schedule:
+    # Multiple times so a missed run by GitHub gets caught
+    - cron: '0 8 * * *'
     - cron: '0 9 * * *'
+    - cron: '0 10 * * *'
   workflow_dispatch:
 
 jobs:
@@ -29,14 +32,61 @@ jobs:
 
       - name: Restore Google credentials
         run: |
-          echo '${{ secrets.GOOGLE_CREDS_JSON }}' > google_creds.json
+          cat <<'CREDS_EOF' > google_creds.json
+          ${{ secrets.GOOGLE_CREDS_JSON }}
+          CREDS_EOF
 
       - name: Restore Stripe cookies
         run: |
-          echo '${{ secrets.STRIPE_COOKIES_JSON }}' > stripe_cookies.json
+          cat <<'COOKIES_EOF' > stripe_cookies.json
+          ${{ secrets.STRIPE_COOKIES_JSON }}
+          COOKIES_EOF
 
       - name: Run pipeline (headless)
+        id: pipeline
         env:
           HEADLESS_MODE: "true"
         run: |
-          python daily_pipeline.py
+          python daily_pipeline.py 2>&1 | tee pipeline_output.log
+          echo "exit_code=$?" >> $GITHUB_OUTPUT
+
+      - name: Send success email
+        if: success()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          secure: true
+          username: ${{ secrets.NOTIFY_EMAIL_FROM }}
+          password: ${{ secrets.NOTIFY_EMAIL_PASSWORD }}
+          subject: "[Eagle3D KPI] Pipeline succeeded - ${{ github.run_number }}"
+          to: ${{ secrets.NOTIFY_EMAIL_TO }}
+          from: ${{ secrets.NOTIFY_EMAIL_FROM }}
+          body: |
+            Pipeline run #${{ github.run_number }} completed successfully.
+
+            Check dashboard: https://eagle3d-kpi-automation.streamlit.app/
+
+            View run logs: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+      - name: Send failure email
+        if: failure()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          secure: true
+          username: ${{ secrets.NOTIFY_EMAIL_FROM }}
+          password: ${{ secrets.NOTIFY_EMAIL_PASSWORD }}
+          subject: "[Eagle3D KPI] Pipeline FAILED - ${{ github.run_number }}"
+          to: ${{ secrets.NOTIFY_EMAIL_TO }}
+          from: ${{ secrets.NOTIFY_EMAIL_FROM }}
+          body: |
+            Pipeline run #${{ github.run_number }} FAILED.
+
+            Most common causes:
+            - KPI Dashboard cookies expired (re-run kpi_login.py locally and update KPI cookies secret)
+            - Stripe cookies expired (re-export and update STRIPE_COOKIES_JSON secret)
+            - Master sheet not shared with service account
+
+            View error logs: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
