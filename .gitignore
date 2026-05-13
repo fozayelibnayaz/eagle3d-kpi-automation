@@ -25,3 +25,4 @@ models/
 
 # Local data output - captured as GitHub Actions artifacts instead
 data_output/
+kpi_cookies.json
