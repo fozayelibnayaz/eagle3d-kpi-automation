@@ -2,9 +2,7 @@ name: Daily KPI Pipeline
 
 on:
   schedule:
-    # 10:00 AM Bangladesh time = 04:00 UTC
     - cron: '0 4 * * *'
-    # Backups: 04:30 and 05:00 UTC in case GitHub delays the first
     - cron: '30 4 * * *'
     - cron: '0 5 * * *'
   workflow_dispatch:
@@ -40,6 +38,27 @@ jobs:
             exit 1
           fi
           echo "$CREDS" > google_creds.json
+          echo "google_creds.json ready"
+
+      - name: Get KPI session token
+        env:
+          KPI_EMAIL: ${{ secrets.KPI_EMAIL }}
+          KPI_PASSWORD: ${{ secrets.KPI_PASSWORD }}
+        run: |
+          python3 firebase_login.py
+          python3 -c "
+import json, sys
+from pathlib import Path
+p = Path('kpi_cookies.json')
+if not p.exists() or p.stat().st_size < 10:
+    print('ERROR: kpi_cookies.json missing or empty')
+    sys.exit(1)
+d = json.load(open(p))
+if not d:
+    print('ERROR: No cookies')
+    sys.exit(1)
+print(f'KPI token ready: {len(d)} cookie(s), {p.stat().st_size} bytes')
+"
 
       - name: Restore Stripe cookies
         env:
@@ -47,37 +66,35 @@ jobs:
         run: |
           if [ -n "$COOKIES" ]; then
             echo "$COOKIES" > stripe_cookies.json
+            echo "Stripe cookies ready"
+          else
+            echo "No Stripe cookies - Stripe stage will be skipped"
           fi
 
       - name: Run pipeline
         env:
+          MASTER_SHEET_URL: ${{ secrets.MASTER_SHEET_URL }}
+          GOOGLE_CREDS_JSON: ${{ secrets.GOOGLE_CREDS_JSON }}
           HEADLESS_MODE: "true"
         run: python daily_pipeline.py
 
-      - name: Upload data artifacts
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: kpi-data-${{ github.run_number }}-${{ github.run_attempt }}
+          name: kpi-data-${{ github.run_number }}
           path: |
             data_output/*.csv
             data_output/*.json
+            data_output/*.png
           retention-days: 90
 
-      - name: Print data summary
+      - name: Print summary
         if: always()
         run: |
-          echo "=== DATA OUTPUT FILES ==="
-          ls -lah data_output/ 2>/dev/null || echo "No data_output directory yet"
-          echo ""
+          echo "=== DATA OUTPUT ==="
+          ls -lah data_output/ 2>/dev/null || echo "empty"
           echo "=== ROW COUNTS ==="
           for f in data_output/*.csv; do
-            if [ -f "$f" ]; then
-              rows=$(tail -n +2 "$f" | wc -l)
-              echo "  $f: $rows rows"
-            fi
+            [ -f "$f" ] && echo "  $f: $(tail -n +2 $f | wc -l) rows"
           done
-          echo ""
-          echo "=== GOOGLE SHEETS STATUS ==="
-          grep -r "AVAILABLE\|unavailable\|STORAGE FULL\|fallback" data_output/run_summaries.json 2>/dev/null | tail -5 || echo "No run summary yet"
-
