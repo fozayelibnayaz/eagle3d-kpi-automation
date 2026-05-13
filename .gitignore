@@ -22,3 +22,6 @@ models/
 
 # Local CSVs (we don't use them but just in case)
 *.csv
+
+# Local data output - captured as GitHub Actions artifacts instead
+data_output/

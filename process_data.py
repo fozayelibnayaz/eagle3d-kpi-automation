@@ -15,6 +15,18 @@ from dedup_engine import check_lead_status, normalize_email, get_history_dates_f
 from ml_intelligence import predict_scores
 from email_validator_engine import validate_batch
 
+
+def load_raw_data(tab_name: str) -> list:
+    """Load raw data - tries CSV snapshot first, then archive."""
+    from storage_adapter import read_tab_data, read_archive
+    rows = read_tab_data(tab_name)
+    if not rows:
+        print(f"[ProcessData] {tab_name}: no snapshot, trying archive...", flush=True)
+        rows = read_archive(tab_name)
+    print(f"[ProcessData] {tab_name}: loaded {len(rows)} rows for processing", flush=True)
+    return rows
+
+
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets",
           "https://www.googleapis.com/auth/drive"]
 RUN_TS = datetime.now().strftime("%Y-%m-%d %H:%M:%S")

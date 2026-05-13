@@ -53,3 +53,31 @@ jobs:
         env:
           HEADLESS_MODE: "true"
         run: python daily_pipeline.py
+
+      - name: Upload data artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: kpi-data-${{ github.run_number }}-${{ github.run_attempt }}
+          path: |
+            data_output/*.csv
+            data_output/*.json
+          retention-days: 90
+
+      - name: Print data summary
+        if: always()
+        run: |
+          echo "=== DATA OUTPUT FILES ==="
+          ls -lah data_output/ 2>/dev/null || echo "No data_output directory yet"
+          echo ""
+          echo "=== ROW COUNTS ==="
+          for f in data_output/*.csv; do
+            if [ -f "$f" ]; then
+              rows=$(tail -n +2 "$f" | wc -l)
+              echo "  $f: $rows rows"
+            fi
+          done
+          echo ""
+          echo "=== GOOGLE SHEETS STATUS ==="
+          grep -r "AVAILABLE\|unavailable\|STORAGE FULL\|fallback" data_output/run_summaries.json 2>/dev/null | tail -5 || echo "No run summary yet"
+

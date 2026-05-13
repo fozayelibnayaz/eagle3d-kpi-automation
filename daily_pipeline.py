@@ -1,3 +1,4 @@
+from storage_adapter import write_tab_data, write_run_summary, get_storage_status
 """
 DAILY PIPELINE
 Runs all stages in order:
@@ -56,6 +57,27 @@ def main():
     print("PIPELINE COMPLETE")
     print("=" * 70)
 
+
+
+    # === STORAGE STATUS REPORT ===
+    print("\n" + "="*60, flush=True)
+    print("STORAGE STATUS REPORT", flush=True)
+    print("="*60, flush=True)
+    try:
+        from storage_adapter import get_storage_status
+        status = get_storage_status()
+        sheets_label = "YES" if status["sheets_available"] else "NO (CSV fallback active)"
+        print(f"Google Sheets available : {sheets_label}", flush=True)
+        print(f"Local data directory    : {status['data_dir']}", flush=True)
+        print(f"Files captured:", flush=True)
+        for fname, info in status["files"].items():
+            rows = info.get("rows", "?")
+            size = info.get("size_kb", "?")
+            mod  = str(info.get("modified", "?"))[:19]
+            print(f"  {fname:40s} {rows:>6} rows  {size:>8}KB  {mod}", flush=True)
+    except Exception as e:
+        print(f"Status report error: {e}", flush=True)
+    print("="*60, flush=True)
 
 if __name__ == "__main__":
     main()
