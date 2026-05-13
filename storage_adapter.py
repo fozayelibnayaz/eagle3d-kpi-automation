@@ -1,57 +1,39 @@
 """
-storage_adapter.py
-Thin wrapper around sheets_writer.
-Sheets is PRIMARY. CSV is fallback ONLY if Sheets fails.
-Google Drive storage is fixed.
+storage_adapter.py - thin wrapper around sheets_writer
+Only imports functions that actually exist in sheets_writer.py
 """
+import csv
+import json
+from pathlib import Path
+from datetime import datetime
+
+DATA_DIR = Path("data_output")
+DATA_DIR.mkdir(exist_ok=True)
+
+# These are the ONLY functions imported - all exist in sheets_writer.py
 from sheets_writer import (
     write_tab_data,
-    append_tab_rows,
     read_tab_data,
     write_run_summary,
     test_connection,
     _get_client,
 )
-from pathlib import Path
-from datetime import datetime
-import csv
 
-DATA_DIR = Path("data_output")
-DATA_DIR.mkdir(exist_ok=True)
-
-# Check at import
+# Test connection at import
 try:
     SHEETS_AVAILABLE = test_connection()
-    if SHEETS_AVAILABLE:
-        print("[StorageAdapter] Google Sheets: AVAILABLE (primary storage)", flush=True)
-    else:
-        print("[StorageAdapter] Google Sheets: unavailable - CSV fallback active", flush=True)
+    status = "AVAILABLE" if SHEETS_AVAILABLE else "unavailable"
+    print(f"[StorageAdapter] Google Sheets: {status}", flush=True)
 except Exception:
     SHEETS_AVAILABLE = False
-    print("[StorageAdapter] Google Sheets: unavailable - CSV fallback active", flush=True)
+    print("[StorageAdapter] Google Sheets: unavailable", flush=True)
 
 
 def _get_sheets_client():
-    """Expose internal client for direct access when needed."""
     try:
         return _get_client()
     except Exception:
         return None, None
-
-
-def read_archive(tab_name: str) -> list:
-    """Read from ARCHIVE CSV (permanent historical record)."""
-    archive_path = DATA_DIR / f"ARCHIVE_{tab_name}.csv"
-    if not archive_path.exists():
-        return []
-    try:
-        with open(archive_path, "r", newline="", encoding="utf-8") as f:
-            rows = list(csv.DictReader(f))
-        print(f"[StorageAdapter] Archive {tab_name}: {len(rows)} rows", flush=True)
-        return rows
-    except Exception as e:
-        print(f"[StorageAdapter] Archive read error: {e}", flush=True)
-        return []
 
 
 def get_storage_status() -> dict:
@@ -74,3 +56,14 @@ def get_storage_status() -> dict:
         except Exception:
             status["files"][f.name] = {"error": "unreadable"}
     return status
+
+
+def read_archive(tab_name: str) -> list:
+    p = DATA_DIR / f"ARCHIVE_{tab_name}.csv"
+    if not p.exists():
+        return []
+    try:
+        with open(p, "r", newline="", encoding="utf-8") as f:
+            return list(csv.DictReader(f))
+    except Exception:
+        return []
