@@ -1,188 +1,142 @@
 """
-DAILY COUNTS ANALYTICS
-Reads Verified_* tabs and computes TRUE per-day counts from Account Created On dates.
-Writes Daily_Counts (with email details) and Monthly_Counts.
+daily_counts.py
+SOURCE:  Google Sheets Verified_FREE, Verified_FIRST_UPLOAD, Verified_STRIPE
+OUTPUT:  Google Sheets Daily_Counts, Monthly_Counts
+FALLBACK: CSV only if Sheets fails
 """
-import gspread
-import pandas as pd
+import json
+from collections import defaultdict
 from datetime import datetime
-from dateutil import parser as dateparser
-from google.oauth2.service_account import Credentials
+from pathlib import Path
 
-from config import GOOGLE_CREDS_FILE, MASTER_SHEET_URL
+from sheets_writer import read_tab_data, write_tab_data
 
-SCOPES = ["https://www.googleapis.com/auth/spreadsheets",
-          "https://www.googleapis.com/auth/drive"]
+DATA_DIR = Path("data_output")
+DATA_DIR.mkdir(exist_ok=True)
 
 
 def log(msg):
     print(f"[{datetime.now().strftime('%H:%M:%S')}] [DailyCounts] {msg}", flush=True)
 
 
-def parse_date_safe(val):
-    if not val:
-        return None
-    s = str(val).strip()
-    if not s:
-        return None
-    try:
-        return dateparser.parse(s, fuzzy=True).date()
-    except Exception:
-        return None
+def extract_email(row: dict) -> str:
+    for k in ("Email","email","EMAIL","__email_normalized__"):
+        if k in row and row[k] and "@" in str(row[k]):
+            return str(row[k]).strip()
+    return ""
 
 
-def find_col(headers, *kw_groups):
-    for kw in kw_groups:
-        for i, h in enumerate(headers):
-            if kw in (h or "").strip().lower():
-                return i
-    return -1
+def extract_date(row: dict) -> str:
+    DATE_HINTS = [
+        "account created","created on","created","signup date",
+        "registered","date","joined",
+    ]
+    for hint in DATE_HINTS:
+        for k, v in row.items():
+            if hint in k.lower() and v and str(v).strip():
+                return str(v).strip()[:10]
+    return "unknown"
 
 
-def collect_per_day(df, date_kw_groups, label):
-    if df.empty:
-        return {}
-    headers = list(df.columns)
-    date_idx = -1
-    for kw in date_kw_groups:
-        date_idx = find_col(headers, kw)
-        if date_idx != -1:
-            break
-    if date_idx == -1:
-        log(f"   {label}: no date col in {headers}")
-        return {}
-
-    email_idx = find_col(headers, "email")
-    name_idx = find_col(headers, "username", "customer", "name")
-
-    counts = {}
-    for _, row in df.iterrows():
-        if "final_status" in row and str(row["final_status"]).upper() != "ACCEPTED":
-            continue
-        d = parse_date_safe(row.iloc[date_idx])
-        if d is None:
-            continue
-        key = d.isoformat()
-        if key not in counts:
-            counts[key] = {"count": 0, "details": []}
-        counts[key]["count"] += 1
-
-        email = str(row.iloc[email_idx]).strip() if email_idx != -1 else ""
-        name = str(row.iloc[name_idx]).strip() if name_idx != -1 else ""
-        if name and email:
-            d_str = f"{name} <{email}>"
-        elif email:
-            d_str = email
-        elif name:
-            d_str = name
-        else:
-            d_str = ""
-        if d_str:
-            counts[key]["details"].append(d_str)
-
-    return counts
+def group_by_date(rows: list) -> dict:
+    grouped = defaultdict(list)
+    for row in rows:
+        grouped[extract_date(row)].append(row)
+    return grouped
 
 
 def build_daily_counts_table():
-    """Main function called by daily_pipeline.py"""
     log("=" * 60)
     log("Building Daily_Counts and Monthly_Counts")
     log("=" * 60)
 
-    creds = Credentials.from_service_account_file(str(GOOGLE_CREDS_FILE), scopes=SCOPES)
-    gc = gspread.authorize(creds)
-    sh = gc.open_by_url(MASTER_SHEET_URL)
+    # Read Verified_* from Sheets (primary) or CSV fallback
+    free_rows    = read_tab_data("Verified_FREE")
+    upload_rows  = read_tab_data("Verified_FIRST_UPLOAD")
+    stripe_rows  = read_tab_data("Verified_STRIPE")
 
-    def load_tab(name):
-        try:
-            ws = sh.worksheet(name)
-            data = ws.get_all_values()
-            if len(data) < 2:
-                return pd.DataFrame()
-            return pd.DataFrame(data[1:], columns=data[0])
-        except gspread.WorksheetNotFound:
-            return pd.DataFrame()
+    log(
+        f"Loaded: free={len(free_rows)}, "
+        f"upload={len(upload_rows)}, stripe={len(stripe_rows)}"
+    )
 
-    free = load_tab("Verified_FREE")
-    upload = load_tab("Verified_FIRST_UPLOAD")
-    stripe = load_tab("Verified_STRIPE")
+    free_by_date   = group_by_date(free_rows)
+    upload_by_date = group_by_date(upload_rows)
+    stripe_by_date = group_by_date(stripe_rows)
 
-    log(f"Loaded: free={len(free)}, upload={len(upload)}, stripe={len(stripe)}")
+    log(
+        f"Free dates: {len(free_by_date)} | "
+        f"Upload dates: {len(upload_by_date)} | "
+        f"Stripe dates: {len(stripe_by_date)}"
+    )
 
-    free_data = collect_per_day(free, ["created", "account", "date"], "Free")
-    upload_data = collect_per_day(upload, ["upload", "created", "date"], "Upload")
-    stripe_data = collect_per_day(stripe, ["created", "date"], "Stripe")
+    # All dates combined
+    all_dates = sorted(
+        set(list(free_by_date) + list(upload_by_date) + list(stripe_by_date))
+    )
 
-    log(f"Free dates: {len(free_data)} | Upload dates: {len(upload_data)} | Stripe dates: {len(stripe_data)}")
+    def emails_str(rows: list) -> str:
+        emails = set()
+        for r in rows:
+            e = extract_email(r)
+            if e:
+                emails.add(e)
+        return "; ".join(sorted(emails))
 
-    all_dates = sorted(set(free_data) | set(upload_data) | set(stripe_data))
+    # ── Daily_Counts ──
+    daily_headers = [
+        "Date","Free Signups","First Uploads","Paid Customers",
+        "Free Emails","Upload Emails","Stripe Emails",
+    ]
+    daily_rows = []
+    for date in all_dates:
+        if date == "unknown":
+            continue
+        fr = free_by_date.get(date, [])
+        up = upload_by_date.get(date, [])
+        st = stripe_by_date.get(date, [])
+        daily_rows.append([
+            date, len(fr), len(up), len(st),
+            emails_str(fr), emails_str(up), emails_str(st),
+        ])
 
-    rows = []
-    for d in all_dates:
-        f = free_data.get(d, {"count": 0, "details": []})
-        u = upload_data.get(d, {"count": 0, "details": []})
-        s = stripe_data.get(d, {"count": 0, "details": []})
-        rows.append({
-            "Date": d,
-            "Year": d[:4],
-            "Month": d[:7],
-            "SignUps": f["count"],
-            "FirstUploads": u["count"],
-            "PaidSubscribers": s["count"],
-            "SignUp_Details": "; ".join(f["details"][:50]),
-            "Upload_Details": "; ".join(u["details"][:50]),
-            "Paid_Details": "; ".join(s["details"][:50]),
-        })
+    log(f"Daily_Counts: {len(daily_rows)} date rows")
 
-    if not rows:
-        log("No data to write")
-        return
+    # Convert to list of dicts for write_tab_data
+    daily_dicts = [
+        dict(zip(daily_headers, row)) for row in daily_rows
+    ]
+    ok_daily = write_tab_data("Daily_Counts", daily_dicts)
+    log(f"Daily_Counts: Sheets={'OK' if ok_daily else 'FAILED->CSV'}")
 
-    df_out = pd.DataFrame(rows)
-    df_out["CumSignUps"] = df_out["SignUps"].cumsum()
-    df_out["CumFirstUploads"] = df_out["FirstUploads"].cumsum()
-    df_out["CumPaidSubscribers"] = df_out["PaidSubscribers"].cumsum()
-    df_out["LastUpdated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    # ── Monthly_Counts ──
+    monthly = defaultdict(lambda: [0, 0, 0])
+    for row in daily_rows:
+        month = str(row[0])[:7]  # YYYY-MM
+        monthly[month][0] += row[1]
+        monthly[month][1] += row[2]
+        monthly[month][2] += row[3]
 
-    col_order = ["Date", "Year", "Month",
-                "SignUps", "FirstUploads", "PaidSubscribers",
-                "CumSignUps", "CumFirstUploads", "CumPaidSubscribers",
-                "SignUp_Details", "Upload_Details", "Paid_Details",
-                "LastUpdated"]
-    df_out = df_out[col_order]
+    monthly_headers = [
+        "Month","Free Signups","First Uploads","Paid Customers"
+    ]
+    monthly_dicts = [
+        {"Month": m, "Free Signups": v[0],
+         "First Uploads": v[1], "Paid Customers": v[2]}
+        for m, v in sorted(monthly.items())
+    ]
+    log(f"Monthly_Counts: {len(monthly_dicts)} month rows")
 
-    try:
-        ws = sh.worksheet("Daily_Counts")
-    except gspread.WorksheetNotFound:
-        ws = sh.add_worksheet(title="Daily_Counts", rows=max(1000, len(df_out)+50), cols=20)
+    ok_monthly = write_tab_data("Monthly_Counts", monthly_dicts)
+    log(f"Monthly_Counts: Sheets={'OK' if ok_monthly else 'FAILED->CSV'}")
 
-    ws.clear()
-    values = [df_out.columns.tolist()] + df_out.astype(str).values.tolist()
-    ws.update(range_name="A1", values=values, value_input_option="USER_ENTERED")
-    log(f"Wrote {len(df_out)} daily rows to Daily_Counts")
-
-    df_month = df_out.groupby("Month").agg({
-        "SignUps": "sum",
-        "FirstUploads": "sum",
-        "PaidSubscribers": "sum",
-    }).reset_index()
-    df_month["LastUpdated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    try:
-        ws_m = sh.worksheet("Monthly_Counts")
-    except gspread.WorksheetNotFound:
-        ws_m = sh.add_worksheet(title="Monthly_Counts", rows=200, cols=10)
-
-    ws_m.clear()
-    values_m = [df_month.columns.tolist()] + df_month.astype(str).values.tolist()
-    ws_m.update(range_name="A1", values=values_m, value_input_option="USER_ENTERED")
-    log(f"Wrote {len(df_month)} monthly rows to Monthly_Counts")
-
-
-# Aliases for compatibility
-build_daily_counts = build_daily_counts_table
-main = build_daily_counts_table
+    log("Done.")
+    return {
+        "daily_rows":   len(daily_rows),
+        "monthly_rows": len(monthly_dicts),
+        "sheets_ok":    ok_daily and ok_monthly,
+    }
 
 
 if __name__ == "__main__":
-    main()
+    build_daily_counts_table()

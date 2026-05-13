@@ -1,247 +1,205 @@
 """
-SHEET PROCESSOR v6
-Processes ALL rows from Raw_* tabs (no today-only filter).
-Writes to Verified_* + appends to Daily_Report (one row per pipeline run).
-The Daily_Counts module then groups by actual sign-up date.
+process_data.py
+SOURCE:  Google Sheets Raw_FREE, Raw_FIRST_UPLOAD, Raw_STRIPE
+OUTPUT:  Google Sheets Verified_FREE, Verified_FIRST_UPLOAD, Verified_STRIPE
+FALLBACK: CSV only if Sheets read/write fails
 """
-import gspread
-import pandas as pd
+import csv
+import json
+import re
+from pathlib import Path
 from datetime import datetime
-from dateutil import parser as dateparser
-from google.oauth2.service_account import Credentials
 
-from config import GOOGLE_CREDS_FILE, MASTER_SHEET_URL, INTERNAL_EMAIL_KEYWORDS
-from dedup_engine import check_lead_status, normalize_email, get_history_dates_for_email
-from ml_intelligence import predict_scores
-from email_validator_engine import validate_batch
+from sheets_writer import read_tab_data, write_tab_data
 
-
-def load_raw_data(tab_name: str) -> list:
-    """Load raw data - tries CSV snapshot first, then archive."""
-    from storage_adapter import read_tab_data, read_archive
-    rows = read_tab_data(tab_name)
-    if not rows:
-        print(f"[ProcessData] {tab_name}: no snapshot, trying archive...", flush=True)
-        rows = read_archive(tab_name)
-    print(f"[ProcessData] {tab_name}: loaded {len(rows)} rows for processing", flush=True)
-    return rows
-
-
-SCOPES = ["https://www.googleapis.com/auth/spreadsheets",
-          "https://www.googleapis.com/auth/drive"]
-RUN_TS = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-TODAY = datetime.now().date()
+DATA_DIR   = Path("data_output")
+DATA_DIR.mkdir(exist_ok=True)
+PROCESS_TS = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
 def log(msg):
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] [Processor] {msg}", flush=True)
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] [ProcessData] {msg}", flush=True)
 
 
-def find_col_by_header(headers, *keywords):
-    for i, h in enumerate(headers):
-        h_low = (h or "").strip().lower()
-        for kw in keywords:
-            if kw in h_low:
-                return i
-    return -1
+DISPOSABLE = {
+    "mailinator.com","guerrillamail.com","tempmail.com","throwaway.email",
+    "yopmail.com","sharklasers.com","grr.la","spam4.me","trashmail.com",
+    "maildrop.cc","dispostable.com","fakeinbox.com","trashmail.me",
+    "discard.email","mailnesia.com","tempr.email","0-mail.com","0815.ru",
+}
+INTERNAL = {"eagle3dstreaming.com","eagle3d.com"}
+SUSPICIOUS = [
+    r'^test\d*@', r'^demo\d*@', r'^fake\d*@', r'^sample\d*@',
+    r'^noreply@', r'^no-reply@', r'^donotreply@',
+]
 
 
-def find_email_col_by_content(rows, max_check=20):
-    if not rows:
-        return -1
-    n_cols = max(len(r) for r in rows[:max_check])
-    best_idx, best_score = -1, 0
-    for col_idx in range(n_cols):
-        score = sum(1 for r in rows[:max_check]
-                    if col_idx < len(r) and "@" in r[col_idx] and "." in r[col_idx])
-        if score > best_score:
-            best_score, best_idx = score, col_idx
-    return best_idx if best_score >= 2 else -1
+def extract_email(row: dict) -> str:
+    for k in ("Email","email","EMAIL","Email Address",
+              "__email_normalized__"):
+        if k in row and row[k] and "@" in str(row[k]):
+            return str(row[k]).strip()
+    for v in row.values():
+        if isinstance(v,str) and "@" in v and "." in v and len(v)<200:
+            return v.strip()
+    return ""
 
 
-def parse_row_date(val):
-    if not val:
-        return None
-    val = str(val).strip()
-    if not val:
-        return None
+def validate_email(email: str) -> tuple:
+    if not email or "@" not in email:
+        return False, "no_email"
+    e = email.strip().lower()
+    parts = e.split("@")
+    if len(parts) != 2:
+        return False, "malformed"
+    local, domain = parts
+    if not local or not domain or "." not in domain:
+        return False, "missing_parts"
+    if len(e) > 254 or len(local) > 64:
+        return False, "too_long"
+    if domain in DISPOSABLE:
+        return False, "disposable"
+    if domain in INTERNAL:
+        return False, "internal"
+    for pat in SUSPICIOUS:
+        if re.match(pat, e):
+            return False, "suspicious"
+    if not re.match(
+        r'^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$', e
+    ):
+        return False, "invalid_format"
     try:
-        return dateparser.parse(val, fuzzy=True).date()
-    except Exception:
-        return None
+        from email_validator import validate_email as lib_val
+        lib_val(e, check_deliverability=False)
+    except ImportError:
+        pass
+    except Exception as ex:
+        return False, f"lib:{ex}"
+    return True, "ok"
 
 
-def process_one_tab(sh, raw_tab, is_paid=False):
-    log(f"--- Processing {raw_tab} (is_paid={is_paid}) ---")
-    try:
-        ws = sh.worksheet(raw_tab)
-    except gspread.WorksheetNotFound:
-        log(f"   {raw_tab} not found, skipping.")
-        return 0
+def ml_score(row: dict) -> float:
+    score  = 0.5
+    email  = extract_email(row).lower()
+    domain = email.split("@")[-1] if "@" in email else ""
+    local  = email.split("@")[0]  if "@" in email else ""
+    PRO = {
+        "gmail.com","yahoo.com","hotmail.com","outlook.com",
+        "icloud.com","protonmail.com","me.com","live.com",
+    }
+    if domain in PRO: score += 0.1
+    if re.match(r'^[a-zA-Z]+[\.\-_]?[a-zA-Z]+$', local): score += 0.15
+    if local.isdigit(): score -= 0.2
+    for k, v in row.items():
+        if ("created" in k.lower() or "date" in k.lower()) and v:
+            score += 0.1
+            break
+    return round(min(max(score, 0.0), 1.0), 3)
 
-    data = ws.get_all_values()
-    if not data:
-        log(f"   Empty.")
-        return 0
 
-    first_row = data[0]
-    looks_like_header = any(any(kw in (c or "").strip().lower()
-                               for kw in ("email", "name", "user", "phone", "source",
-                                          "date", "customer", "created"))
-                           for c in first_row)
+def process_tab(tab_key: str) -> dict:
+    log(f"{'─'*50}")
+    log(f"Processing: {tab_key}")
 
-    if looks_like_header:
-        headers = first_row
-        rows = data[1:]
-    else:
-        n_cols = max(len(r) for r in data)
-        headers = [f"col_{i}" for i in range(n_cols)]
-        rows = data
+    # Read from Sheets (primary) or CSV fallback
+    source = read_tab_data(f"Raw_{tab_key}")
+    if not source:
+        log(f"{tab_key}: no source data")
+        return {"tab":tab_key,"source":0,"verified":0,"skipped":0}
 
-    log(f"   Headers: {headers}")
-    log(f"   Total raw rows: {len(rows)}")
+    log(f"{tab_key}: {len(source)} rows from source")
 
-    e_idx = find_col_by_header(headers, "email")
-    if e_idx == -1:
-        e_idx = find_email_col_by_content(rows)
-        if e_idx != -1:
-            headers[e_idx] = "Email"
+    verified = []
+    skipped  = []
+    seen     = set()
 
-    if e_idx == -1:
-        log(f"   No email column. Skipping.")
-        return 0
+    for row in source:
+        email = extract_email(row)
+        if email:
+            dom = email.split("@")[-1].lower()
+            if dom in INTERNAL:
+                skipped.append({**row,"__skip_reason__":"internal"})
+                continue
 
-    s_idx = find_col_by_header(headers, "source", "lead")
-    d_idx = find_col_by_header(headers, "created", "date", "signed", "registered", "added")
-
-    log(f"   Email col: {e_idx} | Source col: {s_idx} | Date col: {d_idx}")
-
-    keep_rows, emails, scrape_dates = [], [], []
-    skipped_internal = 0
-
-    for row in rows:
-        padded = row + [""] * (len(headers) - len(row))
-        email = padded[e_idx].strip() if e_idx < len(padded) else ""
-        if not email or "@" not in email:
+        ok, reason = validate_email(email)
+        if not ok:
+            skipped.append({**row,"__skip_reason__":reason})
             continue
-        if any(kw in email.lower() for kw in INTERNAL_EMAIL_KEYWORDS):
-            skipped_internal += 1
+
+        key = email.strip().lower()
+        if key in seen:
+            skipped.append({**row,"__skip_reason__":"duplicate"})
             continue
+        seen.add(key)
 
-        # Use the row's actual sign-up date for dedup comparison
-        row_date = TODAY
-        if d_idx != -1 and d_idx < len(padded):
-            parsed = parse_row_date(padded[d_idx])
-            if parsed:
-                row_date = parsed
+        verified.append({
+            **row,
+            "__email_normalized__":  key,
+            "__ml_score__":          ml_score(row),
+            "__processed_at__":      PROCESS_TS,
+            "__validation_status__": "verified",
+        })
 
-        keep_rows.append(padded)
-        emails.append(email)
-        scrape_dates.append(row_date)
+    log(
+        f"{tab_key}: {len(source)} -> "
+        f"{len(verified)} verified, {len(skipped)} skipped"
+    )
 
-    log(f"   Internal skipped: {skipped_internal} | To validate: {len(emails)}")
-    if not emails:
-        return 0
+    if skipped:
+        sp = DATA_DIR / f"Skipped_{tab_key}.csv"
+        try:
+            sf = sorted({k for r in skipped for k in r.keys()})
+            with open(sp,"w",newline="",encoding="utf-8") as f:
+                w = csv.DictWriter(f,fieldnames=sf,extrasaction="ignore")
+                w.writeheader()
+                w.writerows(skipped)
+        except Exception as e:
+            log(f"Skipped log error: {e}")
 
-    log(f"   Validating {len(emails)} emails...")
-    val_results = validate_batch(emails)
+    if verified:
+        # PRIMARY: Sheets. FALLBACK: CSV (inside write_tab_data)
+        ok = write_tab_data(f"Verified_{tab_key}", verified)
+        log(f"Verified_{tab_key}: Sheets={'OK' if ok else 'FAILED->CSV'}")
 
-    enriched = []
-    accepted_count = 0
-
-    for raw, vres, scrape_date in zip(keep_rows, val_results, scrape_dates):
-        email = raw[e_idx].strip()
-        src = raw[s_idx].strip() if s_idx != -1 and s_idx < len(raw) else ""
-
-        dedup = check_lead_status(email, current_scrape_date=scrape_date)
-        history_dates = get_history_dates_for_email(email)
-        history_dates_str = ", ".join(str(d) for d in history_dates if d) if history_dates else ""
-
-        ml = predict_scores(email, src)
-
-        if is_paid:
-            is_accepted = (vres["verdict"] == "VALID")
-        else:
-            is_accepted = (vres["verdict"] == "VALID" and dedup == "NEW")
-
-        if is_accepted:
-            accepted_count += 1
-
-        rd = {headers[i]: raw[i] if i < len(raw) else "" for i in range(len(headers))}
-        rd["normalized_email"] = normalize_email(email)
-        rd["row_date_used"] = str(scrape_date)
-        rd["history_dates_in_db"] = history_dates_str
-        rd["email_verdict"] = vres["verdict"]
-        rd["verdict_reason"] = vres["reason"]
-        rd["deduplication_status"] = dedup
-        rd["legitimacy_score"] = ml.get("score", 0)
-        rd["ml_quality_tier"] = ml.get("tier", "")
-        rd["final_status"] = "ACCEPTED" if is_accepted else "REJECTED"
-        rd["processed_at"] = RUN_TS
-        rd["report_year"] = datetime.now().year
-        rd["report_month"] = datetime.now().strftime("%Y-%m")
-        enriched.append(rd)
-
-    ver_tab = raw_tab.replace("Raw_", "Verified_")
-    try:
-        out_ws = sh.worksheet(ver_tab)
-    except gspread.WorksheetNotFound:
-        out_ws = sh.add_worksheet(title=ver_tab,
-                                  rows=max(1000, len(enriched)+100),
-                                  cols=max(30, len(enriched[0])+2))
-
-    df = pd.DataFrame(enriched)
-    out_ws.clear()
-    out_ws.update(range_name="A1",
-                  values=[df.columns.tolist()] + df.astype(str).values.tolist(),
-                  value_input_option="USER_ENTERED")
-
-    log(f"   Wrote {len(enriched)} rows to {ver_tab} | ACCEPTED: {accepted_count}")
-    return accepted_count
-
-
-def append_daily_report(sh, metrics):
-    try:
-        ws = sh.worksheet("Daily_Report")
-        existing = ws.get_all_values()
-        if not existing:
-            ws.update(range_name="A1", values=[list(metrics.keys())])
-    except gspread.WorksheetNotFound:
-        ws = sh.add_worksheet(title="Daily_Report", rows=5000, cols=15)
-        ws.update(range_name="A1", values=[list(metrics.keys())])
-
-    ws.append_row(list(metrics.values()), value_input_option="USER_ENTERED")
-    log(f"Daily_Report row appended: {metrics}")
+    return {
+        "tab":      tab_key,
+        "source":   len(source),
+        "verified": len(verified),
+        "skipped":  len(skipped),
+    }
 
 
 def main():
     log("=" * 60)
-    log("SHEET PROCESSOR v6 - Process ALL rows (no today-only filter)")
+    log(f"PROCESS DATA - {PROCESS_TS}")
     log("=" * 60)
 
-    creds = Credentials.from_service_account_file(str(GOOGLE_CREDS_FILE), scopes=SCOPES)
-    gc = gspread.authorize(creds)
-    sh = gc.open_by_url(MASTER_SHEET_URL)
-    log(f"Opened: {sh.title}")
+    results = []
+    for tab in ("FREE","FIRST_UPLOAD","STRIPE"):
+        r = process_tab(tab)
+        results.append(r)
 
-    now = datetime.now()
-    metrics = {
-        "Timestamp": RUN_TS,
-        "Date": now.strftime("%Y-%m-%d"),
-        "Year": now.year,
-        "Month": now.strftime("%Y-%m"),
-    }
+    log("=" * 60)
+    log("SUMMARY")
+    log("=" * 60)
+    for r in results:
+        log(
+            f"  {r['tab']:20s}: "
+            f"source={r['source']:4d}  "
+            f"verified={r['verified']:4d}  "
+            f"skipped={r['skipped']:4d}"
+        )
 
-    for raw_tab, key, is_paid in [
-        ("Raw_FREE", "SignUps_Accepted", False),
-        ("Raw_FIRST_UPLOAD", "FirstUploads_Accepted", False),
-        ("Raw_STRIPE", "PaidSubscribers_Accepted", True),
-    ]:
-        accepted = process_one_tab(sh, raw_tab, is_paid=is_paid)
-        metrics[key] = accepted
+    try:
+        with open(DATA_DIR / "processing_report.json","w") as f:
+            json.dump({
+                "processed_at": PROCESS_TS,
+                "results": results
+            }, f, indent=2, default=str)
+    except Exception as e:
+        log(f"Report save: {e}")
 
-    append_daily_report(sh, metrics)
-    log("Done.")
+    return results
 
 
 if __name__ == "__main__":

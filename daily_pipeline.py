@@ -1,83 +1,92 @@
-from storage_adapter import write_tab_data, write_run_summary, get_storage_status
 """
-DAILY PIPELINE
-Runs all stages in order:
-  1. Scrape KPI dashboard -> Raw sheets
-  2. Scrape Stripe -> Raw_STRIPE sheet
-  3. Process ALL Raw rows -> Verified + Daily_Report
-  4. Build Daily_Counts (true per-day from sign-up dates)
+daily_pipeline.py - Master runner
+All stages write to Google Sheets (primary).
+CSV only if Sheets fails.
 """
 import traceback
 from datetime import datetime
+from sheets_writer import write_run_summary
+from storage_adapter import get_storage_status
 
 
-def stage(name, func):
-    print()
-    print("=" * 70)
-    print(f">>> {name}")
-    print("=" * 70)
+def log(msg):
+    print(msg, flush=True)
+
+
+def run_stage(num: int, name: str, func) -> tuple:
+    log(f"\n{'='*70}")
+    log(f">>> STAGE {num} - {name}")
+    log(f"{'='*70}")
     try:
         func()
-        print(f"OK: {name}")
-        return True
+        log(f"STAGE {num} COMPLETE: {name}")
+        return True, None
     except Exception as e:
-        print(f"FAILED: {name} - {e}")
+        log(f"STAGE {num} FAILED: {name} - {e}")
         traceback.print_exc()
-        return False
+        return False, str(e)
 
 
 def main():
-    print("=" * 70)
-    print(f"PIPELINE START: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print("=" * 70)
+    start = datetime.now()
+    log(f"\n{'='*70}")
+    log(f"PIPELINE START: {start.strftime('%Y-%m-%d %H:%M:%S')}")
+    log(f"{'='*70}")
 
-    def s1():
-        from scrape_kpi import main as f
-        f()
+    results = {}
 
-    def s2():
-        from scrape_stripe import main as f
-        f()
+    ok1, e1 = run_stage(1, "Scrape KPI dashboard",
+        lambda: __import__("scrape_kpi").main())
+    results["stage1"] = "ok" if ok1 else f"failed: {e1}"
 
-    def s3():
-        from process_data import main as f
-        f()
+    ok2, e2 = run_stage(2, "Scrape Stripe customers",
+        lambda: __import__("scrape_stripe").main())
+    results["stage2"] = "ok" if ok2 else f"failed: {e2}"
 
-    def s4():
-        from daily_counts import build_daily_counts_table
-        build_daily_counts_table()
+    ok3, e3 = run_stage(3, "Process -> Verified sheets",
+        lambda: __import__("process_data").main())
+    results["stage3"] = "ok" if ok3 else f"failed: {e3}"
 
-    stage("STAGE 1 - Scrape KPI dashboard", s1)
-    stage("STAGE 2 - Scrape Stripe customers", s2)
-    stage("STAGE 3 - Process all rows -> Verified + Daily_Report", s3)
-    stage("STAGE 4 - Build Daily_Counts (true per-day)", s4)
+    ok4, e4 = run_stage(4, "Build Daily + Monthly counts",
+        lambda: __import__("daily_counts").build_daily_counts_table())
+    results["stage4"] = "ok" if ok4 else f"failed: {e4}"
 
-    print()
-    print("=" * 70)
-    print("PIPELINE COMPLETE")
-    print("=" * 70)
+    duration = (datetime.now() - start).total_seconds()
 
+    log(f"\n{'='*70}")
+    log(f"PIPELINE COMPLETE - {duration:.1f}s")
+    log(f"{'='*70}")
+    log(f"Stages: {sum([ok1,ok2,ok3,ok4])}/4 passed")
+    for k, v in results.items():
+        icon = "OK" if v == "ok" else "FAILED"
+        log(f"  {k}: {icon} - {v}")
 
+    # Storage status
+    log(f"\n{'='*60}")
+    log("STORAGE STATUS")
+    log(f"{'='*60}")
+    status = get_storage_status()
+    sheets = "YES" if status["sheets_available"] else "NO (CSV fallback)"
+    log(f"Google Sheets: {sheets}")
+    for fname, info in sorted(status["files"].items()):
+        if not any(x in fname for x in ("TEST","FREE_TEST")):
+            rows = info.get("rows","?")
+            size = info.get("size_kb","?")
+            log(f"  {fname:45s} {rows:>5} rows  {size:>6}KB")
+    log(f"{'='*60}")
 
-    # === STORAGE STATUS REPORT ===
-    print("\n" + "="*60, flush=True)
-    print("STORAGE STATUS REPORT", flush=True)
-    print("="*60, flush=True)
     try:
-        from storage_adapter import get_storage_status
-        status = get_storage_status()
-        sheets_label = "YES" if status["sheets_available"] else "NO (CSV fallback active)"
-        print(f"Google Sheets available : {sheets_label}", flush=True)
-        print(f"Local data directory    : {status['data_dir']}", flush=True)
-        print(f"Files captured:", flush=True)
-        for fname, info in status["files"].items():
-            rows = info.get("rows", "?")
-            size = info.get("size_kb", "?")
-            mod  = str(info.get("modified", "?"))[:19]
-            print(f"  {fname:40s} {rows:>6} rows  {size:>8}KB  {mod}", flush=True)
+        write_run_summary({
+            "run_at":           start.isoformat(),
+            "duration_seconds": round(duration, 1),
+            "stages_passed":    sum([ok1, ok2, ok3, ok4]),
+            **results,
+        })
     except Exception as e:
-        print(f"Status report error: {e}", flush=True)
-    print("="*60, flush=True)
+        log(f"Summary write failed: {e}")
+
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    exit(main())

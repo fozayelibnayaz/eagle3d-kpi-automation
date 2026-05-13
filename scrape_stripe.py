@@ -1,33 +1,39 @@
 """
-STRIPE SCRAPER v4 - FULL HISTORICAL
-Loads Stripe customers (with subscription = Yes), scrolls/paginates through ALL,
-returns ALL paid customer history.
+scrape_stripe.py
+Scrapes ALL Stripe paid customers.
+Writes to Google Sheets (primary). CSV only if Sheets fails.
 """
-import os
 import json
 import time
 from datetime import datetime
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 
-from config import STRIPE_URL, STRIPE_SESSION_DIR
+from config import STRIPE_SESSION_DIR
 from sheets_writer import write_tab_data
 
-SCRAPE_TS = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+DATA_DIR    = Path("data_output")
+DATA_DIR.mkdir(exist_ok=True)
+SCRAPE_TS   = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+SCRAPE_DATE = datetime.now().strftime("%Y-%m-%d")
+STRIPE_URL  = (
+    "https://dashboard.stripe.com/acct_1J7M5XIKrnGFhGm1"
+    "/customers?has_subscription=true"
+)
 
 
 def log(msg):
     print(f"[{datetime.now().strftime('%H:%M:%S')}] [Stripe] {msg}", flush=True)
 
 
-def normalize_cookies(raw_cookies):
+def normalize_cookies(raw):
     out = []
-    for c in raw_cookies:
+    for c in raw:
         cookie = {
-            "name": c.get("name"),
-            "value": c.get("value"),
+            "name":   c.get("name"),
+            "value":  c.get("value"),
             "domain": c.get("domain"),
-            "path": c.get("path", "/"),
+            "path":   c.get("path", "/"),
         }
         if "expirationDate" in c:
             cookie["expires"] = float(c["expirationDate"])
@@ -35,90 +41,66 @@ def normalize_cookies(raw_cookies):
             cookie["httpOnly"] = bool(c["httpOnly"])
         if "secure" in c:
             cookie["secure"] = bool(c["secure"])
-        ss = str(c.get("sameSite", "no_restriction")).lower()
+        ss_val = str(c.get("sameSite", "no_restriction")).lower()
         cookie["sameSite"] = {
-            "no_restriction": "None", "lax": "Lax", "strict": "Strict",
-            "unspecified": "Lax", "none": "None"
-        }.get(ss, "Lax")
+            "no_restriction": "None", "lax": "Lax",
+            "strict": "Strict", "unspecified": "Lax", "none": "None",
+        }.get(ss_val, "Lax")
         if cookie["name"] and cookie["value"] is not None:
             out.append(cookie)
     return out
 
 
-def extract_customers(page):
-    """Extract customer rows from current view."""
-    try:
-        data = page.evaluate("""
-            () => {
-                // Find the data table
-                const tables = document.querySelectorAll('table, [role="table"], [role="grid"]');
-                let bestTable = null;
-                let maxRows = 0;
-                for (const t of tables) {
-                    const r = t.querySelectorAll('tr, [role="row"]').length;
-                    if (r > maxRows) { maxRows = r; bestTable = t; }
-                }
-                if (!bestTable) return {headers: [], rows: []};
-
-                // Headers
-                const headerCells = bestTable.querySelectorAll('th, [role="columnheader"]');
-                const headers = Array.from(headerCells).map(h => h.innerText.trim()).filter(h => h);
-
-                // Rows
-                const rowEls = bestTable.querySelectorAll('tbody tr, [role="row"]');
-                const rows = [];
-                for (const r of rowEls) {
-                    const cells = r.querySelectorAll('td, [role="cell"], [role="gridcell"]');
-                    if (cells.length === 0) continue;
-                    const vals = Array.from(cells).map(c => c.innerText.trim());
-                    // Skip empty / checkbox-only rows
-                    const meaningful = vals.filter(v => v && v.length > 1).length;
-                    if (meaningful < 2) continue;
-                    rows.push(vals);
-                }
-
-                return {headers, rows};
+def extract_table(page) -> dict:
+    return page.evaluate("""
+        () => {
+            const tables = [
+                ...document.querySelectorAll('table'),
+                ...document.querySelectorAll('[role="grid"]'),
+                ...document.querySelectorAll('[role="table"]'),
+            ];
+            let best = null, maxR = 0;
+            for (const t of tables) {
+                const r = t.querySelectorAll('tr,[role="row"]').length;
+                if (r > maxR) { maxR = r; best = t; }
             }
-        """)
-        return data
-    except Exception as e:
-        log(f"extract error: {e}")
-        return {"headers": [], "rows": []}
+            if (!best) return {headers:[], rows:[]};
 
+            const hEls = best.querySelectorAll('th,[role="columnheader"]');
+            const headers = Array.from(hEls)
+                .map(h => h.innerText.trim()).filter(h => h);
 
-def click_load_more(page):
-    """Try to click pagination 'next' or 'load more' button."""
-    selectors = [
-        'button:has-text("Next")',
-        'button[aria-label*="next" i]',
-        'button:has-text("Load more")',
-        'button:has-text("Show more")',
-        'button[data-test*="next" i]',
-        'button[data-testid*="next" i]',
-    ]
-    for sel in selectors:
-        try:
-            btn = page.locator(sel).first
-            if btn.is_visible(timeout=1500) and not btn.is_disabled():
-                btn.click()
-                time.sleep(2)
-                return True
-        except Exception:
-            continue
-    return False
+            const rowEls = best.querySelectorAll('tbody tr,[role="row"]');
+            const rows = [];
+            for (const r of rowEls) {
+                const cells = r.querySelectorAll(
+                    'td,[role="cell"],[role="gridcell"]'
+                );
+                if (!cells.length) continue;
+                const vals = Array.from(cells).map(c => c.innerText.trim());
+                if (vals.filter(v => v && v.length > 1).length < 2) continue;
+                rows.push(vals);
+            }
+            return {headers, rows};
+        }
+    """)
 
 
 def main():
     log("=" * 60)
-    log("STRIPE SCRAPER v4 - FULL HISTORICAL")
+    log("STRIPE SCRAPER - FULL HISTORY")
+    log(f"Time: {SCRAPE_TS}")
     log("=" * 60)
 
     cookies_file = Path("stripe_cookies.json")
-    has_session = STRIPE_SESSION_DIR.exists() and any(STRIPE_SESSION_DIR.iterdir()) if STRIPE_SESSION_DIR.exists() else False
-    has_cookies = cookies_file.exists() and cookies_file.stat().st_size > 0
+    has_session  = (
+        STRIPE_SESSION_DIR.exists()
+        and any(STRIPE_SESSION_DIR.iterdir())
+    ) if STRIPE_SESSION_DIR.exists() else False
+    has_cookies  = cookies_file.exists() and cookies_file.stat().st_size > 100
 
     if not has_session and not has_cookies:
-        log("WARNING: No Stripe session or cookies. Skipping Stripe scrape.")
+        log("No Stripe session or cookies - skipping")
         return
 
     with sync_playwright() as p:
@@ -127,102 +109,111 @@ def main():
             user_data_dir=str(STRIPE_SESSION_DIR),
             headless=True,
             viewport={"width": 1600, "height": 1000},
-            args=["--no-sandbox"],
+            args=["--no-sandbox", "--disable-dev-shm-usage"],
         )
 
-        # Inject cookies
         if has_cookies:
             try:
-                raw = json.loads(cookies_file.read_text())
-                normalized = normalize_cookies(raw)
-                ctx.add_cookies(normalized)
-                log(f"Injected {len(normalized)} cookies")
+                raw  = json.loads(cookies_file.read_text())
+                norm = normalize_cookies(raw)
+                ctx.add_cookies(norm)
+                log(f"Injected {len(norm)} cookies")
             except Exception as e:
-                log(f"Cookie injection failed: {e}")
+                log(f"Cookie injection error: {e}")
 
         page = ctx.new_page()
 
         try:
-            log(f"Loading {STRIPE_URL}")
-            page.goto(STRIPE_URL, wait_until="domcontentloaded", timeout=60000)
-            time.sleep(5)
+            log(f"Loading Stripe...")
+            page.goto(
+                STRIPE_URL, wait_until="domcontentloaded", timeout=90000
+            )
+            time.sleep(6)
 
-            # Check if logged in (look for "Customers" header or login screen)
-            page_content = page.content()[:5000].lower()
-            if "log in" in page_content or "sign in" in page_content:
-                if "stripe" in page.url and "login" in page.url:
-                    log("ERROR: Stripe session expired - need fresh cookies")
+            content = page.content().lower()
+            if "log in" in content or "sign in" in content:
+                if "login" in page.url.lower():
+                    log("ERROR: Session expired - need fresh cookies")
                     return
 
-            log("Stripe loaded")
             page.wait_for_load_state("networkidle", timeout=30000)
             time.sleep(3)
+            log("Stripe loaded")
 
-            # Collect all rows across all pages
-            all_rows = []
-            headers = []
-            seen_emails = set()
-            page_num = 1
-            max_pages = 100
+            all_rows    = []
+            headers     = []
+            seen_hashes = set()
+            page_num    = 1
 
-            while page_num <= max_pages:
-                # Scroll to bottom to trigger lazy load
-                page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            while page_num <= 200:
+                page.evaluate(
+                    "window.scrollTo(0, document.body.scrollHeight)"
+                )
                 time.sleep(2)
 
-                data = extract_customers(page)
+                data = extract_table(page)
                 if data["headers"]:
                     headers = data["headers"]
                 if not data["rows"]:
-                    log(f"  Page {page_num}: no rows extracted")
+                    log(f"Page {page_num}: no rows")
                     break
 
-                # Dedup by email-like field
                 new_count = 0
                 for row in data["rows"]:
-                    email_val = None
-                    for v in row:
-                        if isinstance(v, str) and "@" in v and "." in v:
-                            email_val = v.strip().lower()
-                            break
-                    if email_val and email_val in seen_emails:
+                    h = "|".join(row)
+                    if h in seen_hashes:
                         continue
-                    if email_val:
-                        seen_emails.add(email_val)
+                    seen_hashes.add(h)
                     all_rows.append(row)
                     new_count += 1
 
-                log(f"  Page {page_num}: +{new_count} new rows (total: {len(all_rows)})")
+                log(f"Page {page_num}: +{new_count} (total: {len(all_rows)})")
 
                 if new_count == 0:
-                    log(f"  No new rows - done")
                     break
 
-                # Try to go next page
-                if not click_load_more(page):
-                    log(f"  No more pages")
+                clicked = False
+                for sel in [
+                    'button:has-text("Next")',
+                    'button[aria-label*="next" i]',
+                    'button[data-testid*="next" i]',
+                ]:
+                    try:
+                        btn = page.locator(sel).first
+                        if btn.is_visible(timeout=1500):
+                            if not btn.is_disabled():
+                                btn.click()
+                                clicked = True
+                                page_num += 1
+                                time.sleep(3)
+                                break
+                    except Exception:
+                        continue
+                if not clicked:
                     break
-                page_num += 1
-                time.sleep(2)
 
             # Build enriched rows
             enriched = []
             for row in all_rows:
-                d = {}
-                for i, h in enumerate(headers):
-                    d[h] = row[i] if i < len(row) else ""
-                # Make sure we have an Email field even if header was different
-                if "Email" not in d and "email" not in d:
+                d = {
+                    headers[i]: row[i] if i < len(row) else ""
+                    for i, _ in enumerate(headers)
+                }
+                if "Email" not in d:
                     for v in row:
-                        if isinstance(v, str) and "@" in v and "." in v:
+                        if isinstance(v, str) and "@" in v:
                             d["Email"] = v
                             break
-                d["__scraped_at__"] = SCRAPE_TS
+                d["__scraped_at__"]  = SCRAPE_TS
+                d["__scrape_date__"] = SCRAPE_DATE
                 enriched.append(d)
 
-            log(f"Total Stripe customers: {len(enriched)}")
+            log(f"Total: {len(enriched)} Stripe customers")
+
             if enriched:
-                write_tab_data("STRIPE", enriched)
+                # PRIMARY: Sheets. FALLBACK: CSV
+                ok = write_tab_data("Raw_STRIPE", enriched)
+                log(f"Sheets write: {'OK' if ok else 'FAILED -> CSV fallback used'}")
 
         except Exception as e:
             log(f"FATAL: {e}")
