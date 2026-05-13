@@ -15,7 +15,7 @@ DATA_DIR.mkdir(exist_ok=True)
 
 MASTER_SHEET_URL = os.environ.get(
     "MASTER_SHEET_URL",
-    "https://docs.google.com/spreadsheets/d/1skn4jfyctfusixCfK1_zr8IzVIDNcm-5qY1xWx6AH0E"
+    "https://docs.google.com/spreadsheets/d/1E5PI3-m7mTMKRQ4Cy-WqpVCo5dQjbICcA2EnrC9ORE4"
 )
 
 SCOPES = [

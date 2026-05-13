@@ -31,7 +31,7 @@ STRIPE_SUBSCRIPTIONS_URL = "https://dashboard.stripe.com/acct_1J7M5XIKrnGFhGm1/s
 #  GOOGLE SHEETS
 # ─────────────────────────────────────────────────────────────────
 GOOGLE_CREDS_FILE = PROJECT_ROOT / "google_creds.json"
-MASTER_SHEET_URL = "https://docs.google.com/spreadsheets/d/1skn4jfyctfusixCfK1_zr8IzVIDNcm-5qY1xWx6AH0E/edit?gid=0#gid=0"
+MASTER_SHEET_URL = "https://docs.google.com/spreadsheets/d/1E5PI3-m7mTMKRQ4Cy-WqpVCo5dQjbICcA2EnrC9ORE4/edit?gid=0#gid=0"
 OLD_DATABASE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1tEaUA2hGxuHw3E9n0TzyaEUz9MIlpQGoZy-WQz0NwSc/edit"
 ACCURATE_DATA_SHEET_URL = "https://docs.google.com/spreadsheets/d/1lwffyXWOa7Q7xim2EX9i4AdIs7dtkjOPyKYVBtPpfgY/edit"
 
@@ -104,3 +104,8 @@ DAILY_RUN_MINUTE = 0
 #  DASHBOARD
 # ─────────────────────────────────────────────────────────────────
 DASHBOARD_PORT = 8501
+
+
+# ── Added by fix script ──
+KPI_USERNAME = "fozayel"  # UPDATE THIS
+KPI_PASSWORD = "Eagle@2024"  # UPDATE THIS
