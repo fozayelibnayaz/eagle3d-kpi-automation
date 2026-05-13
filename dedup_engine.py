@@ -1,162 +1,178 @@
 """
-DEDUPLICATION ENGINE v2 - DATE AWARE
-Pulls full history from old DB with their original dates.
-A user is DUPLICATE only if they appear in DB on a date EARLIER than today.
-Same-date entries are NOT duplicates (it is the same record being captured).
+dedup_engine.py
+LAYER 4 - DEDUPLICATION ENGINE
+- Pulls full history from old Google Sheet (read-only)
+- Normalizes emails (lowercase, strip +aliases, gmail dots)
+- Flags: NEW / DUPLICATE / SUSPICIOUS
 """
-import gspread
+import os
+import json
+from pathlib import Path
 from datetime import datetime
-from dateutil import parser as dateparser
-from google.oauth2.service_account import Credentials
-from config import GOOGLE_CREDS_FILE, OLD_DATABASE_SHEET_URL, OLD_SHEET_EMAIL_COLUMN_HINTS
+from email_validator_engine import normalize_email
 
-SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+DATA_DIR = Path("data_output")
+DATA_DIR.mkdir(exist_ok=True)
 
-# Cache structure: {normalized_email: [list of dates seen in old DB]}
-_history_cache = None
-
-# Date column hints in old DB
-DATE_COLUMN_HINTS = ["date", "created", "registered", "signed", "signup",
-                     "added", "updated", "time", "timestamp"]
+OLD_DB_CACHE = DATA_DIR / "old_db_emails.json"
 
 
-def normalize_email(email: str) -> str:
-    if not email or "@" not in email:
-        return (email or "").strip().lower()
-    email = email.strip().lower()
-    local, domain = email.rsplit("@", 1)
-    if "+" in local:
-        local = local.split("+", 1)[0]
-    if domain in ("gmail.com", "googlemail.com"):
-        local = local.replace(".", "")
-        domain = "gmail.com"
-    return f"{local}@{domain}"
+def log(msg):
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] [Dedup] {msg}", flush=True)
 
 
-def parse_any_date(s):
-    """Try to parse any date string. Returns date object or None."""
-    if not s:
-        return None
-    s = str(s).strip()
-    if not s:
-        return None
+def load_old_database_emails() -> dict:
+    """
+    Load all emails from old database sheet for dedup.
+    Returns dict of {normalized_email: original_data}
+    Cached to disk for performance.
+    """
+    old_db_url = os.environ.get(
+        "OLD_DATABASE_SHEET_URL",
+        "https://docs.google.com/spreadsheets/d/1tEaUA2hGxuHw3E9n0TzyaEUz9MIlpQGoZy-WQz0NwSc"
+    )
+    
+    if not old_db_url:
+        log("No OLD_DATABASE_SHEET_URL set - skipping old DB dedup")
+        return {}
+    
+    # Check cache (refresh daily)
+    if OLD_DB_CACHE.exists():
+        age_hours = (datetime.now().timestamp() - OLD_DB_CACHE.stat().st_mtime) / 3600
+        if age_hours < 24:
+            try:
+                cache = json.load(open(OLD_DB_CACHE))
+                log(f"Using cached old DB: {len(cache)} emails")
+                return cache
+            except Exception:
+                pass
+    
+    # Fetch from old sheet
+    log(f"Fetching old DB from {old_db_url[:60]}...")
+    emails = {}
+    
     try:
-        return dateparser.parse(s, fuzzy=True).date()
-    except Exception:
-        return None
-
-
-def find_email_columns(headers):
-    return [i for i, h in enumerate(headers)
-            if any(hint in (h or "").strip().lower()
-                   for hint in OLD_SHEET_EMAIL_COLUMN_HINTS)]
-
-
-def find_date_columns(headers):
-    return [i for i, h in enumerate(headers)
-            if any(hint in (h or "").strip().lower()
-                   for hint in DATE_COLUMN_HINTS)]
-
-
-def fetch_historical_emails():
-    """Build {email: [dates]} map from all historical entries."""
-    global _history_cache
-    if _history_cache is not None:
-        return _history_cache
-
-    print("   [Dedup v2] Loading history with dates from old DB...")
-    creds = Credentials.from_service_account_file(str(GOOGLE_CREDS_FILE), scopes=SCOPES)
-    gc = gspread.authorize(creds)
-
-    try:
-        sh = gc.open_by_url(OLD_DATABASE_SHEET_URL)
-    except Exception as e:
-        print(f"   [Dedup v2] Failed to open old DB: {e}")
-        _history_cache = {}
-        return _history_cache
-
-    history = {}  # {email: [date1, date2, ...]}
-
-    for ws in sh.worksheets():
-        try:
-            records = ws.get_all_values()
-            if len(records) < 2:
-                continue
-
-            headers = [h.strip() for h in records[0]]
-            email_cols = find_email_columns(headers)
-            date_cols = find_date_columns(headers)
-
-            if not email_cols:
-                continue
-
-            for row in records[1:]:
-                # Try to find the row date - first non-empty parseable date column
-                row_date = None
-                for d_idx in date_cols:
-                    if d_idx < len(row):
-                        parsed = parse_any_date(row[d_idx])
-                        if parsed:
-                            row_date = parsed
+        from sheets_writer import _get_client
+        gc, _ = _get_client()
+        old_ss = gc.open_by_url(old_db_url)
+        
+        for ws in old_ss.worksheets():
+            try:
+                rows = ws.get_all_records()
+                for r in rows:
+                    # Find email field
+                    email = ""
+                    for k in ("Email","email","EMAIL","Email Address","email_address"):
+                        if k in r and r[k] and "@" in str(r[k]):
+                            email = str(r[k]).strip()
                             break
-
-                # Process all email columns in this row
-                for e_idx in email_cols:
-                    if e_idx < len(row):
-                        val = row[e_idx].strip()
-                        if val and "@" in val:
-                            norm = normalize_email(val)
-                            if norm:
-                                if norm not in history:
-                                    history[norm] = []
-                                history[norm].append(row_date)
+                    if not email:
+                        # Scan all values
+                        for v in r.values():
+                            if isinstance(v, str) and "@" in v and "." in v:
+                                email = v.strip()
+                                break
+                    
+                    if email:
+                        norm = normalize_email(email)
+                        if norm not in emails:
+                            emails[norm] = {
+                                "original_email": email,
+                                "tab": ws.title,
+                                "found_in_old_db": True,
+                            }
+                log(f"  {ws.title}: {len(rows)} rows scanned")
+            except Exception as e:
+                log(f"  {ws.title}: error - {e}")
+        
+        # Cache
+        try:
+            json.dump(emails, open(OLD_DB_CACHE,"w"), indent=2, default=str)
         except Exception as e:
-            print(f"   [Dedup v2] Tab '{ws.title}' skipped: {e}")
+            log(f"Cache save failed: {e}")
+        
+    except Exception as e:
+        log(f"Old DB fetch failed: {e}")
+    
+    log(f"Old DB total unique emails: {len(emails)}")
+    return emails
+
+
+def deduplicate(rows: list, old_db_emails: dict = None) -> tuple:
+    """
+    Deduplicate rows.
+    Returns (unique_rows, duplicate_rows).
+    
+    Each row gets flagged:
+      __dedup_status__: NEW | DUPLICATE_IN_BATCH | DUPLICATE_OLD_DB
+      __normalized_email__: normalized version
+    """
+    if old_db_emails is None:
+        old_db_emails = {}
+    
+    seen_in_batch = set()
+    unique     = []
+    duplicates = []
+    
+    new_count = 0
+    in_old_db_count = 0
+    dup_in_batch_count = 0
+    
+    for row in rows:
+        email = ""
+        for k in ("Email","email","__email_normalized__"):
+            if k in row and row[k] and "@" in str(row[k]):
+                email = str(row[k]).strip()
+                break
+        
+        if not email:
+            duplicates.append({**row, "__dedup_status__":"NO_EMAIL"})
             continue
-
-    print(f"   [Dedup v2] Loaded {len(history)} unique emails with date history.")
-    _history_cache = history
-    return history
-
-
-def check_lead_status(email, current_scrape_date=None):
-    """
-    Determine if email is NEW or DUPLICATE based on date logic.
-
-    Args:
-        email: the email to check
-        current_scrape_date: a date object representing TODAY (when the user
-                            was captured). Defaults to today.
-
-    Returns:
-        "DUPLICATE" if email exists in old DB on a date EARLIER than current_scrape_date.
-        "NEW" otherwise (including same-date matches and not-in-DB).
-    """
-    if current_scrape_date is None:
-        current_scrape_date = datetime.now().date()
-    elif isinstance(current_scrape_date, datetime):
-        current_scrape_date = current_scrape_date.date()
-
-    history = fetch_historical_emails()
-    norm = normalize_email(email)
-
-    if norm not in history:
-        return "NEW"
-
-    past_dates = history[norm]
-
-    # Filter for valid dates that are STRICTLY EARLIER than today
-    earlier_dates = [d for d in past_dates if d is not None and d < current_scrape_date]
-
-    if earlier_dates:
-        return "DUPLICATE"
-
-    # All matches are either same-date or undated -> treat as NEW
-    return "NEW"
+        
+        normalized = normalize_email(email)
+        
+        # Check batch dup
+        if normalized in seen_in_batch:
+            duplicates.append({
+                **row,
+                "__normalized_email__": normalized,
+                "__dedup_status__": "DUPLICATE_IN_BATCH",
+            })
+            dup_in_batch_count += 1
+            continue
+        
+        seen_in_batch.add(normalized)
+        
+        # Check old DB
+        in_old_db = normalized in old_db_emails
+        if in_old_db:
+            in_old_db_count += 1
+        else:
+            new_count += 1
+        
+        unique.append({
+            **row,
+            "__normalized_email__": normalized,
+            "__dedup_status__": "DUPLICATE_OLD_DB" if in_old_db else "NEW",
+            "__in_old_db__": "yes" if in_old_db else "no",
+        })
+    
+    log(f"Dedup result: {len(unique)} unique ({new_count} NEW, {in_old_db_count} in old DB), {dup_in_batch_count} batch dups")
+    return unique, duplicates
 
 
-def get_history_dates_for_email(email):
-    """Diagnostic helper - returns list of dates this email was seen."""
-    history = fetch_historical_emails()
-    norm = normalize_email(email)
-    return history.get(norm, [])
+if __name__ == "__main__":
+    # Test
+    emails_db = load_old_database_emails()
+    test = [
+        {"Email":"test@gmail.com"},
+        {"Email":"Test@Gmail.com"},  # dup of above (case)
+        {"Email":"test+tag@gmail.com"},  # dup of above (alias)
+        {"Email":"new@example.com"},
+    ]
+    unique, dups = deduplicate(test, emails_db)
+    print(f"Unique: {len(unique)}, Dups: {len(dups)}")
+    for r in unique:
+        print(f"  UNIQUE: {r}")
+    for r in dups:
+        print(f"  DUP: {r}")

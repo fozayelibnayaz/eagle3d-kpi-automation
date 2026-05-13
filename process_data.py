@@ -1,16 +1,24 @@
 """
 process_data.py
-SOURCE:  Google Sheets Raw_FREE, Raw_FIRST_UPLOAD, Raw_STRIPE
-OUTPUT:  Google Sheets Verified_FREE, Verified_FIRST_UPLOAD, Verified_STRIPE
-FALLBACK: CSV only if Sheets read/write fails
+ORCHESTRATOR: runs Layers 3, 4, 5 in sequence.
+  Layer 3: Email validation
+  Layer 4: Deduplication (vs old DB)
+  Layer 5: ML scoring
+
+Reads:  Raw_FREE, Raw_FIRST_UPLOAD, Raw_STRIPE
+Writes: Verified_FREE, Verified_FIRST_UPLOAD, Verified_STRIPE
 """
 import csv
 import json
-import re
+import os
 from pathlib import Path
 from datetime import datetime
+from collections import Counter
 
-from sheets_writer import read_tab_data, write_tab_data
+from sheets_writer import write_tab_data, read_tab_data
+from email_validator_engine import validate_batch
+from dedup_engine import load_old_database_emails, deduplicate
+from ml_intelligence import score_rows, needs_retrain, train_models
 
 DATA_DIR   = Path("data_output")
 DATA_DIR.mkdir(exist_ok=True)
@@ -18,183 +26,178 @@ PROCESS_TS = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
 def log(msg):
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] [ProcessData] {msg}", flush=True)
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] [Process] {msg}", flush=True)
 
 
-DISPOSABLE = {
-    "mailinator.com","guerrillamail.com","tempmail.com","throwaway.email",
-    "yopmail.com","sharklasers.com","grr.la","spam4.me","trashmail.com",
-    "maildrop.cc","dispostable.com","fakeinbox.com","trashmail.me",
-    "discard.email","mailnesia.com","tempr.email","0-mail.com","0815.ru",
-}
-INTERNAL = {"eagle3dstreaming.com","eagle3d.com"}
-SUSPICIOUS = [
-    r'^test\d*@', r'^demo\d*@', r'^fake\d*@', r'^sample\d*@',
-    r'^noreply@', r'^no-reply@', r'^donotreply@',
-]
-
-
-def extract_email(row: dict) -> str:
-    for k in ("Email","email","EMAIL","Email Address",
-              "__email_normalized__"):
-        if k in row and row[k] and "@" in str(row[k]):
-            return str(row[k]).strip()
-    for v in row.values():
-        if isinstance(v,str) and "@" in v and "." in v and len(v)<200:
-            return v.strip()
-    return ""
-
-
-def validate_email(email: str) -> tuple:
-    if not email or "@" not in email:
-        return False, "no_email"
-    e = email.strip().lower()
-    parts = e.split("@")
-    if len(parts) != 2:
-        return False, "malformed"
-    local, domain = parts
-    if not local or not domain or "." not in domain:
-        return False, "missing_parts"
-    if len(e) > 254 or len(local) > 64:
-        return False, "too_long"
-    if domain in DISPOSABLE:
-        return False, "disposable"
-    if domain in INTERNAL:
-        return False, "internal"
-    for pat in SUSPICIOUS:
-        if re.match(pat, e):
-            return False, "suspicious"
-    if not re.match(
-        r'^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$', e
-    ):
-        return False, "invalid_format"
+# ─── APPEND MODE ───────────────────────────────────────
+def merge_with_existing(tab_name: str, new_rows: list) -> list:
     try:
-        from email_validator import validate_email as lib_val
-        lib_val(e, check_deliverability=False)
-    except ImportError:
-        pass
-    except Exception as ex:
-        return False, f"lib:{ex}"
-    return True, "ok"
+        existing = read_tab_data(tab_name)
+        log(f"  Existing in {tab_name}: {len(existing)} rows")
+    except Exception:
+        existing = []
 
+    by_email = {}
+    for r in existing:
+        for k in ("__normalized_email__","__email_normalized__","Email","email"):
+            if k in r and r[k] and "@" in str(r[k]):
+                by_email[str(r[k]).strip().lower()] = r
+                break
 
-def ml_score(row: dict) -> float:
-    score  = 0.5
-    email  = extract_email(row).lower()
-    domain = email.split("@")[-1] if "@" in email else ""
-    local  = email.split("@")[0]  if "@" in email else ""
-    PRO = {
-        "gmail.com","yahoo.com","hotmail.com","outlook.com",
-        "icloud.com","protonmail.com","me.com","live.com",
-    }
-    if domain in PRO: score += 0.1
-    if re.match(r'^[a-zA-Z]+[\.\-_]?[a-zA-Z]+$', local): score += 0.15
-    if local.isdigit(): score -= 0.2
-    for k, v in row.items():
-        if ("created" in k.lower() or "date" in k.lower()) and v:
-            score += 0.1
-            break
-    return round(min(max(score, 0.0), 1.0), 3)
-
-
-def process_tab(tab_key: str) -> dict:
-    log(f"{'─'*50}")
-    log(f"Processing: {tab_key}")
-
-    # Read from Sheets (primary) or CSV fallback
-    source = read_tab_data(f"Raw_{tab_key}")
-    if not source:
-        log(f"{tab_key}: no source data")
-        return {"tab":tab_key,"source":0,"verified":0,"skipped":0}
-
-    log(f"{tab_key}: {len(source)} rows from source")
-
-    verified = []
-    skipped  = []
-    seen     = set()
-
-    for row in source:
-        email = extract_email(row)
+    new_count = updated_count = 0
+    for r in new_rows:
+        email = ""
+        for k in ("__normalized_email__","__email_normalized__","Email"):
+            if k in r and r[k]:
+                email = str(r[k]).strip().lower()
+                break
         if email:
-            dom = email.split("@")[-1].lower()
-            if dom in INTERNAL:
-                skipped.append({**row,"__skip_reason__":"internal"})
-                continue
+            if email in by_email:
+                old = by_email[email]
+                merged = {**old, **r}
+                if "__first_processed_at__" not in merged:
+                    merged["__first_processed_at__"] = old.get("__processed_at__", PROCESS_TS)
+                else:
+                    merged["__first_processed_at__"] = old.get("__first_processed_at__", PROCESS_TS)
+                by_email[email] = merged
+                updated_count += 1
+            else:
+                r["__first_processed_at__"] = PROCESS_TS
+                by_email[email] = r
+                new_count += 1
 
-        ok, reason = validate_email(email)
-        if not ok:
-            skipped.append({**row,"__skip_reason__":reason})
-            continue
+    log(f"  After merge: {len(by_email)} (+{new_count} new, {updated_count} updated)")
+    return list(by_email.values())
 
-        key = email.strip().lower()
-        if key in seen:
-            skipped.append({**row,"__skip_reason__":"duplicate"})
-            continue
-        seen.add(key)
 
-        verified.append({
-            **row,
-            "__email_normalized__":  key,
-            "__ml_score__":          ml_score(row),
-            "__processed_at__":      PROCESS_TS,
-            "__validation_status__": "verified",
-        })
+def process_tab(raw_tab: str, verified_tab: str, old_db_emails: dict) -> dict:
+    log(f"{'─'*60}")
+    log(f"PROCESSING: {raw_tab} → {verified_tab}")
+    log(f"{'─'*60}")
 
-    log(
-        f"{tab_key}: {len(source)} -> "
-        f"{len(verified)} verified, {len(skipped)} skipped"
-    )
+    source = read_tab_data(raw_tab)
+    log(f"  [Layer 1] Source rows: {len(source)}")
 
-    if skipped:
-        sp = DATA_DIR / f"Skipped_{tab_key}.csv"
-        try:
-            sf = sorted({k for r in skipped for k in r.keys()})
-            with open(sp,"w",newline="",encoding="utf-8") as f:
-                w = csv.DictWriter(f,fieldnames=sf,extrasaction="ignore")
-                w.writeheader()
-                w.writerows(skipped)
-        except Exception as e:
-            log(f"Skipped log error: {e}")
+    if not source:
+        log(f"  NO DATA - skipping")
+        return {"raw_tab": raw_tab, "source": 0, "verified": 0,
+                "validated": 0, "deduplicated": 0, "skipped": 0}
 
-    if verified:
-        # PRIMARY: Sheets. FALLBACK: CSV (inside write_tab_data)
-        ok = write_tab_data(f"Verified_{tab_key}", verified)
-        log(f"Verified_{tab_key}: Sheets={'OK' if ok else 'FAILED->CSV'}")
+    # ─── Layer 3: Email Validation ───
+    log(f"  [Layer 3] Running email validation...")
+    check_dns = os.environ.get("CHECK_MX","1") == "1"
+    log(f"    MX check: {'enabled' if check_dns else 'disabled'}")
+    validated, val_skipped = validate_batch(source, check_dns=check_dns)
+    log(f"    Validated: {len(validated)}, Skipped: {len(val_skipped)}")
+
+    # Log skip reasons
+    if val_skipped:
+        skip_reasons = Counter(r.get("__skip_reason__","unknown") for r in val_skipped)
+        for reason, count in skip_reasons.most_common(10):
+            log(f"      {reason:30s}: {count}")
+
+    # ─── Layer 4: Deduplication ───
+    log(f"  [Layer 4] Running deduplication...")
+    unique, dups = deduplicate(validated, old_db_emails)
+    log(f"    Unique: {len(unique)}, Duplicates: {len(dups)}")
+
+    # ─── Layer 5: ML Scoring ───
+    log(f"  [Layer 5] Running ML scoring...")
+    scored = score_rows(unique)
+    log(f"    Scored: {len(scored)}")
+
+    # Add processing metadata
+    for r in scored:
+        r["__processed_at__"] = PROCESS_TS
+        r["__pipeline_version__"] = "v3"
+
+    # Save skipped/dup logs
+    for label, data in [("Skipped", val_skipped), ("Duplicates", dups)]:
+        if data:
+            sp = DATA_DIR / f"{label}_{verified_tab}.csv"
+            try:
+                fields = sorted({k for r in data for k in r.keys()})
+                with open(sp,"w",newline="",encoding="utf-8") as f:
+                    w = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
+                    w.writeheader()
+                    w.writerows(data)
+                log(f"  {label} log: {sp} ({len(data)} rows)")
+            except Exception as e:
+                log(f"  {label} log error: {e}")
+
+    # ─── Layer 6: Write to Sheets (APPEND mode) ───
+    if scored:
+        log(f"  [Layer 6] Writing to Sheets...")
+        merged = merge_with_existing(verified_tab, scored)
+        ok = write_tab_data(verified_tab, merged)
+        log(f"    Sheets write: {'OK' if ok else 'FAILED/CSV'}")
 
     return {
-        "tab":      tab_key,
-        "source":   len(source),
-        "verified": len(verified),
-        "skipped":  len(skipped),
+        "raw_tab":      raw_tab,
+        "verified_tab": verified_tab,
+        "source":       len(source),
+        "validated":    len(validated),
+        "deduplicated": len(unique),
+        "verified":     len(scored),
+        "skipped":      len(val_skipped),
+        "duplicates":   len(dups),
     }
 
 
 def main():
     log("=" * 60)
-    log(f"PROCESS DATA - {PROCESS_TS}")
+    log("PROCESS DATA - Full pipeline (Layers 3, 4, 5)")
+    log(f"Time: {PROCESS_TS}")
     log("=" * 60)
+
+    # Retrain models if needed (weekly)
+    if needs_retrain():
+        log("Models need retraining...")
+        try:
+            train_models()
+        except Exception as e:
+            log(f"Training failed (will use heuristics): {e}")
+
+    # Load old DB for dedup
+    old_db_emails = load_old_database_emails()
+    log(f"Old DB emails loaded: {len(old_db_emails)}")
+
+    TAB_MAP = {
+        "Raw_FREE":         "Verified_FREE",
+        "Raw_FIRST_UPLOAD": "Verified_FIRST_UPLOAD",
+        "Raw_STRIPE":       "Verified_STRIPE",
+    }
 
     results = []
-    for tab in ("FREE","FIRST_UPLOAD","STRIPE"):
-        r = process_tab(tab)
-        results.append(r)
+    for raw_tab, verified_tab in TAB_MAP.items():
+        try:
+            r = process_tab(raw_tab, verified_tab, old_db_emails)
+            results.append(r)
+        except Exception as e:
+            log(f"Error processing {raw_tab}: {e}")
+            import traceback
+            traceback.print_exc()
+            results.append({"raw_tab": raw_tab, "error": str(e)})
 
     log("=" * 60)
-    log("SUMMARY")
+    log("FINAL SUMMARY")
     log("=" * 60)
     for r in results:
-        log(
-            f"  {r['tab']:20s}: "
-            f"source={r['source']:4d}  "
-            f"verified={r['verified']:4d}  "
-            f"skipped={r['skipped']:4d}"
-        )
+        if "error" in r:
+            log(f"  {r['raw_tab']:25s} ERROR: {r['error']}")
+        else:
+            log(f"  {r['raw_tab']:25s}: "
+                f"{r['source']:>4} src → "
+                f"{r['validated']:>4} valid → "
+                f"{r['deduplicated']:>4} unique → "
+                f"{r['verified']:>4} scored")
 
     try:
-        with open(DATA_DIR / "processing_report.json","w") as f:
+        with open(DATA_DIR/"processing_report.json","w") as f:
             json.dump({
                 "processed_at": PROCESS_TS,
-                "results": results
+                "old_db_count": len(old_db_emails),
+                "results": results,
             }, f, indent=2, default=str)
     except Exception as e:
         log(f"Report save: {e}")
