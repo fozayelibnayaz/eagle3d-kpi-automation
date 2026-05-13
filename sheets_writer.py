@@ -1,13 +1,14 @@
 """
 sheets_writer.py
+NEW SHEET: https://docs.google.com/spreadsheets/d/1skn4jfyctfusixCfK1_zr8IzVIDNcm-5qY1xWx6AH0E
 PRIMARY destination: Google Sheets
-FALLBACK destination: CSV (ONLY if Sheets write fails)
-Google Drive storage is fixed - Sheets is the main store.
+FALLBACK: CSV only if Sheets write fails
+DATA SOURCE: KPI Dashboard scraper + Stripe scraper (NOT old sheet data)
 """
 import csv
-import json
 import os
 import tempfile
+import json
 from pathlib import Path
 from datetime import datetime
 
@@ -22,9 +23,10 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive",
 ]
 
+# ← NEW CLEAN SHEET
 MASTER_SHEET_URL = os.environ.get(
     "MASTER_SHEET_URL",
-    "https://docs.google.com/spreadsheets/d/1E5PI3-m7mTMKRQ4Cy-WqpVCo5dQjbICcA2EnrC9ORE4"
+    "https://docs.google.com/spreadsheets/d/1skn4jfyctfusixCfK1_zr8IzVIDNcm-5qY1xWx6AH0E"
 )
 
 _client = None
@@ -52,7 +54,7 @@ def _get_client():
         creds_file = tmp.name
 
     if not os.path.exists(creds_file):
-        raise FileNotFoundError(f"No credentials: {creds_file}")
+        raise FileNotFoundError(f"No credentials file: {creds_file}")
 
     creds   = Credentials.from_service_account_file(creds_file, scopes=SCOPES)
     client  = gspread.authorize(creds)
@@ -60,7 +62,7 @@ def _get_client():
 
     _client = client
     _ss     = ss
-    log(f"Connected to: '{ss.title}'")
+    log(f"Connected: '{ss.title}' (ID: {ss.id})")
     return _client, _ss
 
 
@@ -69,23 +71,24 @@ def test_connection() -> bool:
         _get_client()
         return True
     except Exception as e:
-        log(f"Connection test failed: {e}")
+        log(f"Connection failed: {e}")
         return False
 
 
-def _get_or_create_worksheet(ss, tab_name: str, rows=5000, cols=50):
+def _get_or_create_ws(ss, tab_name: str, rows=10000, cols=50):
     try:
         return ss.worksheet(tab_name)
     except gspread.WorksheetNotFound:
         ws = ss.add_worksheet(title=tab_name, rows=rows, cols=cols)
-        log(f"Created new worksheet: {tab_name}")
+        log(f"Created new tab: '{tab_name}'")
         return ws
 
 
 def write_tab_data(tab_name: str, rows: list) -> bool:
     """
-    Write rows to Google Sheets (PRIMARY).
-    If Sheets fails -> write to CSV (FALLBACK).
+    Write rows to Sheets tab (PRIMARY).
+    Overwrites tab completely each time.
+    Falls back to CSV only if Sheets fails.
     Returns True if Sheets write succeeded.
     """
     if not rows:
@@ -93,14 +96,13 @@ def write_tab_data(tab_name: str, rows: list) -> bool:
         return False
 
     fields = sorted({k for r in rows for k in r.keys()})
-    log(f"{tab_name}: writing {len(rows)} rows to Sheets...")
+    log(f"{tab_name}: writing {len(rows)} rows, {len(fields)} columns...")
 
     # ── PRIMARY: Google Sheets ──
     try:
         client, ss = _get_client()
-        ws = _get_or_create_worksheet(ss, tab_name)
+        ws = _get_or_create_ws(ss, tab_name)
 
-        # Build matrix
         matrix = [fields]
         for row in rows:
             matrix.append([str(row.get(f, "")) for f in fields])
@@ -109,61 +111,27 @@ def write_tab_data(tab_name: str, rows: list) -> bool:
         ws.update("A1", matrix)
 
         # Verify
-        rb = ws.get_all_values()
-        actual = len(rb) - 1  # minus header
+        rb     = ws.get_all_values()
+        actual = len(rb) - 1
         if actual == len(rows):
-            log(f"{tab_name}: Sheets write OK - {len(rows)} rows verified")
+            log(f"{tab_name}: Sheets OK - {len(rows)} rows written and verified")
             return True
         else:
-            log(f"{tab_name}: Sheets verify MISMATCH wrote={len(rows)} read={actual}")
-            # Fall through to CSV fallback
+            log(f"{tab_name}: MISMATCH wrote={len(rows)} verified={actual}")
 
     except Exception as e:
-        log(f"{tab_name}: Sheets write FAILED: {e}")
-        log(f"{tab_name}: Falling back to CSV...")
+        log(f"{tab_name}: Sheets FAILED ({e}) -> CSV fallback")
 
-    # ── FALLBACK: CSV (only if Sheets failed) ──
-    _write_csv_fallback(tab_name, rows, fields)
+    # ── FALLBACK: CSV ──
+    _csv_fallback_write(tab_name, rows, fields)
     return False
-
-
-def append_tab_rows(tab_name: str, new_rows: list) -> bool:
-    """
-    Append new rows to a Sheets tab (for Daily_Report style accumulation).
-    If Sheets fails -> append to CSV.
-    """
-    if not new_rows:
-        return False
-
-    try:
-        client, ss = _get_client()
-        ws = _get_or_create_worksheet(ss, tab_name)
-
-        existing = ws.get_all_values()
-        if existing:
-            headers = existing[0]
-        else:
-            headers = sorted({k for r in new_rows for k in r.keys()})
-            ws.append_row(headers)
-
-        for row in new_rows:
-            ws.append_row([str(row.get(h, "")) for h in headers])
-
-        log(f"{tab_name}: appended {len(new_rows)} rows to Sheets")
-        return True
-
-    except Exception as e:
-        log(f"{tab_name}: Sheets append failed: {e} -> CSV fallback")
-        _append_csv_fallback(tab_name, new_rows)
-        return False
 
 
 def read_tab_data(tab_name: str) -> list:
     """
-    Read from Google Sheets (PRIMARY).
-    If fails -> read from CSV.
+    Read rows from Sheets tab (PRIMARY).
+    Falls back to CSV if Sheets fails.
     """
-    # ── PRIMARY: Sheets ──
     try:
         client, ss = _get_client()
         ws   = ss.worksheet(tab_name)
@@ -171,13 +139,16 @@ def read_tab_data(tab_name: str) -> list:
         log(f"{tab_name}: read {len(rows)} rows from Sheets")
         return rows
     except gspread.WorksheetNotFound:
-        log(f"{tab_name}: worksheet not found in Sheets")
+        log(f"{tab_name}: tab not found in Sheets")
     except Exception as e:
-        log(f"{tab_name}: Sheets read failed: {e} -> trying CSV")
+        log(f"{tab_name}: Sheets read failed ({e}) -> CSV fallback")
 
     # ── FALLBACK: CSV ──
-    for fname in (f"{tab_name}.csv", f"Raw_{tab_name}.csv",
-                  f"Verified_{tab_name}.csv", f"ARCHIVE_{tab_name}.csv"):
+    for fname in (
+        f"{tab_name}.csv",
+        f"Raw_{tab_name}.csv",
+        f"Verified_{tab_name}.csv",
+    ):
         path = DATA_DIR / fname
         if path.exists() and path.stat().st_size > 0:
             try:
@@ -186,65 +157,50 @@ def read_tab_data(tab_name: str) -> list:
                 log(f"{tab_name}: read {len(rows)} rows from {fname}")
                 return rows
             except Exception as e:
-                log(f"CSV read error {fname}: {e}")
+                log(f"CSV read error: {e}")
 
-    log(f"{tab_name}: no data found anywhere")
+    log(f"{tab_name}: no data found")
     return []
 
 
-def write_run_summary(summary: dict) -> bool:
-    """Append one summary row to Daily_Report sheet."""
+def append_row_to_tab(tab_name: str, row: dict) -> bool:
+    """Append a single row to a tab (for Daily_Report log)."""
     try:
         client, ss = _get_client()
-        ws = _get_or_create_worksheet(ss, "Daily_Report")
+        ws = _get_or_create_ws(ss, tab_name)
 
         existing = ws.get_all_values()
-        headers  = existing[0] if existing else list(summary.keys())
-
-        if not existing:
+        if existing:
+            headers = existing[0]
+        else:
+            headers = sorted(row.keys())
             ws.append_row(headers)
 
-        ws.append_row([str(summary.get(h, "")) for h in headers])
-        log(f"Daily_Report: summary appended to Sheets")
+        ws.append_row([str(row.get(h, "")) for h in headers])
+        log(f"{tab_name}: row appended")
         return True
 
     except Exception as e:
-        log(f"Daily_Report Sheets failed: {e} -> CSV fallback")
-        _append_csv_fallback("Daily_Report", [summary])
+        log(f"{tab_name}: append failed ({e})")
         return False
 
 
-def _write_csv_fallback(tab_name: str, rows: list, fields: list):
-    """Write CSV only as fallback when Sheets is unavailable."""
-    csv_path = DATA_DIR / f"{tab_name}.csv"
+def write_run_summary(summary: dict) -> bool:
+    """Append pipeline run summary to Daily_Report tab."""
     try:
-        with open(csv_path, "w", newline="", encoding="utf-8") as f:
+        return append_row_to_tab("Daily_Report", summary)
+    except Exception as e:
+        log(f"write_run_summary failed: {e}")
+        return False
+
+
+def _csv_fallback_write(tab_name: str, rows: list, fields: list):
+    path = DATA_DIR / f"{tab_name}.csv"
+    try:
+        with open(path, "w", newline="", encoding="utf-8") as f:
             w = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
             w.writeheader()
             w.writerows(rows)
-        log(f"{tab_name}: CSV fallback written -> {csv_path} ({len(rows)} rows)")
+        log(f"{tab_name}: CSV fallback -> {path} ({len(rows)} rows)")
     except Exception as e:
         log(f"{tab_name}: CSV fallback ALSO failed: {e}")
-
-
-def _append_csv_fallback(tab_name: str, rows: list):
-    """Append to CSV fallback file."""
-    csv_path = DATA_DIR / f"{tab_name}.csv"
-    try:
-        fields   = sorted({k for r in rows for k in r.keys()})
-        existing = []
-        if csv_path.exists():
-            with open(csv_path, "r", newline="", encoding="utf-8") as f:
-                existing = list(csv.DictReader(f))
-                if existing:
-                    for k in existing[0].keys():
-                        if k not in fields:
-                            fields.append(k)
-        existing.extend(rows)
-        with open(csv_path, "w", newline="", encoding="utf-8") as f:
-            w = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
-            w.writeheader()
-            w.writerows(existing)
-        log(f"{tab_name}: CSV append fallback -> {csv_path}")
-    except Exception as e:
-        log(f"{tab_name}: CSV append fallback failed: {e}")
