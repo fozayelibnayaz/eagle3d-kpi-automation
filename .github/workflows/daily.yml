@@ -1,5 +1,3 @@
-# Daily KPI Pipeline - auto-runs at 04:00, 04:30, 05:00 UTC
-# Manual trigger via dashboard or Actions tab
 name: Daily KPI Pipeline
 
 on:
@@ -9,6 +7,9 @@ on:
     - cron: '30 4 * * *'
     - cron: '0 5 * * *'
 
+permissions:
+  contents: write
+
 jobs:
   run-pipeline:
     runs-on: ubuntu-latest
@@ -17,6 +18,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -59,8 +62,32 @@ jobs:
         env:
           MASTER_SHEET_URL: ${{ secrets.MASTER_SHEET_URL }}
           GOOGLE_CREDS_JSON: ${{ secrets.GOOGLE_CREDS_JSON }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          EMAIL_APP_PASSWORD: ${{ secrets.EMAIL_APP_PASSWORD }}
           HEADLESS_MODE: 'true'
         run: python daily_pipeline.py
+
+      - name: Commit persistent state files
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Files that must persist between runs
+          mkdir -p data_output
+          git add -f data_output/upload_history.json 2>/dev/null || true
+          git add -f data_output/pipeline_health.json 2>/dev/null || true
+          git add -f data_output/old_db_with_dates.json 2>/dev/null || true
+          
+          if git diff --cached --quiet; then
+            echo "No state changes to commit"
+          else
+            git commit -m "Update pipeline state [skip ci]" || true
+            git push || true
+          fi
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

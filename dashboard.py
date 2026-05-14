@@ -26,6 +26,58 @@ SCOPES = ["https://www.googleapis.com/auth/spreadsheets",
 
 
 # ─── SECRETS ─────────────────────────────────────────────────────
+
+
+# ─── Pipeline health monitoring ───
+def show_pipeline_health():
+    """Show health banner at top of dashboard."""
+    try:
+        from pathlib import Path as _P
+        import json as _json
+        import datetime as _dt
+        
+        health_file = _P("data_output/pipeline_health.json")
+        if not health_file.exists():
+            return
+        
+        with open(health_file) as f:
+            health = _json.load(f)
+        
+        # Check Stripe cookie health
+        stripe = health.get("stripe", {})
+        if stripe.get("status") == "failed":
+            err = stripe.get("last_error", "").lower()
+            cookie_indicators = ["login", "signin", "401", "unauthorized",
+                                 "session expired", "auth"]
+            if any(k in err for k in cookie_indicators):
+                fails = stripe.get("consecutive_failures", 0)
+                last_fail = stripe.get("last_failure", "?")
+                
+                st.error(
+                    f"STRIPE COOKIES EXPIRED ({fails} failures since {last_fail[:10]})  \n"
+                    f"Stripe paid customer data is NOT updating.  \n"
+                    f"**To fix:** Refresh cookies via Cookie-Editor browser extension, "
+                    f"then update GitHub Secret `STRIPE_COOKIES_JSON`.  \n"
+                    f"[GitHub Secrets](https://github.com/fozayelibnayaz/eagle3d-kpi-automation/settings/secrets/actions)"
+                )
+                return
+        
+        # Show issues for other stages
+        issues = []
+        for stage in ["kpi", "process"]:
+            s = health.get(stage, {})
+            if s.get("status") == "failed":
+                fails = s.get("consecutive_failures", 0)
+                if fails >= 2:
+                    issues.append(f"{stage}: {fails} consecutive failures")
+        
+        if issues:
+            st.warning("Pipeline issues: " + " | ".join(issues))
+    except Exception as e:
+        # Don't crash dashboard if health file is broken
+        pass
+
+
 def get_creds_path():
     """Resolve Google credentials from local file OR Streamlit secrets."""
     if os.path.exists("google_creds.json"):
@@ -325,6 +377,22 @@ with st.sidebar:
     if st.button("🔄 Refresh Dashboard"):
         st.cache_data.clear()
         st.rerun()
+
+    
+    
+    # ─── Stripe Cookie Refresh Helper ───
+    with st.expander("Stripe Cookie Refresh"):
+        st.markdown("""
+**When Stripe data stops updating:**
+
+1. Open Chrome -> https://dashboard.stripe.com/customers
+2. Click Cookie-Editor extension
+3. Click Export -> Export as JSON
+4. Paste into [GitHub Secrets](https://github.com/fozayelibnayaz/eagle3d-kpi-automation/settings/secrets/actions)
+5. Update `STRIPE_COOKIES_JSON`
+
+Pipeline resumes on next run (04:00 UTC daily).
+        """)
 
     st.divider()
     st.subheader("🗓 Date Filter")

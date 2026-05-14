@@ -1,3 +1,5 @@
+from notifications import daily_summary, alert_pipeline_failure
+from pipeline_health import record_success, record_failure
 """
 daily_pipeline.py
 MASTER ORCHESTRATOR - all 7 layers
@@ -118,6 +120,36 @@ def main():
     except Exception as e:
         log(f"Summary write failed: {e}")
 
+    # Send daily summary notification
+    try:
+        from sheets_writer import read_tab_data
+        from datetime import datetime
+        
+        today = datetime.now().strftime("%Y-%m-%d")
+        current_month = datetime.now().strftime("%Y-%m")
+        
+        rows = read_tab_data("Daily_Counts")
+        
+        today_row = next((r for r in rows if r.get("Date") == today), {})
+        month_rows = [r for r in rows if r.get("Date","").startswith(current_month)]
+        
+        stats = {
+            "signups_today": int(today_row.get("SignUps_Accepted", 0) or 0),
+            "uploads_today": int(today_row.get("FirstUploads_Accepted", 0) or 0),
+            "paid_today": int(today_row.get("PaidSubscribers_Accepted", 0) or 0),
+            "signups_month": sum(int(r.get("SignUps_Accepted", 0) or 0) for r in month_rows),
+            "uploads_month": sum(int(r.get("FirstUploads_Accepted", 0) or 0) for r in month_rows),
+            "paid_month": sum(int(r.get("PaidSubscribers_Accepted", 0) or 0) for r in month_rows),
+            "signups_alltime": sum(int(r.get("SignUps_Accepted", 0) or 0) for r in rows),
+            "uploads_alltime": sum(int(r.get("FirstUploads_Accepted", 0) or 0) for r in rows),
+            "paid_alltime": sum(int(r.get("PaidSubscribers_Accepted", 0) or 0) for r in rows),
+        }
+        
+        log(f"\nSending daily summary notifications...")
+        daily_summary(stats)
+    except Exception as e:
+        log(f"Daily summary error (non-fatal): {e}")
+    
     return 0
 
 

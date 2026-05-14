@@ -12,6 +12,8 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 from sheets_writer import write_tab_data, read_tab_data, write_run_summary
+from pipeline_health import record_success, record_failure, detect_stripe_cookie_issue
+from notifications import alert_stripe_cookies_expired
 
 DATA_DIR = Path("data_output")
 DATA_DIR.mkdir(exist_ok=True)
@@ -410,6 +412,17 @@ def main():
             log(f"FATAL: {e}")
             import traceback
             traceback.print_exc()
+            
+            # Health tracking + cookie alert
+            err_str = str(e)
+            record_failure("stripe", err_str)
+            
+            if detect_stripe_cookie_issue(err_str):
+                log("DETECTED: Stripe cookie issue - sending alert")
+                try:
+                    alert_stripe_cookies_expired()
+                except Exception as alert_err:
+                    log(f"Alert send error: {alert_err}")
         finally:
             try: ctx.close()
             except: pass
