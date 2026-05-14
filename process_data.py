@@ -1,207 +1,254 @@
 """
 process_data.py
-ORCHESTRATOR: runs Layers 3, 4, 5 in sequence.
-  Layer 3: Email validation
-  Layer 4: Deduplication (vs old DB)
-  Layer 5: ML scoring
-
-Reads:  Raw_FREE, Raw_FIRST_UPLOAD, Raw_STRIPE
-Writes: Verified_FREE, Verified_FIRST_UPLOAD, Verified_STRIPE
+Validates ALL rows. Tags each with category instead of skipping.
+ACCEPTED rows go to dashboard counts.
+REJECTED rows still saved (categorized) for transparency.
 """
 import csv
 import json
 import os
+import re
 from pathlib import Path
 from datetime import datetime
 from collections import Counter
 
 from sheets_writer import write_tab_data, read_tab_data
-from email_validator_engine import validate_batch
+from email_validator_engine import (
+    check_syntax, check_disposable, check_skip, check_mx,
+    DISPOSABLE_DOMAINS, INTERNAL_DOMAINS, INTERNAL_KEYWORDS
+)
 from dedup_engine import load_old_database_emails, deduplicate
 from ml_intelligence import score_rows, needs_retrain, train_models
 
-DATA_DIR   = Path("data_output")
+DATA_DIR = Path("data_output")
 DATA_DIR.mkdir(exist_ok=True)
 PROCESS_TS = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
 def log(msg):
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] [Process] {msg}", flush=True)
+    ts = datetime.now().strftime("%H:%M:%S")
+    print(f"[{ts}] [Process] {msg}", flush=True)
 
 
-# ─── APPEND MODE ───────────────────────────────────────
-def merge_with_existing(tab_name: str, new_rows: list) -> list:
-    try:
-        existing = read_tab_data(tab_name)
-        log(f"  Existing in {tab_name}: {len(existing)} rows")
-    except Exception:
-        existing = []
-
-    by_email = {}
-    for r in existing:
-        for k in ("__normalized_email__","__email_normalized__","Email","email"):
-            if k in r and r[k] and "@" in str(r[k]):
-                by_email[str(r[k]).strip().lower()] = r
+def categorize_row(row, check_dns=False, old_db_emails=None, seen_in_batch=None):
+    """
+    Assign single category to a row.
+    Returns dict with: final_status, category, reason, email, in_old_db
+    """
+    if old_db_emails is None:
+        old_db_emails = {}
+    if seen_in_batch is None:
+        seen_in_batch = set()
+    
+    # Find email
+    email = ""
+    for k in ("Email", "email", "EMAIL"):
+        if k in row and row[k] and "@" in str(row[k]):
+            email = str(row[k]).strip().lower()
+            break
+    
+    if not email:
+        return {"final_status": "REJECTED", "category": "NO_EMAIL",
+                "reason": "no email", "email": ""}
+    
+    # Syntax check
+    ok, reason = check_syntax(email)
+    if not ok:
+        return {"final_status": "REJECTED", "category": "INVALID_FORMAT",
+                "reason": reason, "email": email}
+    
+    # Internal/test/suspicious check (uses email_validator_engine.check_skip)
+    ok, reason = check_skip(email)
+    if not ok:
+        if "internal" in reason.lower():
+            return {"final_status": "REJECTED", "category": "INTERNAL",
+                    "reason": reason, "email": email}
+        return {"final_status": "REJECTED", "category": "SUSPICIOUS",
+                "reason": reason, "email": email}
+    
+    # Disposable check
+    ok, reason = check_disposable(email)
+    if not ok:
+        return {"final_status": "REJECTED", "category": "DISPOSABLE",
+                "reason": reason, "email": email}
+    
+    # Lead source check (catches internal-testing and similar)
+    lead_source = ""
+    for k, v in row.items():
+        if "lead" in k.lower() or "source" in k.lower():
+            if v:
+                lead_source = str(v).lower()
                 break
+    
+    INTERNAL_LEAD_KEYWORDS = ["internal", "test", "demo", "fake", "sample"]
+    for kw in INTERNAL_LEAD_KEYWORDS:
+        if kw in lead_source:
+            return {"final_status": "REJECTED", "category": "INTERNAL",
+                    "reason": f"lead_source contains '{kw}'", "email": email}
+    
+    # MX check (optional, slow)
+    if check_dns:
+        domain = email.split("@")[-1]
+        ok, reason = check_mx(domain)
+        if not ok:
+            return {"final_status": "REJECTED", "category": "INVALID_DOMAIN",
+                    "reason": reason, "email": email}
+    
+    # Duplicate within this batch?
+    if email in seen_in_batch:
+        return {"final_status": "REJECTED", "category": "DUPLICATE_IN_BATCH",
+                "reason": "seen earlier in this scrape", "email": email}
+    
+    # Check old DB
+    in_old_db = "yes" if email in old_db_emails else "no"
+    
+    return {"final_status": "ACCEPTED", "category": "ACCEPTED",
+            "reason": "passed all checks", "email": email,
+            "in_old_db": in_old_db}
 
-    new_count = updated_count = 0
-    for r in new_rows:
-        email = ""
-        for k in ("__normalized_email__","__email_normalized__","Email"):
-            if k in r and r[k]:
-                email = str(r[k]).strip().lower()
-                break
-        if email:
-            if email in by_email:
-                old = by_email[email]
-                merged = {**old, **r}
-                if "__first_processed_at__" not in merged:
-                    merged["__first_processed_at__"] = old.get("__processed_at__", PROCESS_TS)
-                else:
-                    merged["__first_processed_at__"] = old.get("__first_processed_at__", PROCESS_TS)
-                by_email[email] = merged
-                updated_count += 1
-            else:
-                r["__first_processed_at__"] = PROCESS_TS
-                by_email[email] = r
-                new_count += 1
 
-    log(f"  After merge: {len(by_email)} (+{new_count} new, {updated_count} updated)")
-    return list(by_email.values())
-
-
-def process_tab(raw_tab: str, verified_tab: str, old_db_emails: dict) -> dict:
-    log(f"{'─'*60}")
-    log(f"PROCESSING: {raw_tab} → {verified_tab}")
-    log(f"{'─'*60}")
-
+def process_tab(raw_tab, verified_tab, old_db_emails, check_dns=True):
+    log("-" * 60)
+    log(f"PROCESSING: {raw_tab} -> {verified_tab}")
+    
     source = read_tab_data(raw_tab)
-    log(f"  [Layer 1] Source rows: {len(source)}")
-
+    log(f"  Source rows: {len(source)}")
+    
     if not source:
-        log(f"  NO DATA - skipping")
-        return {"raw_tab": raw_tab, "source": 0, "verified": 0,
-                "validated": 0, "deduplicated": 0, "skipped": 0}
-
-    # ─── Layer 3: Email Validation ───
-    log(f"  [Layer 3] Running email validation...")
-    check_dns = os.environ.get("CHECK_MX","1") == "1"
-    log(f"    MX check: {'enabled' if check_dns else 'disabled'}")
-    validated, val_skipped = validate_batch(source, check_dns=check_dns)
-    log(f"    Validated: {len(validated)}, Skipped: {len(val_skipped)}")
-
-    # Log skip reasons
-    if val_skipped:
-        skip_reasons = Counter(r.get("__skip_reason__","unknown") for r in val_skipped)
-        for reason, count in skip_reasons.most_common(10):
-            log(f"      {reason:30s}: {count}")
-
-    # ─── Layer 4: Deduplication ───
-    log(f"  [Layer 4] Running deduplication...")
-    unique, dups = deduplicate(validated, old_db_emails)
-    log(f"    Unique: {len(unique)}, Duplicates: {len(dups)}")
-
-    # ─── Layer 5: ML Scoring ───
-    log(f"  [Layer 5] Running ML scoring...")
-    scored = score_rows(unique)
-    log(f"    Scored: {len(scored)}")
-
-    # Add processing metadata
-    for r in scored:
-        r["__processed_at__"] = PROCESS_TS
-        r["__pipeline_version__"] = "v3"
-
-    # Save skipped/dup logs
-    for label, data in [("Skipped", val_skipped), ("Duplicates", dups)]:
-        if data:
-            sp = DATA_DIR / f"{label}_{verified_tab}.csv"
-            try:
-                fields = sorted({k for r in data for k in r.keys()})
-                with open(sp,"w",newline="",encoding="utf-8") as f:
-                    w = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
-                    w.writeheader()
-                    w.writerows(data)
-                log(f"  {label} log: {sp} ({len(data)} rows)")
-            except Exception as e:
-                log(f"  {label} log error: {e}")
-
-    # ─── Layer 6: Write to Sheets (APPEND mode) ───
-    if scored:
-        log(f"  [Layer 6] Writing to Sheets...")
-        merged = merge_with_existing(verified_tab, scored)
-        ok = write_tab_data(verified_tab, merged)
-        log(f"    Sheets write: {'OK' if ok else 'FAILED/CSV'}")
-
+        return {"raw_tab": raw_tab, "source": 0, "accepted": 0, "rejected": 0}
+    
+    log(f"  Categorizing {len(source)} rows (DNS check: {check_dns})...")
+    
+    seen_in_batch = set()
+    categorized = []
+    
+    for row in source:
+        cat = categorize_row(row,
+                              check_dns=check_dns,
+                              old_db_emails=old_db_emails,
+                              seen_in_batch=seen_in_batch)
+        
+        if cat["email"] and cat["final_status"] == "ACCEPTED":
+            seen_in_batch.add(cat["email"])
+        
+        # Build enriched row
+        enriched = dict(row)
+        enriched["final_status"]          = cat["final_status"]
+        enriched["category"]              = cat["category"]
+        enriched["email_verdict"]         = cat["category"]
+        enriched["__rejection_reason__"]  = cat.get("reason", "")
+        enriched["__email_normalized__"]  = cat.get("email", "")
+        enriched["__in_old_db__"]         = cat.get("in_old_db", "")
+        enriched["__processed_at__"]      = PROCESS_TS
+        enriched["__validation_status__"] = (
+            "verified" if cat["final_status"] == "ACCEPTED" else "rejected"
+        )
+        
+        categorized.append(enriched)
+    
+    # Stats
+    cats = Counter(r["category"] for r in categorized)
+    log(f"  Categories breakdown:")
+    for c, n in cats.most_common():
+        log(f"    {c:20s}: {n}")
+    
+    accepted = [r for r in categorized if r["final_status"] == "ACCEPTED"]
+    rejected = [r for r in categorized if r["final_status"] == "REJECTED"]
+    
+    log(f"  ACCEPTED: {len(accepted)}, REJECTED: {len(rejected)}")
+    
+    # ML scoring on accepted only
+    if accepted:
+        log(f"  ML scoring {len(accepted)} accepted rows...")
+        try:
+            accepted = score_rows(accepted)
+        except Exception as e:
+            log(f"  ML scoring error (continuing): {e}")
+    
+    # Combine all rows
+    all_rows = accepted + rejected
+    
+    # Save rejected to local CSV for inspection
+    if rejected:
+        rejected_csv = DATA_DIR / f"Rejected_{verified_tab}.csv"
+        try:
+            fields = sorted({k for r in rejected for k in r.keys()})
+            with open(rejected_csv, "w", newline="", encoding="utf-8") as f:
+                w = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
+                w.writeheader()
+                w.writerows(rejected)
+            log(f"  Rejected CSV: {rejected_csv}")
+        except Exception as e:
+            log(f"  Rejected CSV save error: {e}")
+    
+    # Write all categorized rows to Sheets
+    log(f"  Writing {len(all_rows)} rows to {verified_tab}...")
+    ok = write_tab_data(verified_tab, all_rows)
+    log(f"  Sheets write: {'OK' if ok else 'FAILED'}")
+    
     return {
         "raw_tab":      raw_tab,
         "verified_tab": verified_tab,
         "source":       len(source),
-        "validated":    len(validated),
-        "deduplicated": len(unique),
-        "verified":     len(scored),
-        "skipped":      len(val_skipped),
-        "duplicates":   len(dups),
+        "accepted":     len(accepted),
+        "rejected":     len(rejected),
+        "categories":   dict(cats),
     }
 
 
 def main():
     log("=" * 60)
-    log("PROCESS DATA - Full pipeline (Layers 3, 4, 5)")
-    log(f"Time: {PROCESS_TS}")
+    log(f"PROCESS DATA - {PROCESS_TS}")
     log("=" * 60)
-
-    # Retrain models if needed (weekly)
+    
+    # Train ML if needed
     if needs_retrain():
         log("Models need retraining...")
         try:
             train_models()
         except Exception as e:
             log(f"Training failed (will use heuristics): {e}")
-
-    # Load old DB for dedup
+    
+    # Load old DB emails for cross-reference
     old_db_emails = load_old_database_emails()
     log(f"Old DB emails loaded: {len(old_db_emails)}")
-
+    
     TAB_MAP = {
         "Raw_FREE":         "Verified_FREE",
         "Raw_FIRST_UPLOAD": "Verified_FIRST_UPLOAD",
         "Raw_STRIPE":       "Verified_STRIPE",
     }
-
+    
+    # MX check is slow - only do it for FREE signups
+    check_mx_for = {
+        "Raw_FREE":         True,
+        "Raw_FIRST_UPLOAD": False,
+        "Raw_STRIPE":       False,
+    }
+    
     results = []
     for raw_tab, verified_tab in TAB_MAP.items():
         try:
-            r = process_tab(raw_tab, verified_tab, old_db_emails)
+            r = process_tab(raw_tab, verified_tab, old_db_emails,
+                            check_dns=check_mx_for.get(raw_tab, False))
             results.append(r)
         except Exception as e:
             log(f"Error processing {raw_tab}: {e}")
             import traceback
             traceback.print_exc()
-            results.append({"raw_tab": raw_tab, "error": str(e)})
-
+    
     log("=" * 60)
     log("FINAL SUMMARY")
     log("=" * 60)
     for r in results:
-        if "error" in r:
-            log(f"  {r['raw_tab']:25s} ERROR: {r['error']}")
-        else:
-            log(f"  {r['raw_tab']:25s}: "
-                f"{r['source']:>4} src → "
-                f"{r['validated']:>4} valid → "
-                f"{r['deduplicated']:>4} unique → "
-                f"{r['verified']:>4} scored")
-
-    try:
-        with open(DATA_DIR/"processing_report.json","w") as f:
-            json.dump({
-                "processed_at": PROCESS_TS,
-                "old_db_count": len(old_db_emails),
-                "results": results,
-            }, f, indent=2, default=str)
-    except Exception as e:
-        log(f"Report save: {e}")
-
+        raw = r.get("raw_tab", "?")
+        src = r.get("source", 0)
+        acc = r.get("accepted", 0)
+        rej = r.get("rejected", 0)
+        log(f"  {raw:25s}: {src:>4} src -> {acc:>4} ACCEPTED, {rej:>4} REJECTED")
+        for cat, n in (r.get("categories") or {}).items():
+            log(f"      {cat:20s}: {n}")
+    
     return results
 
 
