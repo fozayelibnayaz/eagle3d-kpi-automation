@@ -1,32 +1,26 @@
 """
 upload_registry.py
-Determines TRUE first upload using account-creation vs upload-date comparison.
+SIMPLE rule: upload month must match signup month for TRUE first upload.
 
 Logic:
-  Get upload_date from current scrape
-  Look up email in old DB (Stripe All Time Data)
-  Get account_created_date
+  Get upload_date and signup_date (from old DB)
   
-  If email not in old DB                              -> TRUE FIRST (new user)
-  If email in old DB, signup recent (<= 60 days ago) -> TRUE FIRST (just signed up + uploaded)
-  If email in old DB, signup old (> 60 days)         -> REPEAT (uploaded historically, deleted, re-uploaded)
+  Email NOT in old DB                   -> TRUE FIRST (brand new user)
+  Same month/year (upload vs signup)    -> TRUE FIRST (legitimate first upload)
+  Different month or year                -> REPEAT (uploaded before, re-uploaded)
 
-Threshold: 60 days = free tier usage period.
-Adjust SIGNUP_TO_UPLOAD_THRESHOLD_DAYS if needed.
+Local registry tracks emails we've already counted to prevent double-counting
+across daily runs.
 """
 import json
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime
 from dedup_engine import normalize_email, parse_date
 
 DATA_DIR = Path("data_output")
 DATA_DIR.mkdir(exist_ok=True)
 
 REGISTRY_FILE = DATA_DIR / "upload_registry.json"
-
-# Configurable: how recently must signup be to count upload as legitimate first?
-# 60 days = matches free tier window
-SIGNUP_TO_UPLOAD_THRESHOLD_DAYS = 60
 
 
 def log(msg):
@@ -35,7 +29,6 @@ def log(msg):
 
 
 def load_registry():
-    """Local registry of emails we have already counted as first upload."""
     if not REGISTRY_FILE.exists():
         return {}
     try:
@@ -53,69 +46,65 @@ def save_registry(registry):
         log(f"Save error: {e}")
 
 
-def is_truly_first_upload(email, upload_date, old_db):
+def is_in_registry(email):
+    norm = normalize_email(email)
+    if not norm:
+        return False
+    return norm in load_registry()
+
+
+def is_truly_first_upload(email, upload_date, old_db=None):
     """
-    THE definitive check using account-creation comparison.
+    Returns (is_first, reason).
     
-    Args:
-        email: the email being checked
-        upload_date: when they uploaded (YYYY-MM-DD string)
-        old_db: dict {email: {"earliest": date, "dates": [...]}}
-    
-    Returns:
-        (is_first_upload, reason)
+    Rules:
+      1. Already in our registry      -> REPEAT (already counted before)
+      2. No upload date               -> FIRST (default conservative)
+      3. Email NOT in old DB          -> FIRST (brand new user)
+      4. Email in old DB:
+         - Same month/year as signup  -> FIRST (legitimate)
+         - Different month/year       -> REPEAT (re-upload after delete)
     """
     norm = normalize_email(email)
     if not norm:
         return True, "no_email_skip_check"
     
-    # Already counted in our local registry? (prevents double-counting same scrape)
+    # Check our local registry first - prevents double-counting same upload
     registry = load_registry()
     if norm in registry:
         first_seen = registry[norm].get("first_seen", "?")
         return False, f"already_counted_in_registry_on_{first_seen}"
     
     if not upload_date:
-        # Conservative: if we don't have upload date, accept and add to registry
-        return True, "no_upload_date_assume_new"
+        return True, "no_upload_date_default_first"
     
-    # Look up in old DB
+    if old_db is None:
+        old_db = {}
+    
     if norm not in old_db:
-        # Not in old DB = brand new user we have no history of = TRUE FIRST UPLOAD
-        return True, "new_user_not_in_old_db"
+        return True, "not_in_old_db_brand_new_user"
     
-    # Email IS in old DB - check account creation date
     entry = old_db[norm]
-    earliest_signup = entry.get("earliest", "")
+    signup_date = entry.get("earliest", "")
     
-    if not earliest_signup or earliest_signup == "__no_date__":
-        # In old DB but we don't know when they signed up
-        # Conservative: assume new
-        return True, "in_old_db_but_no_signup_date"
+    if not signup_date or signup_date == "__no_date__":
+        return True, "in_old_db_but_no_signup_date_default_first"
     
-    # Calculate gap between signup and upload
+    # Compare months
     try:
-        signup_dt = datetime.strptime(earliest_signup, "%Y-%m-%d")
-        upload_dt = datetime.strptime(upload_date, "%Y-%m-%d")
-        days_between = (upload_dt - signup_dt).days
+        signup_month = signup_date[:7]    # YYYY-MM
+        upload_month = upload_date[:7]    # YYYY-MM
         
-        if days_between < 0:
-            # Upload BEFORE signup? Data quality issue - accept conservatively
-            return True, f"upload_before_signup_data_issue_({days_between}d)"
-        
-        if days_between <= SIGNUP_TO_UPLOAD_THRESHOLD_DAYS:
-            # Recently signed up + uploaded = legitimate first upload
-            return True, f"signed_up_{days_between}d_ago_within_{SIGNUP_TO_UPLOAD_THRESHOLD_DAYS}d_window"
+        if signup_month == upload_month:
+            return True, f"same_month_signup_and_upload_{signup_month}"
         else:
-            # Signed up long ago, just uploaded now = re-upload
-            return False, f"signed_up_{days_between}d_ago_>{SIGNUP_TO_UPLOAD_THRESHOLD_DAYS}d_threshold"
-    
-    except ValueError as e:
-        return True, f"date_parse_error:{e}"
+            return False, f"signup_{signup_month}_vs_upload_{upload_month}_different_months"
+    except Exception as e:
+        return True, f"month_compare_error:{e}"
 
 
 def record_first_upload(email, upload_date, reason=""):
-    """Record this email as having been counted as first upload."""
+    """Add to registry after counting as first upload."""
     norm = normalize_email(email)
     if not norm:
         return False
@@ -123,7 +112,6 @@ def record_first_upload(email, upload_date, reason=""):
     registry = load_registry()
     
     if norm in registry:
-        # Already there - just track this date
         if upload_date and upload_date not in registry[norm].get("all_dates_observed", []):
             registry[norm].setdefault("all_dates_observed", []).append(upload_date)
             registry[norm]["all_dates_observed"].sort()
@@ -141,15 +129,7 @@ def record_first_upload(email, upload_date, reason=""):
     return True
 
 
-def is_in_registry(email):
-    norm = normalize_email(email)
-    if not norm:
-        return False
-    return norm in load_registry()
-
-
 def add_to_registry(email, source, date_str=None, notes=""):
-    """Manual add to registry."""
     norm = normalize_email(email)
     if not norm:
         return False
@@ -169,88 +149,56 @@ def add_to_registry(email, source, date_str=None, notes=""):
     return True
 
 
+def reset_registry():
+    if REGISTRY_FILE.exists():
+        REGISTRY_FILE.unlink()
+    log("Registry RESET")
+
+
 def bootstrap_registry(force=False):
-    """
-    NO bootstrap from old DB - we use live old DB lookup instead.
-    Registry only tracks what we have ALREADY counted in current scrapes,
-    to prevent double-counting same upload across multiple daily runs.
-    """
-    registry = load_registry()
-    
-    if registry and not force:
-        log(f"Registry has {len(registry)} entries (no bootstrap needed)")
-        return registry
-    
-    log("Initializing empty registry (will populate as uploads are detected)")
-    
-    # Optionally bootstrap from current Verified_FIRST_UPLOAD ACCEPTED rows
-    # to avoid re-counting on next run
-    try:
-        from sheets_writer import read_tab_data
-        rows = read_tab_data("Verified_FIRST_UPLOAD")
-        added = 0
-        for r in rows:
-            if r.get("category") != "ACCEPTED":
-                continue
-            email = ""
-            for k in ("Email", "email"):
-                if k in r and r[k] and "@" in str(r[k]):
-                    email = str(r[k]).strip()
-                    break
-            if not email:
-                continue
-            
-            norm = normalize_email(email)
-            if not norm:
-                continue
-            
-            upload_date = parse_date(r.get("Upload Date", ""))
-            
-            if norm not in registry:
-                registry[norm] = {
-                    "first_seen": upload_date or "",
-                    "source": "bootstrap_current_accepted",
-                    "added_at": datetime.now().isoformat(),
-                    "all_dates_observed": [upload_date] if upload_date else [],
-                    "notes": "Already in current Verified_FIRST_UPLOAD as ACCEPTED",
-                }
-                added += 1
-        
-        save_registry(registry)
-        log(f"Bootstrap added {added} from currently-accepted uploads")
-    except Exception as e:
-        log(f"Bootstrap from current verified failed: {e}")
-    
-    return registry
+    """Compatibility shim. Returns current registry."""
+    if force:
+        reset_registry()
+    return load_registry()
 
 
 if __name__ == "__main__":
     log("=" * 60)
-    log("UPLOAD REGISTRY TEST")
+    log("REGISTRY TEST - Simple Month Comparison")
     log("=" * 60)
     
-    # Load old DB
+    log("\nResetting registry for fresh test...")
+    reset_registry()
+    
     from dedup_engine import load_old_database_with_dates
     old_db = load_old_database_with_dates()
-    log(f"Old DB: {len(old_db)} emails")
+    log(f"Old DB loaded: {len(old_db)} emails")
     
-    # Test cases
     test_cases = [
-        ("wolfgang.bernecker@tridonic.com", "2026-05-10"),
-        ("eirik.murbraech@ramboll.no", "2026-05-13"),
-        ("brand.new.user@nowhere.com", "2026-05-14"),
+        # (email, upload_date, expected_verdict, description)
+        ("isak@adapt.se", "2026-04-10", "FIRST", "Signed up + uploaded same month"),
+        ("isak@adapt.se", "2026-05-12", "REPEAT", "Re-upload month later (different month from signup)"),
+        ("wolfgang.bernecker@tridonic.com", "2026-05-10", "REPEAT", "Signed up 2024, upload 2026"),
+        ("eirik.murbraech@ramboll.no", "2026-05-13", "REPEAT", "Old user re-uploading"),
+        ("brand.new.user@nowhere.com", "2026-05-14", "FIRST", "Not in old DB"),
     ]
     
     print()
-    for email, upload_date in test_cases:
+    print("=" * 60)
+    print("TEST CASES")
+    print("=" * 60)
+    
+    for email, upload_date, expected, desc in test_cases:
         norm = normalize_email(email)
-        in_db = norm in old_db
-        signup = old_db.get(norm, {}).get("earliest", "?") if in_db else "N/A"
+        signup = old_db.get(norm, {}).get("earliest", "N/A")
         
         is_first, reason = is_truly_first_upload(email, upload_date, old_db)
-        marker = "FIRST" if is_first else "REPEAT"
+        actual = "FIRST" if is_first else "REPEAT"
+        match = "✓" if actual == expected else "✗ MISMATCH"
         
-        print(f"  [{marker}] {email}")
-        print(f"          Upload: {upload_date}, Signup: {signup}")
-        print(f"          {reason}")
+        print(f"  {match} {email}")
+        print(f"      Description: {desc}")
+        print(f"      Upload: {upload_date}, Signup: {signup}")
+        print(f"      Expected: {expected}, Actual: {actual}")
+        print(f"      Reason: {reason}")
         print()
