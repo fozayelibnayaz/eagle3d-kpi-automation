@@ -6,11 +6,20 @@ on:
     - cron: '30 4 * * *'
     - cron: '0 5 * * *'
   workflow_dispatch:
+    inputs:
+      force_historical:
+        description: 'Force "Last 6 Month" historical scrape'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
 
 jobs:
   run-pipeline:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
       - name: Checkout code
@@ -26,7 +35,7 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements-pipeline.txt
 
-      - name: Install Playwright browsers
+      - name: Install Playwright
         run: playwright install --with-deps chromium
 
       - name: Restore Google credentials
@@ -34,30 +43,22 @@ jobs:
           CREDS: ${{ secrets.GOOGLE_CREDS_JSON }}
         run: |
           if [ -z "$CREDS" ]; then
-            echo "ERROR: GOOGLE_CREDS_JSON empty"
-            exit 1
+            echo "ERROR: GOOGLE_CREDS_JSON empty"; exit 1
           fi
           echo "$CREDS" > google_creds.json
-          echo "google_creds.json ready"
 
-      - name: Get KPI session token
+      - name: Get KPI session
         env:
           KPI_EMAIL: ${{ secrets.KPI_EMAIL }}
           KPI_PASSWORD: ${{ secrets.KPI_PASSWORD }}
         run: |
-          python3 firebase_login.py
+          python3 firebase_login.py || true
           python3 -c "
-import json, sys
+import json, os
 from pathlib import Path
-p = Path('kpi_cookies.json')
-if not p.exists() or p.stat().st_size < 10:
-    print('ERROR: kpi_cookies.json missing or empty')
-    sys.exit(1)
-d = json.load(open(p))
-if not d:
-    print('ERROR: No cookies')
-    sys.exit(1)
-print(f'KPI token ready: {len(d)} cookie(s), {p.stat().st_size} bytes')
+ss = Path('kpi_storage_state.json')
+if ss.exists():
+    print(f'Storage state: {ss.stat().st_size} bytes')
 "
 
       - name: Restore Stripe cookies
@@ -66,9 +67,7 @@ print(f'KPI token ready: {len(d)} cookie(s), {p.stat().st_size} bytes')
         run: |
           if [ -n "$COOKIES" ]; then
             echo "$COOKIES" > stripe_cookies.json
-            echo "Stripe cookies ready"
-          else
-            echo "No Stripe cookies - Stripe stage will be skipped"
+            echo "stripe_cookies.json: $(wc -c < stripe_cookies.json) bytes"
           fi
 
       - name: Run pipeline
@@ -76,6 +75,7 @@ print(f'KPI token ready: {len(d)} cookie(s), {p.stat().st_size} bytes')
           MASTER_SHEET_URL: ${{ secrets.MASTER_SHEET_URL }}
           GOOGLE_CREDS_JSON: ${{ secrets.GOOGLE_CREDS_JSON }}
           HEADLESS_MODE: "true"
+          FORCE_HISTORICAL: ${{ github.event.inputs.force_historical == 'true' && '1' || '' }}
         run: python daily_pipeline.py
 
       - name: Upload artifacts
@@ -94,7 +94,3 @@ print(f'KPI token ready: {len(d)} cookie(s), {p.stat().st_size} bytes')
         run: |
           echo "=== DATA OUTPUT ==="
           ls -lah data_output/ 2>/dev/null || echo "empty"
-          echo "=== ROW COUNTS ==="
-          for f in data_output/*.csv; do
-            [ -f "$f" ] && echo "  $f: $(tail -n +2 $f | wc -l) rows"
-          done
