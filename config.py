@@ -107,5 +107,5 @@ DASHBOARD_PORT = 8501
 
 
 # ── Added by fix script ──
-KPI_USERNAME = "fozayel"  # UPDATE THIS
-KPI_PASSWORD = "Eagle@2024"  # UPDATE THIS
+KPI_USERNAME = ""  # Set via environment variable / GitHub Secret  # UPDATE THIS
+KPI_PASSWORD = ""  # Set via environment variable / GitHub Secret  # UPDATE THIS

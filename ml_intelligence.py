@@ -190,6 +190,22 @@ def needs_retrain() -> bool:
         return True
 
 
+
+
+def _retry_503(func, max_retries=3, *args, **kwargs):
+    """Retry on 503 Service Unavailable errors."""
+    import time as _time
+    for attempt in range(max_retries):
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            if "503" in str(e) and attempt < max_retries - 1:
+                wait = 30 * (attempt + 1)
+                print(f"[ML] 503 error, retrying in {wait}s (attempt {attempt+1}/{max_retries})", flush=True)
+                _time.sleep(wait)
+                continue
+            raise
+
 def train_models():
     """
     Train models on accurate data sheet.
@@ -224,7 +240,7 @@ def train_models():
         
         for ws in ss.worksheets():
             try:
-                rows = ws.get_all_records()
+                rows = _retry_503(ws.get_all_records)
                 tab_name = ws.title.lower()
                 
                 # Determine labels from tab name

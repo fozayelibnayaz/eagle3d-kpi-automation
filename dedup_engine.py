@@ -39,7 +39,7 @@ def load_old_database_emails() -> dict:
     # Check cache (refresh daily)
     if OLD_DB_CACHE.exists():
         age_hours = (datetime.now().timestamp() - OLD_DB_CACHE.stat().st_mtime) / 3600
-        if age_hours < 24:
+        if age_hours < 24*7:  # 7 days cache to survive API outages
             try:
                 cache = json.load(open(OLD_DB_CACHE))
                 log(f"Using cached old DB: {len(cache)} emails")
@@ -100,17 +100,18 @@ def load_old_database_emails() -> dict:
 
 def deduplicate(rows: list, old_db_emails: dict = None) -> tuple:
     """
-    Deduplicate rows.
-    Returns (unique_rows, duplicate_rows).
+    Deduplicate rows using DATE-AWARE rule:
+    - Same email + same Account Created date = NOT duplicate (just re-scrape)
+    - Same email + different dates = DUPLICATE (real duplicate)
+    - New email = NEW
     
-    Each row gets flagged:
-      __dedup_status__: NEW | DUPLICATE_IN_BATCH | DUPLICATE_OLD_DB
-      __normalized_email__: normalized version
+    Returns (unique_rows, duplicate_rows).
     """
     if old_db_emails is None:
         old_db_emails = {}
     
-    seen_in_batch = set()
+    # Track (email, date) seen in this batch
+    seen_in_batch = {}  # {email: set of dates}
     unique     = []
     duplicates = []
     
@@ -131,17 +132,33 @@ def deduplicate(rows: list, old_db_emails: dict = None) -> tuple:
         
         normalized = normalize_email(email)
         
-        # Check batch dup
-        if normalized in seen_in_batch:
-            duplicates.append({
-                **row,
-                "__normalized_email__": normalized,
-                "__dedup_status__": "DUPLICATE_IN_BATCH",
-            })
-            dup_in_batch_count += 1
-            continue
+        # Get the Account Created date
+        date_str = ""
+        for k in ("Account Created On","account_created","Created","Date","Upload Date","__scrape_date__"):
+            if k in row and row[k]:
+                date_str = str(row[k]).strip()[:25]  # first 25 chars (handles "Tue, 28 Apr 2026 21:30:14 GMT")
+                break
         
-        seen_in_batch.add(normalized)
+        # Check batch dup using (email, date) pair
+        if normalized in seen_in_batch:
+            existing_dates = seen_in_batch[normalized]
+            if date_str in existing_dates:
+                # SAME email + SAME date = same record, just re-scraped
+                # This is NOT a duplicate - skip silently
+                continue
+            else:
+                # SAME email + DIFFERENT date = real duplicate (e.g. user signed up twice)
+                duplicates.append({
+                    **row,
+                    "__normalized_email__": normalized,
+                    "__dedup_status__": "DUPLICATE_DIFFERENT_DATE",
+                    "__previous_dates__": "; ".join(existing_dates),
+                })
+                dup_in_batch_count += 1
+                seen_in_batch[normalized].add(date_str)
+                continue
+        
+        seen_in_batch[normalized] = {date_str}
         
         # Check old DB
         in_old_db = normalized in old_db_emails
@@ -157,7 +174,7 @@ def deduplicate(rows: list, old_db_emails: dict = None) -> tuple:
             "__in_old_db__": "yes" if in_old_db else "no",
         })
     
-    log(f"Dedup result: {len(unique)} unique ({new_count} NEW, {in_old_db_count} in old DB), {dup_in_batch_count} batch dups")
+    log(f"Dedup: {len(unique)} unique ({new_count} NEW, {in_old_db_count} in old DB), {dup_in_batch_count} real dups (different dates)")
     return unique, duplicates
 
 

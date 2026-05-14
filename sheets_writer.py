@@ -1,11 +1,11 @@
 """
-sheets_writer.py - Google Sheets interface
-PRIMARY: Google Sheets
-FALLBACK: CSV only if Sheets fails
+sheets_writer.py
+Google Sheets I/O with rate limiting and CSV fallback.
 """
 import csv
 import os
 import json
+import time
 import tempfile
 from pathlib import Path
 from datetime import datetime
@@ -26,9 +26,44 @@ SCOPES = [
 _client = None
 _ss     = None
 
+# Rate limiting state
+_last_request_time = [0.0]
+MIN_INTERVAL = 1.2  # seconds between requests (~50/min, safe under 60/min limit)
+
 
 def log(msg):
     print(f"[{datetime.now().strftime('%H:%M:%S')}] [Sheets] {msg}", flush=True)
+
+
+def _rate_limit():
+    """Sleep if we're calling Sheets API too fast."""
+    elapsed = time.time() - _last_request_time[0]
+    if elapsed < MIN_INTERVAL:
+        time.sleep(MIN_INTERVAL - elapsed)
+    _last_request_time[0] = time.time()
+
+
+def _retry_on_quota(func, *args, max_retries=4, **kwargs):
+    """Retry a Sheets API call on 429 / quota errors."""
+    for attempt in range(max_retries):
+        try:
+            _rate_limit()
+            return func(*args, **kwargs)
+        except Exception as e:
+            err = str(e).lower()
+            is_quota = (
+                "429" in err or
+                "quota" in err or
+                "rate" in err or
+                "rateLimitExceeded" in str(e)
+            )
+            if is_quota and attempt < max_retries - 1:
+                wait = 30 * (attempt + 1)
+                log(f"Quota hit, waiting {wait}s (retry {attempt+1}/{max_retries})")
+                time.sleep(wait)
+                continue
+            raise
+    raise Exception("Max retries exhausted")
 
 
 def _get_client():
@@ -44,9 +79,7 @@ def _get_client():
         creds_file = "google_creds.json"
 
         if creds_env:
-            tmp = tempfile.NamedTemporaryFile(
-                mode="w", suffix=".json", delete=False
-            )
+            tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
             tmp.write(creds_env)
             tmp.close()
             creds_file = tmp.name
@@ -101,27 +134,32 @@ def write_tab_data(tab_name: str, rows: list) -> bool:
     try:
         client, ss = _get_client()
         ws = _get_or_create_ws(ss, tab_name)
-        matrix = [fields] + [[str(r.get(f,"")) for f in fields] for r in rows]
-        ws.clear()
-        ws.update("A1", matrix)
-        rb = ws.get_all_values()
+
+        matrix = [fields] + [[str(r.get(f, "")) for f in fields] for r in rows]
+
+        _retry_on_quota(ws.clear)
+        _retry_on_quota(ws.update, "A1", matrix)
+
+        # Verify
+        rb = _retry_on_quota(ws.get_all_values)
         if len(rb) - 1 == len(rows):
             log(f"{tab_name}: Sheets OK - {len(rows)} rows")
             return True
-        log(f"{tab_name}: verify mismatch")
+        log(f"{tab_name}: verify mismatch wrote={len(rows)} read={len(rb)-1}")
+
     except Exception as e:
         log(f"{tab_name}: Sheets failed ({e}) -> CSV")
 
     # CSV fallback
     try:
-        p = DATA_DIR / f"{tab_name}.csv"
-        with open(p, "w", newline="", encoding="utf-8") as f:
+        path = DATA_DIR / f"{tab_name}.csv"
+        with open(path, "w", newline="", encoding="utf-8") as f:
             w = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
             w.writeheader()
             w.writerows(rows)
-        log(f"{tab_name}: CSV fallback -> {p}")
+        log(f"{tab_name}: CSV fallback -> {path}")
     except Exception as e:
-        log(f"{tab_name}: CSV also failed: {e}")
+        log(f"{tab_name}: CSV failed: {e}")
     return False
 
 
@@ -130,17 +168,17 @@ def read_tab_data(tab_name: str) -> list:
     try:
         client, ss = _get_client()
         ws   = ss.worksheet(tab_name)
-        rows = ws.get_all_records()
+        rows = _retry_on_quota(ws.get_all_records)
         log(f"{tab_name}: read {len(rows)} rows from Sheets")
         return rows
     except Exception as e:
         log(f"{tab_name}: Sheets read failed ({e}) -> CSV")
 
     for fname in (f"{tab_name}.csv", f"Raw_{tab_name}.csv", f"Verified_{tab_name}.csv"):
-        p = DATA_DIR / fname
-        if p.exists() and p.stat().st_size > 0:
+        path = DATA_DIR / fname
+        if path.exists() and path.stat().st_size > 0:
             try:
-                with open(p, "r", newline="", encoding="utf-8") as f:
+                with open(path, "r", newline="", encoding="utf-8") as f:
                     rows = list(csv.DictReader(f))
                 log(f"{tab_name}: read {len(rows)} rows from {fname}")
                 return rows
@@ -154,21 +192,20 @@ def write_run_summary(summary: dict) -> bool:
     try:
         client, ss = _get_client()
         ws = _get_or_create_ws(ss, "Daily_Report")
-        existing = ws.get_all_values()
+        existing = _retry_on_quota(ws.get_all_values)
         headers  = existing[0] if existing else sorted(summary.keys())
         if not existing:
-            ws.append_row(headers)
-        ws.append_row([str(summary.get(h,"")) for h in headers])
-        log("Daily_Report: summary appended")
+            _retry_on_quota(ws.append_row, headers)
+        _retry_on_quota(ws.append_row, [str(summary.get(h, "")) for h in headers])
+        log("Daily_Report: appended")
         return True
     except Exception as e:
         log(f"Summary append failed: {e}")
-        # Save to local JSON
         try:
-            p = DATA_DIR / "run_summaries.json"
-            data = json.load(open(p)) if p.exists() else []
+            path = DATA_DIR / "run_summaries.json"
+            data = json.load(open(path)) if path.exists() else []
             data.append({"ts": datetime.now().isoformat(), **summary})
-            json.dump(data[-200:], open(p,"w"), indent=2, default=str)
+            json.dump(data[-200:], open(path, "w"), indent=2, default=str)
         except Exception:
             pass
         return False

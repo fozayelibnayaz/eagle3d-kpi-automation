@@ -1,28 +1,29 @@
-# Sensitive
-google_creds.json
-stripe_cookies.json
-*.env
-.env
 
 # Browser sessions / debug
-browser_session/
-stripe_session/
-data/debug/
-data/*.log
-data/*.html
-
+# Local CSVs (we don't use them but just in case)
+# Local data output - captured as GitHub Actions artifacts instead
+# Models
 # Python
-venv/
-__pycache__/
+# Sensitive
+*.csv
+*.env
 *.pyc
 .DS_Store
-
-# Models
-models/
-
-# Local CSVs (we don't use them but just in case)
-*.csv
-
-# Local data output - captured as GitHub Actions artifacts instead
+.env
+__pycache__/
+browser_session/
+browser_session_fresh/
+browser_session_new/
+data/*.html
+data/*.log
+data/debug/
 data_output/
+google_creds.json
 kpi_cookies.json
+kpi_storage_dump.json
+kpi_storage_state.json
+models/
+stripe_cookies.json
+stripe_session/
+stripe_storage_state.json
+venv/

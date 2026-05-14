@@ -1,230 +1,418 @@
 """
-scrape_stripe.py
-Scrapes ALL Stripe paid customers.
-Writes to Google Sheets (primary). CSV only if Sheets fails.
+scrape_stripe.py - PROPER FIX
+Uses data-column-id to map cells to columns correctly.
+Stripe rows have 9 cells but only 5 have real data (the rest are sticky/spacer).
 """
 import json
 import time
+import os
+import re
 from datetime import datetime
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 
-from config import STRIPE_SESSION_DIR
-from sheets_writer import write_tab_data
+from sheets_writer import write_tab_data, read_tab_data, write_run_summary
 
-DATA_DIR    = Path("data_output")
+DATA_DIR = Path("data_output")
 DATA_DIR.mkdir(exist_ok=True)
-SCRAPE_TS   = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+SCRAPE_TS = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 SCRAPE_DATE = datetime.now().strftime("%Y-%m-%d")
-STRIPE_URL  = (
+
+STRIPE_URL = (
     "https://dashboard.stripe.com/acct_1J7M5XIKrnGFhGm1"
     "/customers?has_subscription=true"
 )
+
+STRIPE_SESSION_DIR = Path("stripe_session")
+STRIPE_MARKER = DATA_DIR / ".stripe_historical_done"
+FORCE_HISTORICAL = os.environ.get("FORCE_HISTORICAL", "") == "1"
+
+# Map Stripe data-column-id -> our friendly column name
+COLUMN_MAP = {
+    "email":         "Email",
+    "created":       "Created",
+    "net_volume":    "Total spend",
+    "customer":      "Customer",
+    "first_payment": "First payment",
+    "description":   "Description",
+    "country":       "Country",
+}
 
 
 def log(msg):
     print(f"[{datetime.now().strftime('%H:%M:%S')}] [Stripe] {msg}", flush=True)
 
 
+def determine_mode():
+    if FORCE_HISTORICAL:
+        log("FORCE_HISTORICAL=1 - HISTORICAL")
+        return "historical"
+    if STRIPE_MARKER.exists():
+        log("Marker exists - DAILY")
+        return "daily"
+    try:
+        existing = read_tab_data("Raw_STRIPE")
+        if len(existing) >= 50:
+            log(f"Sheet has {len(existing)} - DAILY")
+            STRIPE_MARKER.write_text(f"Auto at {SCRAPE_TS}\n")
+            return "daily"
+    except Exception:
+        pass
+    log("First time - HISTORICAL")
+    return "historical"
+
+
 def normalize_cookies(raw):
     out = []
     for c in raw:
         cookie = {
-            "name":   c.get("name"),
-            "value":  c.get("value"),
-            "domain": c.get("domain"),
+            "name":   str(c.get("name","")),
+            "value":  str(c.get("value","")),
+            "domain": c.get("domain", ".stripe.com"),
             "path":   c.get("path", "/"),
         }
-        if "expirationDate" in c:
-            cookie["expires"] = float(c["expirationDate"])
-        if "httpOnly" in c:
-            cookie["httpOnly"] = bool(c["httpOnly"])
-        if "secure" in c:
-            cookie["secure"] = bool(c["secure"])
-        ss_val = str(c.get("sameSite", "no_restriction")).lower()
+        exp = c.get("expirationDate") or c.get("expires")
+        if exp:
+            try: cookie["expires"] = float(exp)
+            except: pass
+        cookie["httpOnly"] = bool(c.get("httpOnly", False))
+        cookie["secure"]   = bool(c.get("secure", True))
+        ss = str(c.get("sameSite","Lax")).lower()
         cookie["sameSite"] = {
-            "no_restriction": "None", "lax": "Lax",
-            "strict": "Strict", "unspecified": "Lax", "none": "None",
-        }.get(ss_val, "Lax")
-        if cookie["name"] and cookie["value"] is not None:
+            "no_restriction":"None","lax":"Lax","strict":"Strict",
+            "unspecified":"Lax","none":"None"
+        }.get(ss, "Lax")
+        if cookie["name"] and cookie["value"]:
             out.append(cookie)
     return out
 
 
-def extract_table(page) -> dict:
+def extract_table(page):
+    """
+    Extract using data-column-id attribute on each TD.
+    This is the reliable way to get Stripe table data.
+    """
     return page.evaluate("""
         () => {
-            const tables = [
-                ...document.querySelectorAll('table'),
-                ...document.querySelectorAll('[role="grid"]'),
-                ...document.querySelectorAll('[role="table"]'),
-            ];
+            const tables = document.querySelectorAll('table');
             let best = null, maxR = 0;
             for (const t of tables) {
-                const r = t.querySelectorAll('tr,[role="row"]').length;
+                const r = t.querySelectorAll('tbody tr').length;
                 if (r > maxR) { maxR = r; best = t; }
             }
-            if (!best) return {headers:[], rows:[]};
-
-            const hEls = best.querySelectorAll('th,[role="columnheader"]');
-            const headers = Array.from(hEls)
-                .map(h => h.innerText.trim()).filter(h => h);
-
-            const rowEls = best.querySelectorAll('tbody tr,[role="row"]');
+            if (!best) return {rows: [], footer_text: ''};
+            
             const rows = [];
-            for (const r of rowEls) {
-                const cells = r.querySelectorAll(
-                    'td,[role="cell"],[role="gridcell"]'
-                );
+            const trEls = best.querySelectorAll('tbody tr');
+            
+            for (const tr of trEls) {
+                const cells = tr.querySelectorAll('td');
                 if (!cells.length) continue;
-                const vals = Array.from(cells).map(c => c.innerText.trim());
-                if (vals.filter(v => v && v.length > 1).length < 2) continue;
-                rows.push(vals);
+                
+                const rowData = {};
+                let nonEmptyCount = 0;
+                
+                for (const td of cells) {
+                    const colId = td.getAttribute('data-column-id');
+                    if (!colId) continue;  // skip sticky/spacer cells
+                    
+                    const text = (td.innerText || td.textContent || '').trim();
+                    rowData[colId] = text;
+                    if (text && text.length > 1 && text !== '—') {
+                        nonEmptyCount++;
+                    }
+                }
+                
+                // Must have at least email + something else
+                if (rowData.email && nonEmptyCount >= 2) {
+                    rows.push(rowData);
+                }
             }
-            return {headers, rows};
+            
+            // Footer
+            let footer_text = '';
+            const allText = document.body.innerText || '';
+            const m = allText.match(/(\\d+)[\\u2013\\-](\\d+)\\s+of\\s+(\\d[\\d,]*)\\s+results?/i);
+            if (m) footer_text = m[0];
+            
+            return {rows: rows, footer_text: footer_text};
         }
     """)
 
 
+def get_total_count(footer):
+    if not footer: return -1
+    m = re.search(r"of\s+(\d[\d,]*)", footer)
+    return int(m.group(1).replace(",","")) if m else -1
+
+
+def get_range(footer):
+    if not footer: return (-1, -1)
+    m = re.search(r"(\d+)[\u2013\-](\d+)\s+of", footer)
+    return (int(m.group(1)), int(m.group(2))) if m else (-1, -1)
+
+
+def click_next_page(page, current_footer):
+    current_start, _ = get_range(current_footer)
+    log(f"  At row {current_start}, clicking Next...")
+    
+    try:
+        next_btn = page.locator('a[aria-label="Next page"]')
+        if next_btn.count() == 0:
+            return False
+        if next_btn.first.get_attribute("aria-disabled") == "true":
+            log("  Last page reached")
+            return False
+        
+        next_btn.first.click(timeout=5000)
+        time.sleep(4)
+        
+        new_data = extract_table(page)
+        new_start, _ = get_range(new_data.get("footer_text",""))
+        if new_start > current_start:
+            log(f"  Now at row {new_start}")
+            return True
+        log(f"  Page didn't advance")
+        return False
+    except Exception as e:
+        log(f"  Click error: {e}")
+        return False
+
+
+def get_existing_emails():
+    try:
+        rows = read_tab_data("Raw_STRIPE")
+        return {str(r.get("Email","")).strip().lower()
+                for r in rows
+                if r.get("Email") and "@" in str(r.get("Email",""))}
+    except Exception:
+        return set()
+
+
+def merge_with_existing(tab_name, new_rows):
+    try:
+        existing = read_tab_data(tab_name)
+        log(f"  Existing in {tab_name}: {len(existing)}")
+    except Exception:
+        existing = []
+    
+    by_email = {}
+    for r in existing:
+        email = ""
+        for k in ("Email","email"):
+            if k in r and r[k] and "@" in str(r[k]):
+                email = str(r[k]).strip().lower()
+                break
+        if email:
+            by_email[email] = r
+    
+    new_count = 0
+    for r in new_rows:
+        email = ""
+        for k in ("Email","email"):
+            if k in r and r[k] and "@" in str(r[k]):
+                email = str(r[k]).strip().lower()
+                break
+        if not email:
+            continue
+        
+        if email in by_email:
+            old = by_email[email]
+            merged = {**old, **r}
+            merged["__first_seen__"] = old.get("__first_seen__", old.get("__scraped_at__", SCRAPE_TS))
+            by_email[email] = merged
+        else:
+            r["__first_seen__"] = SCRAPE_TS
+            by_email[email] = r
+            new_count += 1
+    
+    log(f"  After merge: {len(by_email)} (+{new_count} NEW)")
+    return list(by_email.values()), new_count
+
+
 def main():
     log("=" * 60)
-    log("STRIPE SCRAPER - FULL HISTORY")
-    log(f"Time: {SCRAPE_TS}")
+    log(f"STRIPE SCRAPER - {SCRAPE_TS}")
     log("=" * 60)
-
+    
     cookies_file = Path("stripe_cookies.json")
-    has_session  = (
-        STRIPE_SESSION_DIR.exists()
-        and any(STRIPE_SESSION_DIR.iterdir())
-    ) if STRIPE_SESSION_DIR.exists() else False
-    has_cookies  = cookies_file.exists() and cookies_file.stat().st_size > 100
-
-    if not has_session and not has_cookies:
-        log("No Stripe session or cookies - skipping")
+    if not cookies_file.exists() or cookies_file.stat().st_size < 100:
+        log("No cookies - skipping")
         return
-
+    
+    mode = determine_mode()
+    log(f"MODE: {mode.upper()}")
+    existing_emails = get_existing_emails() if mode == "daily" else set()
+    
     with sync_playwright() as p:
         STRIPE_SESSION_DIR.mkdir(parents=True, exist_ok=True)
         ctx = p.chromium.launch_persistent_context(
             user_data_dir=str(STRIPE_SESSION_DIR),
             headless=True,
-            viewport={"width": 1600, "height": 1000},
+            viewport={"width": 1920, "height": 1080},
             args=["--no-sandbox", "--disable-dev-shm-usage"],
         )
-
-        if has_cookies:
-            try:
-                raw  = json.loads(cookies_file.read_text())
-                norm = normalize_cookies(raw)
-                ctx.add_cookies(norm)
-                log(f"Injected {len(norm)} cookies")
-            except Exception as e:
-                log(f"Cookie injection error: {e}")
-
-        page = ctx.new_page()
-
+        
         try:
-            log(f"Loading Stripe...")
-            page.goto(
-                STRIPE_URL, wait_until="domcontentloaded", timeout=90000
-            )
-            time.sleep(6)
-
-            content = page.content().lower()
-            if "log in" in content or "sign in" in content:
-                if "login" in page.url.lower():
-                    log("ERROR: Session expired - need fresh cookies")
-                    return
-
-            page.wait_for_load_state("networkidle", timeout=30000)
-            time.sleep(3)
-            log("Stripe loaded")
-
-            all_rows    = []
-            headers     = []
-            seen_hashes = set()
-            page_num    = 1
-
-            while page_num <= 200:
-                page.evaluate(
-                    "window.scrollTo(0, document.body.scrollHeight)"
-                )
-                time.sleep(2)
-
+            raw = json.loads(cookies_file.read_text())
+            ctx.add_cookies(normalize_cookies(raw))
+        except Exception as e:
+            log(f"Cookie error: {e}")
+        
+        page = ctx.new_page()
+        
+        try:
+            log("Loading Stripe...")
+            page.goto(STRIPE_URL, wait_until="domcontentloaded", timeout=90000)
+            time.sleep(15)
+            
+            page.screenshot(path=str(DATA_DIR / "debug_stripe_loaded.png"))
+            
+            try:
+                page.wait_for_load_state("networkidle", timeout=30000)
+            except Exception:
+                pass
+            
+            page.wait_for_selector("table tbody tr", timeout=30000)
+            time.sleep(5)
+            
+            log(f"\n=== Pagination ({mode} mode) ===")
+            
+            all_rows_by_email = {}
+            page_num = 1
+            expected_total = -1
+            no_progress = 0
+            consecutive_all_known = 0
+            
+            MAX_PAGES = 5 if mode == "daily" else 50
+            
+            while page_num <= MAX_PAGES:
+                time.sleep(3)
                 data = extract_table(page)
-                if data["headers"]:
-                    headers = data["headers"]
-                if not data["rows"]:
-                    log(f"Page {page_num}: no rows")
-                    break
-
-                new_count = 0
-                for row in data["rows"]:
-                    h = "|".join(row)
-                    if h in seen_hashes:
+                
+                footer = data.get("footer_text", "")
+                if expected_total < 0:
+                    expected_total = get_total_count(footer)
+                    if expected_total > 0:
+                        log(f"EXPECTED TOTAL: {expected_total}")
+                
+                page_rows = data.get("rows", [])
+                start, end = get_range(footer)
+                
+                # Quality check
+                full_rows = sum(1 for r in page_rows
+                                if r.get("email") and r.get("created") and r.get("customer"))
+                
+                new_on_page = 0
+                known_on_page = 0
+                page_has_new = False
+                
+                for row in page_rows:
+                    email = (row.get("email") or "").strip().lower()
+                    if not email or "@" not in email:
                         continue
-                    seen_hashes.add(h)
-                    all_rows.append(row)
-                    new_count += 1
-
-                log(f"Page {page_num}: +{new_count} (total: {len(all_rows)})")
-
-                if new_count == 0:
-                    break
-
-                clicked = False
-                for sel in [
-                    'button:has-text("Next")',
-                    'button[aria-label*="next" i]',
-                    'button[data-testid*="next" i]',
-                ]:
-                    try:
-                        btn = page.locator(sel).first
-                        if btn.is_visible(timeout=1500):
-                            if not btn.is_disabled():
-                                btn.click()
-                                clicked = True
-                                page_num += 1
-                                time.sleep(3)
-                                break
-                    except Exception:
+                    if email in all_rows_by_email:
+                        # Update if new row has more data
+                        old = all_rows_by_email[email]
+                        for k, v in row.items():
+                            if v and not old.get(k):
+                                old[k] = v
                         continue
-                if not clicked:
-                    break
-
-            # Build enriched rows
-            enriched = []
-            for row in all_rows:
-                d = {
-                    headers[i]: row[i] if i < len(row) else ""
-                    for i, _ in enumerate(headers)
-                }
-                if "Email" not in d:
-                    for v in row:
-                        if isinstance(v, str) and "@" in v:
-                            d["Email"] = v
+                    all_rows_by_email[email] = row
+                    new_on_page += 1
+                    
+                    if mode == "daily":
+                        if email in existing_emails:
+                            known_on_page += 1
+                        else:
+                            page_has_new = True
+                
+                progress = f" / {expected_total}" if expected_total > 0 else ""
+                log(f"  page {page_num} (rows {start}-{end}): "
+                    f"+{new_on_page} | total: {len(all_rows_by_email)}{progress} | "
+                    f"full_rows: {full_rows}/{len(page_rows)}")
+                
+                if mode == "daily" and len(page_rows) > 0:
+                    if not page_has_new and known_on_page == len(page_rows):
+                        consecutive_all_known += 1
+                        if consecutive_all_known >= 2:
+                            log("  DAILY EARLY EXIT")
                             break
-                d["__scraped_at__"]  = SCRAPE_TS
-                d["__scrape_date__"] = SCRAPE_DATE
-                enriched.append(d)
-
-            log(f"Total: {len(enriched)} Stripe customers")
-
-            if enriched:
-                # PRIMARY: Sheets. FALLBACK: CSV
-                ok = write_tab_data("Raw_STRIPE", enriched)
-                log(f"Sheets write: {'OK' if ok else 'FAILED -> CSV fallback used'}")
-
+                    else:
+                        consecutive_all_known = 0
+                
+                if expected_total > 0 and len(all_rows_by_email) >= expected_total:
+                    log(f"  Reached expected total")
+                    break
+                
+                if new_on_page == 0:
+                    no_progress += 1
+                    if no_progress >= 3:
+                        break
+                else:
+                    no_progress = 0
+                
+                if not click_next_page(page, footer):
+                    break
+                
+                page_num += 1
+            
+            # Convert to enriched rows with friendly column names
+            enriched_rows = []
+            for row in all_rows_by_email.values():
+                enriched = {}
+                for col_id, friendly_name in COLUMN_MAP.items():
+                    enriched[friendly_name] = row.get(col_id, "")
+                enriched["__scraped_at__"]  = SCRAPE_TS
+                enriched["__scrape_date__"] = SCRAPE_DATE
+                enriched["__tab__"]         = "STRIPE"
+                enriched["__scrape_mode__"] = mode
+                enriched_rows.append(enriched)
+            
+            log(f"\nScraped {len(enriched_rows)} rows from {page_num} pages")
+            
+            if enriched_rows:
+                merged, new_added = merge_with_existing("Raw_STRIPE", enriched_rows)
+                ok = write_tab_data("Raw_STRIPE", merged)
+                log(f"Sheets: {'OK' if ok else 'CSV'}")
+                
+                # Quality report
+                with_created = sum(1 for r in merged if r.get("Created") and str(r.get("Created")).strip())
+                with_customer = sum(1 for r in merged if r.get("Customer") and str(r.get("Customer")).strip())
+                with_spend = sum(1 for r in merged if r.get("Total spend") and str(r.get("Total spend")).strip())
+                
+                log(f"\n=== DATA QUALITY ===")
+                log(f"  Total: {len(merged)}")
+                log(f"  With Created: {with_created}/{len(merged)} ({100*with_created/len(merged):.0f}%)")
+                log(f"  With Customer: {with_customer}/{len(merged)} ({100*with_customer/len(merged):.0f}%)")
+                log(f"  With Total spend: {with_spend}/{len(merged)} ({100*with_spend/len(merged):.0f}%)")
+                
+                if mode == "historical" and len(merged) >= 50 and with_created >= len(merged) * 0.8:
+                    STRIPE_MARKER.write_text(
+                        f"Stripe historical at {SCRAPE_TS}\n"
+                        f"Quality: {with_created}/{len(merged)} have dates\n"
+                    )
+                    log(f"\nMarker created (good quality)")
+                
+                write_run_summary({
+                    "run_at": SCRAPE_TS,
+                    "stage": "stripe",
+                    "mode": mode,
+                    "scraped": len(enriched_rows),
+                    "new_added": new_added,
+                    "total": len(merged),
+                    "with_dates": with_created,
+                    "expected": expected_total,
+                    "pages": page_num,
+                })
+        
         except Exception as e:
             log(f"FATAL: {e}")
             import traceback
             traceback.print_exc()
-            raise
         finally:
-            try:
-                ctx.close()
-            except Exception:
-                pass
+            try: ctx.close()
+            except: pass
 
 
 if __name__ == "__main__":
