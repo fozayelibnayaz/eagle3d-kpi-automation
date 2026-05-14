@@ -44,25 +44,11 @@ def get_email(row):
 
 
 def get_scraped_date(row, source_type):
+    """Get the actual date for this row based on source type."""
     if source_type == "FREE":
         return parse_date(row.get("Account Created On", ""))
     elif source_type == "FIRST_UPLOAD":
-        registry = load_registry()
-        if not registry:
-            log("  Registry empty - running bootstrap...")
-            registry = bootstrap_registry(force=False)
-        log(f"  FIRST UPLOAD mode: registry has {len(registry)} known uploaders")
-        
-        for row in source:
-            cat = categorize_upload_row(row, check_dns, old_db, seen_in_batch)
-            if cat["final_status"] == "ACCEPTED":
-                seen_in_batch.add(normalize_email(cat["email"]))
-            enriched = build_enriched(row, cat, source_type)
-            categorized.append(enriched)
-        
-        final_registry = load_registry()
-        log(f"  Registry now: {len(final_registry)} entries")
-
+        return parse_date(row.get("Upload Date", ""))
     elif source_type == "STRIPE":
         for f in ("First payment", "Created"):
             if f in row and row[f]:
@@ -71,6 +57,7 @@ def get_scraped_date(row, source_type):
                     return d
         return ""
     return ""
+
 
 
 def parse_amount(val):
@@ -155,7 +142,7 @@ def categorize_signup_row(row, check_dns, old_db, seen_in_batch):
 
 
 def categorize_upload_row(row, check_dns, old_db, seen_in_batch, _ignored=None):
-    """FIRST UPLOAD: validate + check upload registry."""
+    """FIRST UPLOAD: validate + check using account-creation vs upload-date logic."""
     email = get_email(row)
     if not email:
         return {"final_status": "REJECTED", "category": "NO_EMAIL", "reason": "no email", "email": ""}
@@ -186,16 +173,18 @@ def categorize_upload_row(row, check_dns, old_db, seen_in_batch, _ignored=None):
         return {"final_status": "REJECTED", "category": "DUPLICATE_IN_BATCH",
                 "reason": "same email in this scrape", "email": email}
     
-    is_first, reason = is_truly_first_upload(normalized, upload_date)
+    # Use account-creation vs upload-date comparison via old_db
+    is_first, reason = is_truly_first_upload(normalized, upload_date, old_db)
     if not is_first:
         return {"final_status": "REJECTED", "category": "REPEAT_UPLOAD",
                 "reason": reason, "email": email, "scraped_date": upload_date}
     
-    record_first_upload(normalized, upload_date)
+    # Record this in registry to prevent double-counting on future runs
+    record_first_upload(normalized, upload_date, reason)
     
     in_old_db = "yes" if normalized in old_db else "no"
     return {"final_status": "ACCEPTED", "category": "ACCEPTED",
-            "reason": "true_first_upload_recorded", "email": email,
+            "reason": reason, "email": email,
             "in_old_db": in_old_db, "scraped_date": upload_date}
 
 
@@ -229,20 +218,21 @@ def process_tab(raw_tab, verified_tab, source_type, old_db, check_dns=True):
             categorized.append(enriched)
     
     elif source_type == "FIRST_UPLOAD":
-        if upload_history is None:
-            log(f"  WARNING: no upload_history passed - cannot detect repeats!")
-            upload_history = {}
-        log(f"  FIRST UPLOAD mode: validation + upload history check ({len(upload_history)} known)")
+        registry = load_registry()
+        if not registry:
+            log("  Registry empty - running bootstrap...")
+            registry = bootstrap_registry(force=False)
+        log(f"  FIRST UPLOAD mode: registry has {len(registry)} known uploaders")
+        
         for row in source:
-            cat = categorize_upload_row(row, check_dns, old_db, seen_in_batch, upload_history)
+            cat = categorize_upload_row(row, check_dns, old_db, seen_in_batch)
             if cat["final_status"] == "ACCEPTED":
                 seen_in_batch.add(normalize_email(cat["email"]))
             enriched = build_enriched(row, cat, source_type)
             categorized.append(enriched)
-        # Save updated history after processing all uploads
-        from upload_history import save_history
-        save_history(upload_history)
-        log(f"  Updated upload_history saved ({len(upload_history)} total emails)")
+        
+        final_registry = load_registry()
+        log(f"  Registry now: {len(final_registry)} entries")
     
     cats = Counter(r["category"] for r in categorized)
     log(f"  Categories breakdown:")
