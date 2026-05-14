@@ -21,8 +21,8 @@ from dedup_engine import (
     load_old_database_with_dates, is_duplicate_signup,
     normalize_email, parse_date
 )
-from upload_history import (
-    load_history, bootstrap_from_existing, is_truly_first_upload, record_upload
+from upload_registry import (
+    load_registry, bootstrap_registry, is_truly_first_upload, record_first_upload
 )
 from ml_intelligence import score_rows, needs_retrain, train_models
 
@@ -47,7 +47,22 @@ def get_scraped_date(row, source_type):
     if source_type == "FREE":
         return parse_date(row.get("Account Created On", ""))
     elif source_type == "FIRST_UPLOAD":
-        return parse_date(row.get("Upload Date", ""))
+        registry = load_registry()
+        if not registry:
+            log("  Registry empty - running bootstrap...")
+            registry = bootstrap_registry(force=False)
+        log(f"  FIRST UPLOAD mode: registry has {len(registry)} known uploaders")
+        
+        for row in source:
+            cat = categorize_upload_row(row, check_dns, old_db, seen_in_batch)
+            if cat["final_status"] == "ACCEPTED":
+                seen_in_batch.add(normalize_email(cat["email"]))
+            enriched = build_enriched(row, cat, source_type)
+            categorized.append(enriched)
+        
+        final_registry = load_registry()
+        log(f"  Registry now: {len(final_registry)} entries")
+
     elif source_type == "STRIPE":
         for f in ("First payment", "Created"):
             if f in row and row[f]:
@@ -139,11 +154,8 @@ def categorize_signup_row(row, check_dns, old_db, seen_in_batch):
             "in_old_db": in_old_db, "scraped_date": scraped_date}
 
 
-def categorize_upload_row(row, check_dns, old_db, seen_in_batch, upload_history):
-    """
-    FIRST UPLOAD: validate email + check it's truly first ever upload.
-    Uses upload_history.json for permanent tracking.
-    """
+def categorize_upload_row(row, check_dns, old_db, seen_in_batch, _ignored=None):
+    """FIRST UPLOAD: validate + check upload registry."""
     email = get_email(row)
     if not email:
         return {"final_status": "REJECTED", "category": "NO_EMAIL", "reason": "no email", "email": ""}
@@ -172,25 +184,22 @@ def categorize_upload_row(row, check_dns, old_db, seen_in_batch, upload_history)
     
     if normalized in seen_in_batch:
         return {"final_status": "REJECTED", "category": "DUPLICATE_IN_BATCH",
-                "reason": "same email in batch", "email": email}
+                "reason": "same email in this scrape", "email": email}
     
-    # CRITICAL: Check upload history (one-way ratchet)
-    is_first, reason = is_truly_first_upload(normalized, upload_date, upload_history)
+    is_first, reason = is_truly_first_upload(normalized, upload_date)
     if not is_first:
         return {"final_status": "REJECTED", "category": "REPEAT_UPLOAD",
                 "reason": reason, "email": email, "scraped_date": upload_date}
     
-    # This IS a first ever upload - record it for future runs
-    record_upload(normalized, upload_date, upload_history)
+    record_first_upload(normalized, upload_date)
     
     in_old_db = "yes" if normalized in old_db else "no"
     return {"final_status": "ACCEPTED", "category": "ACCEPTED",
-            "reason": "first_ever_upload_recorded", "email": email,
+            "reason": "true_first_upload_recorded", "email": email,
             "in_old_db": in_old_db, "scraped_date": upload_date}
 
 
-
-def process_tab(raw_tab, verified_tab, source_type, old_db, check_dns=True, upload_history=None):
+def process_tab(raw_tab, verified_tab, source_type, old_db, check_dns=True):
     log("-" * 60)
     log(f"PROCESSING: {raw_tab} -> {verified_tab} (source={source_type})")
     
@@ -310,9 +319,7 @@ def main():
     old_db = load_old_database_with_dates()
     log(f"Old DB: {len(old_db)} unique emails")
     
-    log("Loading upload history...")
-    upload_history = bootstrap_from_existing(force=False)
-    log(f"Upload history: {len(upload_history)} emails")
+    
     
     TAB_MAP = [
         ("Raw_FREE",         "Verified_FREE",          "FREE"),

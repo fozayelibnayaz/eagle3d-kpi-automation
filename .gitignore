@@ -1,40 +1,50 @@
-
-# Browser sessions / debug
-# Local CSVs (we don't use them but just in case)
-# Local data output - captured as GitHub Actions artifacts instead
-# Models
-# Python
-# Sensitive
-*.csv
-*.env
-*.pyc
-.DS_Store
-.env
-__pycache__/
+# Local secrets (NEVER commit)
+google_creds.json
+kpi_cookies.json
+kpi_storage_state.json
+kpi_storage_dump.json
+stripe_cookies.json
+stripe_storage_state.json
 browser_session/
 browser_session_fresh/
 browser_session_new/
-data/*.html
-data/*.log
-data/debug/
-google_creds.json
-kpi_cookies.json
-kpi_storage_dump.json
-kpi_storage_state.json
-models/
-stripe_cookies.json
 stripe_session/
-stripe_storage_state.json
-venv/
 
-# Local data outputs (specific files only)
+# Local data outputs - don't commit large files
 data_output/*.csv
 data_output/*.png
 data_output/*.log
+data_output/*.txt
+data_output/*.html
 data_output/Skipped_*
 data_output/Rejected_*
 data_output/Duplicates_*
-# Keep these state files committed:
+data_output/Raw_*
+data_output/Verified_*
+data_output/Daily_Counts.*
+data_output/Monthly_Counts.*
+data_output/storage_state_debug.json
+data_output/Raw_FREE_TEST.*
+data_output/Raw_TEST.*
+
+# Markers (regenerated each run)
+data_output/.historical_done
+data_output/.stripe_historical_done
+
+# KEEP these state files committed (force-include):
 !data_output/upload_history.json
+!data_output/upload_registry.json
 !data_output/pipeline_health.json
 !data_output/old_db_with_dates.json
+!data_output/disposable_domains.txt
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+.DS_Store

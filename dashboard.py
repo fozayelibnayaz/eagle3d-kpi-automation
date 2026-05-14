@@ -231,6 +231,102 @@ def n_accepted(df):
     return int((df["final_status"].str.upper() == "ACCEPTED").sum())
 
 
+def n_accepted_in_range(df, date_field, date_range):
+    """Count ACCEPTED rows where date_field falls within date_range."""
+    if df.empty or "final_status" not in df.columns:
+        return 0
+    accepted = df[df["final_status"].astype(str).str.upper() == "ACCEPTED"]
+    if accepted.empty or date_range is None:
+        return len(accepted) if date_range is None else 0
+    if date_field not in accepted.columns:
+        return 0
+    
+    start_date, end_date = date_range
+    
+    def in_range(val):
+        if not val or str(val).strip() in ("", "—", "-", "nan"):
+            return False
+        s = str(val).strip()
+        from datetime import datetime as _dt
+        try:
+            d = _dt.strptime(s[:10], "%Y-%m-%d").date()
+            return start_date <= d <= end_date
+        except Exception:
+            pass
+        for fmt in ["%m/%d/%y, %I:%M %p", "%m/%d/%Y, %I:%M %p",
+                    "%m/%d/%y", "%m/%d/%Y", "%a %b %d %Y",
+                    "%a %b %d %Y %H:%M:%S"]:
+            try:
+                d = _dt.strptime(s, fmt).date()
+                return start_date <= d <= end_date
+            except Exception:
+                continue
+        try:
+            from email.utils import parsedate_to_datetime
+            dt = parsedate_to_datetime(s)
+            if dt:
+                return start_date <= dt.date() <= end_date
+        except Exception:
+            pass
+        return False
+    
+    return int(accepted[date_field].apply(in_range).sum())
+
+
+def filter_df_by_date(df, date_field, date_range):
+    """Filter rows where date_field is in date_range."""
+    if df.empty or date_range is None:
+        return df
+    if date_field not in df.columns:
+        return df
+    
+    start_date, end_date = date_range
+    
+    def in_range(val):
+        if not val or str(val).strip() in ("", "—", "-", "nan"):
+            return False
+        s = str(val).strip()
+        from datetime import datetime as _dt
+        try:
+            d = _dt.strptime(s[:10], "%Y-%m-%d").date()
+            return start_date <= d <= end_date
+        except Exception:
+            pass
+        for fmt in ["%m/%d/%y, %I:%M %p", "%m/%d/%Y, %I:%M %p",
+                    "%m/%d/%y", "%m/%d/%Y", "%a %b %d %Y",
+                    "%a %b %d %Y %H:%M:%S"]:
+            try:
+                d = _dt.strptime(s, fmt).date()
+                return start_date <= d <= end_date
+            except Exception:
+                continue
+        try:
+            from email.utils import parsedate_to_datetime
+            dt = parsedate_to_datetime(s)
+            if dt:
+                return start_date <= dt.date() <= end_date
+        except Exception:
+            pass
+        return False
+    
+    return df[df[date_field].apply(in_range)].copy()
+
+
+def get_range_label(preset, date_range):
+    """Get human-readable label for the selected range."""
+    if preset == "All Time" or date_range is None:
+        return "All Time"
+    if preset == "This Month":
+        from datetime import datetime as _dt
+        return _dt.now().strftime("%B %Y")
+    if preset == "Last Month":
+        from datetime import datetime as _dt, timedelta
+        last_month = _dt.now().replace(day=1) - timedelta(days=1)
+        return last_month.strftime("%B %Y")
+    return preset
+
+
+
 def n_accepted_current_month(df, date_field):
     """Count rows where final_status=ACCEPTED AND date is in current month."""
     if df.empty:
