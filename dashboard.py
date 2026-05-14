@@ -179,6 +179,63 @@ def n_accepted(df):
     return int((df["final_status"].str.upper() == "ACCEPTED").sum())
 
 
+def n_accepted_current_month(df, date_field):
+    """Count rows where final_status=ACCEPTED AND date is in current month."""
+    if df.empty:
+        return 0
+    if "final_status" not in df.columns:
+        return 0
+    
+    from datetime import datetime
+    current_month = datetime.now().strftime("%Y-%m")
+    
+    # Filter to ACCEPTED
+    accepted = df[df["final_status"].astype(str).str.upper() == "ACCEPTED"]
+    if accepted.empty:
+        return 0
+    
+    # Filter to current month using the date field
+    if date_field not in accepted.columns:
+        return 0
+    
+    # Parse dates and check if they're in current month
+    def in_current_month(val):
+        if not val or str(val).strip() in ("", "—", "-", "nan"):
+            return False
+        s = str(val).strip()
+        # Try YYYY-MM-DD format first
+        if s.startswith(current_month):
+            return True
+        # Try MM/DD/YY or MM/DD/YYYY (Stripe)
+        try:
+            from datetime import datetime as _dt
+            for fmt in ["%m/%d/%y, %I:%M %p", "%m/%d/%Y, %I:%M %p",
+                        "%m/%d/%y", "%m/%d/%Y", "%a %b %d %Y",
+                        "%a %b %d %Y %H:%M:%S"]:
+                try:
+                    parsed = _dt.strptime(s, fmt)
+                    if parsed.strftime("%Y-%m") == current_month:
+                        return True
+                    return False
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        # Try RFC 2822 (KPI dashboard)
+        try:
+            from email.utils import parsedate_to_datetime
+            parsed = parsedate_to_datetime(s)
+            if parsed and parsed.strftime("%Y-%m") == current_month:
+                return True
+        except Exception:
+            pass
+        return False
+    
+    in_month_mask = accepted[date_field].apply(in_current_month)
+    return int(in_month_mask.sum())
+
+
+
 def n_rejected_for(df, reason):
     if df.empty or "verdict_reason" not in df.columns:
         return 0
@@ -460,14 +517,27 @@ else:
 
     st.divider()
 
-    st.markdown("### 🔴 Live Snapshot (current month)")
+    from datetime import datetime as _dt_now
+    _current_month_label = _dt_now.now().strftime("%B %Y")
+    st.markdown(f"### 🔴 Live Snapshot ({_current_month_label})")
     l1, l2, l3 = st.columns(3)
     with l1:
-        card("Sign-ups", n_accepted(free), "#3b82f6")
+        card("Sign-ups",
+             n_accepted_current_month(free, "Account Created On"),
+             "#3b82f6", "this month, accepted")
     with l2:
-        card("First Uploads", n_accepted(upload), "#22c55e")
+        card("First Uploads",
+             n_accepted_current_month(upload, "Upload Date"),
+             "#22c55e", "this month, accepted")
     with l3:
-        card("Paid", n_accepted(stripe), "#f97316")
+        # Stripe: try First payment first, fall back to Created
+        if not stripe.empty and "First payment" in stripe.columns:
+            paid_count = n_accepted_current_month(stripe, "First payment")
+        elif not stripe.empty and "Created" in stripe.columns:
+            paid_count = n_accepted_current_month(stripe, "Created")
+        else:
+            paid_count = 0
+        card("Paid", paid_count, "#f97316", "this month, paid")
 
     st.divider()
 
