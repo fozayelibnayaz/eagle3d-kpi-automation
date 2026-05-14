@@ -506,20 +506,7 @@ else:
         sum_uploads = int(per_month["_uploads"].sum())
         sum_paid = int(per_month["_paid"].sum())
 
-    st.markdown(f"### 📊 Totals for: {preset}")
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        card("Sign-ups", sum_signups, "#2563eb", "verified · deduped")
-    with c2:
-        card("First Uploads", sum_uploads, "#16a34a", "verified · deduped")
-    with c3:
-        card("Paid Subscribers", sum_paid, "#ea580c", "active")
-
-    st.divider()
-
-    from datetime import datetime as _dt_now
-    _current_month_label = _dt_now.now().strftime("%B %Y")
-    st.markdown(f"### 🔴 Live Snapshot ({_current_month_label})")
+        st.markdown(f"### 📊 KPI Snapshot — {_current_month_label})")
     l1, l2, l3 = st.columns(3)
     with l1:
         card("Sign-ups",
