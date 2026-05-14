@@ -123,7 +123,6 @@ def main():
     # Send daily summary notification
     try:
         from sheets_writer import read_tab_data
-        from datetime import datetime
         
         today = datetime.now().strftime("%Y-%m-%d")
         current_month = datetime.now().strftime("%Y-%m")
