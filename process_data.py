@@ -1,7 +1,8 @@
 """
 process_data.py
 Validates ALL rows. Date-aware duplicate detection.
-SPECIAL CASE for STRIPE: only check total spend > $0 (no email validation needed).
+SPECIAL CASE for FIRST UPLOAD: 90-day rule (signup-to-upload gap)
+SPECIAL CASE for STRIPE: only check total spend > 0
 """
 import csv
 import json
@@ -17,8 +18,8 @@ from email_validator_engine import (
     DISPOSABLE_DOMAINS, INTERNAL_DOMAINS, INTERNAL_KEYWORDS
 )
 from dedup_engine import (
-    load_old_database_with_dates, is_duplicate_different_date,
-    normalize_email, parse_date
+    load_old_database_with_dates, is_duplicate_signup,
+    is_legitimate_first_upload, normalize_email, parse_date
 )
 from ml_intelligence import score_rows, needs_retrain, train_models
 
@@ -40,7 +41,6 @@ def get_email(row):
 
 
 def get_scraped_date(row, source_type):
-    """Get the actual date for this row based on source type."""
     if source_type == "FREE":
         return parse_date(row.get("Account Created On", ""))
     elif source_type == "FIRST_UPLOAD":
@@ -56,13 +56,11 @@ def get_scraped_date(row, source_type):
 
 
 def parse_amount(val):
-    """Parse '$29.00' or '$1,234.56' to float."""
     if not val:
         return 0.0
     s = str(val).strip()
     if not s or s in ("—", "-", "N/A"):
         return 0.0
-    # Remove currency symbol and commas
     s = re.sub(r"[$,€£¥\s]", "", s)
     try:
         return float(s)
@@ -71,73 +69,37 @@ def parse_amount(val):
 
 
 def categorize_stripe_row(row):
-    """
-    SPECIAL: Stripe only checks total spend > 0.
-    No email validation, no dedup against old DB (all are real customers).
-    
-    Categories:
-      ACCEPTED      - paid customer (total spend > 0)
-      ZERO_SPEND    - in Stripe but never paid ($0)
-    """
+    """STRIPE: only checks total spend > 0."""
     email = get_email(row)
-    
     spend_raw = row.get("Total spend", "") or row.get("total_spend", "")
     amount = parse_amount(spend_raw)
     
     if amount > 0:
-        return {
-            "final_status": "ACCEPTED",
-            "category": "ACCEPTED",
-            "reason": f"paid ${amount:.2f}",
-            "email": email,
-            "amount": amount,
-        }
-    else:
-        return {
-            "final_status": "REJECTED",
-            "category": "ZERO_SPEND",
-            "reason": "total spend is $0 (not actually paid)",
-            "email": email,
-            "amount": 0.0,
-        }
+        return {"final_status": "ACCEPTED", "category": "ACCEPTED",
+                "reason": f"paid ${amount:.2f}", "email": email, "amount": amount}
+    return {"final_status": "REJECTED", "category": "ZERO_SPEND",
+            "reason": "total spend $0 (not paid)", "email": email, "amount": 0.0}
 
 
-def categorize_row(row, source_type, check_dns=False, old_db=None, seen_in_batch=None):
-    """
-    For FREE and FIRST_UPLOAD only. STRIPE uses categorize_stripe_row.
-    """
-    if old_db is None:
-        old_db = {}
-    if seen_in_batch is None:
-        seen_in_batch = {}
-    
+def categorize_signup_row(row, check_dns, old_db, seen_in_batch):
+    """SIGN-UP validation: full check + date-aware dedup."""
     email = get_email(row)
     if not email:
-        return {"final_status": "REJECTED", "category": "NO_EMAIL",
-                "reason": "no email", "email": ""}
+        return {"final_status": "REJECTED", "category": "NO_EMAIL", "reason": "no email", "email": ""}
     
-    # Syntax check
     ok, reason = check_syntax(email)
     if not ok:
-        return {"final_status": "REJECTED", "category": "INVALID_FORMAT",
-                "reason": reason, "email": email}
+        return {"final_status": "REJECTED", "category": "INVALID_FORMAT", "reason": reason, "email": email}
     
-    # Internal/test/suspicious check
     ok, reason = check_skip(email)
     if not ok:
-        if "internal" in reason.lower():
-            return {"final_status": "REJECTED", "category": "INTERNAL",
-                    "reason": reason, "email": email}
-        return {"final_status": "REJECTED", "category": "SUSPICIOUS",
-                "reason": reason, "email": email}
+        cat = "INTERNAL" if "internal" in reason.lower() else "SUSPICIOUS"
+        return {"final_status": "REJECTED", "category": cat, "reason": reason, "email": email}
     
-    # Disposable check
     ok, reason = check_disposable(email)
     if not ok:
-        return {"final_status": "REJECTED", "category": "DISPOSABLE",
-                "reason": reason, "email": email}
+        return {"final_status": "REJECTED", "category": "DISPOSABLE", "reason": reason, "email": email}
     
-    # Lead source check
     lead_source = ""
     for k, v in row.items():
         if "lead" in k.lower() or "source" in k.lower():
@@ -145,43 +107,81 @@ def categorize_row(row, source_type, check_dns=False, old_db=None, seen_in_batch
                 lead_source = str(v).lower()
                 break
     
-    INTERNAL_LEAD_KEYWORDS = ["internal", "test", "demo", "fake", "sample"]
-    for kw in INTERNAL_LEAD_KEYWORDS:
+    for kw in ["internal", "test", "demo", "fake", "sample"]:
         if kw in lead_source:
             return {"final_status": "REJECTED", "category": "INTERNAL",
                     "reason": f"lead_source contains '{kw}'", "email": email}
     
-    # MX check
     if check_dns:
         domain = email.split("@")[-1]
         ok, reason = check_mx(domain)
         if not ok:
-            return {"final_status": "REJECTED", "category": "INVALID_DOMAIN",
-                    "reason": reason, "email": email}
+            return {"final_status": "REJECTED", "category": "INVALID_DOMAIN", "reason": reason, "email": email}
     
-    scraped_date = get_scraped_date(row, source_type)
+    scraped_date = get_scraped_date(row, "FREE")
     normalized = normalize_email(email)
     
-    # Batch dup check
     if normalized in seen_in_batch:
-        existing_dates = seen_in_batch[normalized]
-        if scraped_date and scraped_date in existing_dates:
-            return {"final_status": "REJECTED", "category": "DUPLICATE_IN_BATCH",
-                    "reason": "same email + same date in batch", "email": email}
         return {"final_status": "REJECTED", "category": "DUPLICATE_IN_BATCH",
-                "reason": f"same email different date in batch", "email": email}
+                "reason": "same email in batch", "email": email}
     
-    # Date-aware old DB check
-    is_dup, dup_reason = is_duplicate_different_date(normalized, scraped_date, old_db)
+    is_dup, dup_reason = is_duplicate_signup(normalized, scraped_date, old_db)
     if is_dup:
         return {"final_status": "REJECTED", "category": "DUPLICATE_DIFFERENT_DATE",
-                "reason": dup_reason, "email": email,
-                "scraped_date": scraped_date}
+                "reason": dup_reason, "email": email, "scraped_date": scraped_date}
     
     in_old_db = "yes" if normalized in old_db else "no"
     return {"final_status": "ACCEPTED", "category": "ACCEPTED",
             "reason": dup_reason, "email": email,
             "in_old_db": in_old_db, "scraped_date": scraped_date}
+
+
+def categorize_upload_row(row, check_dns, old_db, seen_in_batch):
+    """
+    FIRST UPLOAD validation:
+    - Same as signup PLUS
+    - 90-day rule: if user signed up > 90 days before upload, REJECT (re-upload, not first)
+    """
+    email = get_email(row)
+    if not email:
+        return {"final_status": "REJECTED", "category": "NO_EMAIL", "reason": "no email", "email": ""}
+    
+    ok, reason = check_syntax(email)
+    if not ok:
+        return {"final_status": "REJECTED", "category": "INVALID_FORMAT", "reason": reason, "email": email}
+    
+    ok, reason = check_skip(email)
+    if not ok:
+        cat = "INTERNAL" if "internal" in reason.lower() else "SUSPICIOUS"
+        return {"final_status": "REJECTED", "category": cat, "reason": reason, "email": email}
+    
+    ok, reason = check_disposable(email)
+    if not ok:
+        return {"final_status": "REJECTED", "category": "DISPOSABLE", "reason": reason, "email": email}
+    
+    if check_dns:
+        domain = email.split("@")[-1]
+        ok, reason = check_mx(domain)
+        if not ok:
+            return {"final_status": "REJECTED", "category": "INVALID_DOMAIN", "reason": reason, "email": email}
+    
+    upload_date = get_scraped_date(row, "FIRST_UPLOAD")
+    normalized = normalize_email(email)
+    
+    if normalized in seen_in_batch:
+        return {"final_status": "REJECTED", "category": "DUPLICATE_IN_BATCH",
+                "reason": "same email in batch", "email": email}
+    
+    # NEW RULE: check signup-to-upload gap
+    is_legit, gap_reason = is_legitimate_first_upload(normalized, upload_date, old_db)
+    if not is_legit:
+        return {"final_status": "REJECTED", "category": "NOT_FIRST_UPLOAD",
+                "reason": gap_reason, "email": email, "scraped_date": upload_date}
+    
+    in_old_db = "yes" if normalized in old_db else "no"
+    return {"final_status": "ACCEPTED", "category": "ACCEPTED",
+            "reason": gap_reason, "email": email,
+            "in_old_db": in_old_db, "scraped_date": upload_date}
 
 
 def process_tab(raw_tab, verified_tab, source_type, old_db, check_dns=True):
@@ -194,62 +194,32 @@ def process_tab(raw_tab, verified_tab, source_type, old_db, check_dns=True):
     if not source:
         return {"raw_tab": raw_tab, "source": 0, "accepted": 0, "rejected": 0}
     
-    seen_in_batch = {}
+    seen_in_batch = set()
     categorized = []
     
     if source_type == "STRIPE":
-        log(f"  STRIPE mode: only checking total spend > $0 (no email validation)")
+        log(f"  STRIPE mode: checking total spend > $0")
         for row in source:
             cat = categorize_stripe_row(row)
-            
-            enriched = dict(row)
-            enriched["final_status"]          = cat["final_status"]
-            enriched["category"]              = cat["category"]
-            enriched["email_verdict"]         = cat["category"]
-            enriched["__rejection_reason__"]  = cat.get("reason", "")
-            enriched["__email_normalized__"]  = cat.get("email", "")
-            enriched["__amount__"]            = cat.get("amount", 0.0)
-            enriched["__scraped_date__"]      = parse_date(
-                row.get("First payment", "") or row.get("Created", "")
-            )
-            enriched["__processed_at__"]      = PROCESS_TS
-            enriched["__validation_status__"] = (
-                "verified" if cat["final_status"] == "ACCEPTED" else "rejected"
-            )
-            
+            enriched = build_enriched(row, cat, source_type)
             categorized.append(enriched)
-    else:
-        log(f"  Categorizing {len(source)} rows (DNS check: {check_dns})...")
-        
+    
+    elif source_type == "FREE":
+        log(f"  FREE signup mode: full validation + date-aware dedup")
         for row in source:
-            cat = categorize_row(
-                row, source_type,
-                check_dns=check_dns,
-                old_db=old_db,
-                seen_in_batch=seen_in_batch
-            )
-            
-            if cat["email"] and cat["final_status"] == "ACCEPTED":
-                normalized = normalize_email(cat["email"])
-                scraped_date = cat.get("scraped_date", "")
-                if normalized not in seen_in_batch:
-                    seen_in_batch[normalized] = set()
-                if scraped_date:
-                    seen_in_batch[normalized].add(scraped_date)
-            
-            enriched = dict(row)
-            enriched["final_status"]          = cat["final_status"]
-            enriched["category"]              = cat["category"]
-            enriched["email_verdict"]         = cat["category"]
-            enriched["__rejection_reason__"]  = cat.get("reason", "")
-            enriched["__email_normalized__"]  = cat.get("email", "")
-            enriched["__in_old_db__"]         = cat.get("in_old_db", "")
-            enriched["__scraped_date__"]      = cat.get("scraped_date", "")
-            enriched["__processed_at__"]      = PROCESS_TS
-            enriched["__validation_status__"] = (
-                "verified" if cat["final_status"] == "ACCEPTED" else "rejected"
-            )
-            
+            cat = categorize_signup_row(row, check_dns, old_db, seen_in_batch)
+            if cat["final_status"] == "ACCEPTED":
+                seen_in_batch.add(normalize_email(cat["email"]))
+            enriched = build_enriched(row, cat, source_type)
+            categorized.append(enriched)
+    
+    elif source_type == "FIRST_UPLOAD":
+        log(f"  FIRST UPLOAD mode: validation + 90-day rule")
+        for row in source:
+            cat = categorize_upload_row(row, check_dns, old_db, seen_in_batch)
+            if cat["final_status"] == "ACCEPTED":
+                seen_in_batch.add(normalize_email(cat["email"]))
+            enriched = build_enriched(row, cat, source_type)
             categorized.append(enriched)
     
     cats = Counter(r["category"] for r in categorized)
@@ -267,7 +237,7 @@ def process_tab(raw_tab, verified_tab, source_type, old_db, check_dns=True):
         try:
             accepted = score_rows(accepted)
         except Exception as e:
-            log(f"  ML scoring error (continuing): {e}")
+            log(f"  ML scoring error: {e}")
     
     all_rows = accepted + rejected
     
@@ -287,13 +257,28 @@ def process_tab(raw_tab, verified_tab, source_type, old_db, check_dns=True):
     log(f"  Sheets write: {'OK' if ok else 'FAILED'}")
     
     return {
-        "raw_tab":      raw_tab,
-        "verified_tab": verified_tab,
-        "source":       len(source),
-        "accepted":     len(accepted),
-        "rejected":     len(rejected),
-        "categories":   dict(cats),
+        "raw_tab": raw_tab, "verified_tab": verified_tab,
+        "source": len(source), "accepted": len(accepted),
+        "rejected": len(rejected), "categories": dict(cats),
     }
+
+
+def build_enriched(row, cat, source_type):
+    enriched = dict(row)
+    enriched["final_status"]          = cat["final_status"]
+    enriched["category"]              = cat["category"]
+    enriched["email_verdict"]         = cat["category"]
+    enriched["__rejection_reason__"]  = cat.get("reason", "")
+    enriched["__email_normalized__"]  = cat.get("email", "")
+    enriched["__scraped_date__"]      = cat.get("scraped_date", "")
+    enriched["__processed_at__"]      = PROCESS_TS
+    if source_type == "STRIPE":
+        enriched["__amount__"] = cat.get("amount", 0.0)
+    enriched["__in_old_db__"] = cat.get("in_old_db", "")
+    enriched["__validation_status__"] = (
+        "verified" if cat["final_status"] == "ACCEPTED" else "rejected"
+    )
+    return enriched
 
 
 def main():
@@ -308,7 +293,7 @@ def main():
         except Exception as e:
             log(f"Training failed: {e}")
     
-    log("Loading old database with dates...")
+    log("Loading old database (both tabs)...")
     old_db = load_old_database_with_dates()
     log(f"Old DB: {len(old_db)} unique emails")
     
@@ -318,19 +303,13 @@ def main():
         ("Raw_STRIPE",       "Verified_STRIPE",        "STRIPE"),
     ]
     
-    check_mx_for = {
-        "Raw_FREE":         True,
-        "Raw_FIRST_UPLOAD": False,
-        "Raw_STRIPE":       False,
-    }
+    check_mx_for = {"Raw_FREE": True, "Raw_FIRST_UPLOAD": False, "Raw_STRIPE": False}
     
     results = []
     for raw_tab, verified_tab, source_type in TAB_MAP:
         try:
-            r = process_tab(
-                raw_tab, verified_tab, source_type, old_db,
-                check_dns=check_mx_for.get(raw_tab, False)
-            )
+            r = process_tab(raw_tab, verified_tab, source_type, old_db,
+                            check_dns=check_mx_for.get(raw_tab, False))
             results.append(r)
         except Exception as e:
             log(f"Error processing {raw_tab}: {e}")
