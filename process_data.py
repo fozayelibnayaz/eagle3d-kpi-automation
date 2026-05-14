@@ -19,7 +19,10 @@ from email_validator_engine import (
 )
 from dedup_engine import (
     load_old_database_with_dates, is_duplicate_signup,
-    is_legitimate_first_upload, normalize_email, parse_date
+    normalize_email, parse_date
+)
+from upload_history import (
+    load_history, bootstrap_from_existing, is_truly_first_upload, record_upload
 )
 from ml_intelligence import score_rows, needs_retrain, train_models
 
@@ -136,11 +139,10 @@ def categorize_signup_row(row, check_dns, old_db, seen_in_batch):
             "in_old_db": in_old_db, "scraped_date": scraped_date}
 
 
-def categorize_upload_row(row, check_dns, old_db, seen_in_batch):
+def categorize_upload_row(row, check_dns, old_db, seen_in_batch, upload_history):
     """
-    FIRST UPLOAD validation:
-    - Same as signup PLUS
-    - 90-day rule: if user signed up > 90 days before upload, REJECT (re-upload, not first)
+    FIRST UPLOAD: validate email + check it's truly first ever upload.
+    Uses upload_history.json for permanent tracking.
     """
     email = get_email(row)
     if not email:
@@ -172,19 +174,23 @@ def categorize_upload_row(row, check_dns, old_db, seen_in_batch):
         return {"final_status": "REJECTED", "category": "DUPLICATE_IN_BATCH",
                 "reason": "same email in batch", "email": email}
     
-    # NEW RULE: check signup-to-upload gap
-    is_legit, gap_reason = is_legitimate_first_upload(normalized, upload_date, old_db)
-    if not is_legit:
-        return {"final_status": "REJECTED", "category": "NOT_FIRST_UPLOAD",
-                "reason": gap_reason, "email": email, "scraped_date": upload_date}
+    # CRITICAL: Check upload history (one-way ratchet)
+    is_first, reason = is_truly_first_upload(normalized, upload_date, upload_history)
+    if not is_first:
+        return {"final_status": "REJECTED", "category": "REPEAT_UPLOAD",
+                "reason": reason, "email": email, "scraped_date": upload_date}
+    
+    # This IS a first ever upload - record it for future runs
+    record_upload(normalized, upload_date, upload_history)
     
     in_old_db = "yes" if normalized in old_db else "no"
     return {"final_status": "ACCEPTED", "category": "ACCEPTED",
-            "reason": gap_reason, "email": email,
+            "reason": "first_ever_upload_recorded", "email": email,
             "in_old_db": in_old_db, "scraped_date": upload_date}
 
 
-def process_tab(raw_tab, verified_tab, source_type, old_db, check_dns=True):
+
+def process_tab(raw_tab, verified_tab, source_type, old_db, check_dns=True, upload_history=None):
     log("-" * 60)
     log(f"PROCESSING: {raw_tab} -> {verified_tab} (source={source_type})")
     
@@ -214,13 +220,20 @@ def process_tab(raw_tab, verified_tab, source_type, old_db, check_dns=True):
             categorized.append(enriched)
     
     elif source_type == "FIRST_UPLOAD":
-        log(f"  FIRST UPLOAD mode: validation + 90-day rule")
+        if upload_history is None:
+            log(f"  WARNING: no upload_history passed - cannot detect repeats!")
+            upload_history = {}
+        log(f"  FIRST UPLOAD mode: validation + upload history check ({len(upload_history)} known)")
         for row in source:
-            cat = categorize_upload_row(row, check_dns, old_db, seen_in_batch)
+            cat = categorize_upload_row(row, check_dns, old_db, seen_in_batch, upload_history)
             if cat["final_status"] == "ACCEPTED":
                 seen_in_batch.add(normalize_email(cat["email"]))
             enriched = build_enriched(row, cat, source_type)
             categorized.append(enriched)
+        # Save updated history after processing all uploads
+        from upload_history import save_history
+        save_history(upload_history)
+        log(f"  Updated upload_history saved ({len(upload_history)} total emails)")
     
     cats = Counter(r["category"] for r in categorized)
     log(f"  Categories breakdown:")
@@ -296,6 +309,10 @@ def main():
     log("Loading old database (both tabs)...")
     old_db = load_old_database_with_dates()
     log(f"Old DB: {len(old_db)} unique emails")
+    
+    log("Loading upload history...")
+    upload_history = bootstrap_from_existing(force=False)
+    log(f"Upload history: {len(upload_history)} emails")
     
     TAB_MAP = [
         ("Raw_FREE",         "Verified_FREE",          "FREE"),
