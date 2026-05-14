@@ -1,25 +1,18 @@
+# Daily KPI Pipeline - auto-runs at 04:00, 04:30, 05:00 UTC
+# Manual trigger via dashboard or Actions tab
 name: Daily KPI Pipeline
 
 on:
+  workflow_dispatch:
   schedule:
     - cron: '0 4 * * *'
     - cron: '30 4 * * *'
     - cron: '0 5 * * *'
-  workflow_dispatch:
-    inputs:
-      force_historical:
-        description: 'Force "Last 6 Month" historical scrape'
-        required: false
-        default: 'false'
-        type: choice
-        options:
-          - 'false'
-          - 'true'
 
 jobs:
   run-pipeline:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     steps:
       - name: Checkout code
@@ -43,7 +36,8 @@ jobs:
           CREDS: ${{ secrets.GOOGLE_CREDS_JSON }}
         run: |
           if [ -z "$CREDS" ]; then
-            echo "ERROR: GOOGLE_CREDS_JSON empty"; exit 1
+            echo "ERROR: GOOGLE_CREDS_JSON empty"
+            exit 1
           fi
           echo "$CREDS" > google_creds.json
 
@@ -51,15 +45,7 @@ jobs:
         env:
           KPI_EMAIL: ${{ secrets.KPI_EMAIL }}
           KPI_PASSWORD: ${{ secrets.KPI_PASSWORD }}
-        run: |
-          python3 firebase_login.py || true
-          python3 -c "
-import json, os
-from pathlib import Path
-ss = Path('kpi_storage_state.json')
-if ss.exists():
-    print(f'Storage state: {ss.stat().st_size} bytes')
-"
+        run: python3 firebase_login.py || true
 
       - name: Restore Stripe cookies
         env:
@@ -67,15 +53,13 @@ if ss.exists():
         run: |
           if [ -n "$COOKIES" ]; then
             echo "$COOKIES" > stripe_cookies.json
-            echo "stripe_cookies.json: $(wc -c < stripe_cookies.json) bytes"
           fi
 
       - name: Run pipeline
         env:
           MASTER_SHEET_URL: ${{ secrets.MASTER_SHEET_URL }}
           GOOGLE_CREDS_JSON: ${{ secrets.GOOGLE_CREDS_JSON }}
-          HEADLESS_MODE: "true"
-          FORCE_HISTORICAL: ${{ github.event.inputs.force_historical == 'true' && '1' || '' }}
+          HEADLESS_MODE: 'true'
         run: python daily_pipeline.py
 
       - name: Upload artifacts
@@ -88,9 +72,3 @@ if ss.exists():
             data_output/*.json
             data_output/*.png
           retention-days: 90
-
-      - name: Print summary
-        if: always()
-        run: |
-          echo "=== DATA OUTPUT ==="
-          ls -lah data_output/ 2>/dev/null || echo "empty"
