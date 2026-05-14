@@ -1,10 +1,20 @@
 """
-scrape_kpi.py
-Scrapes KPI Dashboard with:
-  - Forced one-time "Last 6 Month" historical scrape
-  - Daily "Current Month" scrapes after that
-  - APPEND mode: never overwrites existing data, only adds new rows
-  - Detailed logging of every dropdown interaction
+scrape_kpi.py - FINAL VERSION
+
+CRITICAL SEQUENCE:
+  1. Load page (default Last Month - shows 65)
+  2. Wait for dropdown enabled
+  3. Change dropdown to target filter (Last 6 Month for first time, Current Month for daily)
+  4. Wait for KPI card to update (proves data refreshed)
+  5. CLICK THE TAB (this re-loads the table with NEW filter data)
+  6. Wait for footer to show new total (619 not 65)
+  7. Set max page size  
+  8. Paginate ALL pages
+
+DAILY MODE LOGIC:
+  - First time (no historical marker): use "Last 6 Month" → ~619 rows
+  - After first time: use "Current Month" → ~50-100 rows daily
+  - APPEND mode dedupes by email
 """
 import json
 import os
@@ -23,10 +33,9 @@ SCRAPE_DATE = datetime.now().strftime("%Y-%m-%d")
 
 KPI_URL = "https://kpidashboard.eagle3dstreaming.com/"
 
-# ALL options available (verified from screenshot)
-DROPDOWN_OPTIONS = ["Last 7 Days", "Last Month", "Current Month", "Last 6 Month"]
+# Marker file to track if historical scrape is done
+HISTORICAL_MARKER = DATA_DIR / ".historical_done"
 
-# Force flag - if FORCE_HISTORICAL=1 env var, always do "Last 6 Month"
 FORCE_HISTORICAL = os.environ.get("FORCE_HISTORICAL", "") == "1"
 
 
@@ -38,15 +47,14 @@ def log(msg):
 def get_context(p):
     storage_file = Path("kpi_storage_state.json")
     session_dir  = Path("browser_session")
-    cookies_file = Path("kpi_cookies.json")
 
     if storage_file.exists() and storage_file.stat().st_size > 200:
         log("Auth: kpi_storage_state.json")
         browser = p.chromium.launch(
-            headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"]
+            headless=True, args=["--no-sandbox","--disable-dev-shm-usage"]
         )
         ctx = browser.new_context(
-            viewport={"width": 1920, "height": 1080},
+            viewport={"width":1920,"height":1080},
             storage_state=str(storage_file),
         )
         return browser, ctx
@@ -56,42 +64,10 @@ def get_context(p):
         ctx = p.chromium.launch_persistent_context(
             user_data_dir=str(session_dir),
             headless=True,
-            args=["--no-sandbox", "--disable-dev-shm-usage"],
-            viewport={"width": 1920, "height": 1080},
+            args=["--no-sandbox","--disable-dev-shm-usage"],
+            viewport={"width":1920,"height":1080},
         )
         return None, ctx
-
-    if cookies_file.exists() and cookies_file.stat().st_size > 10:
-        try:
-            raw = json.load(open(cookies_file))
-            log(f"Auth: {len(raw)} cookies")
-            browser = p.chromium.launch(
-                headless=True,
-                args=["--no-sandbox", "--disable-dev-shm-usage"]
-            )
-            ctx = browser.new_context(viewport={"width":1920,"height":1080})
-            normalized = []
-            for c in raw:
-                n = {
-                    "name":     str(c.get("name","")),
-                    "value":    str(c.get("value","")),
-                    "domain":   str(c.get("domain",".eagle3dstreaming.com")),
-                    "path":     str(c.get("path","/")),
-                    "secure":   bool(c.get("secure",True)),
-                    "httpOnly": bool(c.get("httpOnly",False)),
-                    "sameSite": "None",
-                }
-                exp = c.get("expirationDate") or c.get("expires")
-                if exp:
-                    try: n["expires"] = float(exp)
-                    except: pass
-                if n["name"] and n["value"]:
-                    normalized.append(n)
-            if normalized:
-                ctx.add_cookies(normalized)
-            return browser, ctx
-        except Exception as e:
-            log(f"Cookie error: {e}")
 
     log("WARNING: no auth")
     browser = p.chromium.launch(
@@ -105,192 +81,337 @@ def check_logged_in(page) -> bool:
     return page.locator('input[type="password"]').count() == 0
 
 
-# ─── DATE FILTER (improved) ────────────────────────────
+# ─── DETERMINE TARGET FILTER ───────────────────────────
 def determine_target_filter() -> str:
     """
-    Decide which filter to use.
-    - FORCE_HISTORICAL=1 env: always "Last 6 Month"
-    - Sheets has < 100 rows: "Last 6 Month" (one-time historical)
-    - Otherwise: "Current Month" (daily)
+    First run ever (no marker file): "Last 6 Month" - get historical
+    All subsequent runs: "Current Month" - daily incremental
+    FORCE_HISTORICAL=1 overrides to always use Last 6 Month
     """
     if FORCE_HISTORICAL:
         log("FORCE_HISTORICAL=1 - using 'Last 6 Month'")
         return "Last 6 Month"
 
-    try:
-        existing = read_tab_data("Raw_FREE")
-        # Check both row count AND date range
-        if len(existing) >= 100:
-            # Check if we have data older than 1 month
-            from datetime import datetime, timedelta
-            old_threshold = datetime.now() - timedelta(days=45)
-            has_old = False
-            for row in existing[:50]:  # check first 50
-                date_str = row.get("Account Created On", "")
-                if date_str:
-                    try:
-                        # Parse "Tue, 28 Apr 2026 21:30:14 GMT" format
-                        from email.utils import parsedate_to_datetime
-                        dt = parsedate_to_datetime(date_str)
-                        if dt.replace(tzinfo=None) < old_threshold:
-                            has_old = True
-                            break
-                    except Exception:
-                        pass
+    if HISTORICAL_MARKER.exists():
+        log("Historical scrape already done - using 'Current Month' for daily")
+        return "Current Month"
 
-            if has_old:
-                log(f"Sheets has {len(existing)} rows with old data - using 'Current Month'")
-                return "Current Month"
-            else:
-                log(f"Sheets has {len(existing)} rows but all recent - using 'Last 6 Month'")
-                return "Last 6 Month"
-        else:
-            log(f"Only {len(existing)} rows in Sheets - using 'Last 6 Month'")
-            return "Last 6 Month"
-    except Exception as e:
-        log(f"Sheets check failed ({e}) - using 'Last 6 Month'")
-        return "Last 6 Month"
+    log("First time - using 'Last 6 Month' for historical scrape")
+    return "Last 6 Month"
 
 
-def set_filter_to(page, target: str) -> str:
-    """
-    Click the date dropdown at top-right and select target.
-    Returns actual selected filter (may differ from target if not found).
-    """
-    log(f"=" * 50)
-    log(f"SETTING FILTER TO: '{target}'")
-    log(f"=" * 50)
-
-    page.screenshot(path=str(DATA_DIR / "debug_F1_before_open.png"))
-
-    # Step 1: Wait for dropdown to be enabled
-    log("Step 1: Waiting for .MuiSelect-select to be enabled...")
-    enabled = False
-    for sec in range(60):
+# ─── DROPDOWN INTERACTION ──────────────────────────────
+def wait_for_dropdown_enabled(page, max_wait=90) -> bool:
+    log("Waiting for dropdown to be enabled...")
+    for sec in range(max_wait):
         try:
-            select_el = page.locator(".MuiSelect-select").first
-            if select_el.count() == 0:
-                if sec % 10 == 0:
-                    log(f"  ({sec}s) No .MuiSelect-select element yet")
-                time.sleep(1)
-                continue
-
-            disabled = select_el.get_attribute("aria-disabled")
-            cls      = select_el.get_attribute("class") or ""
-            is_disabled = (disabled == "true" or "Mui-disabled" in cls)
-
-            if not is_disabled and select_el.is_visible(timeout=500):
-                current = select_el.inner_text().strip()
-                log(f"  ENABLED after {sec}s. Current value: '{current}'")
-                enabled = True
-                break
-            elif sec % 10 == 0:
-                log(f"  ({sec}s) Disabled... waiting")
-
-        except Exception as e:
-            if sec % 15 == 0:
-                log(f"  ({sec}s) Exception: {e}")
-
+            el = page.locator(".MuiSelect-select").first
+            if el.count() > 0:
+                cls = el.get_attribute("class") or ""
+                if "Mui-disabled" not in cls and el.is_visible(timeout=500):
+                    log(f"  ENABLED after {sec}s")
+                    return True
+        except Exception:
+            pass
+        if sec % 10 == 0 and sec > 0:
+            log(f"  ({sec}s) still waiting for dropdown...")
         time.sleep(1)
+    return False
 
-    if not enabled:
-        log("FAILED: Dropdown never enabled in 60s")
-        return "default-disabled"
 
-    # Step 2: Read current value
-    select_el = page.locator(".MuiSelect-select").first
-    current = select_el.inner_text().strip()
-    log(f"Step 2: Current dropdown value = '{current}'")
+def get_current_filter(page) -> str:
+    try:
+        return page.locator(".MuiSelect-select").first.inner_text().strip()
+    except Exception:
+        return "?"
+
+
+def get_free_card_value(page) -> int:
+    """Read the 'Free Trial Accounts' big number on KPI cards."""
+    try:
+        return page.evaluate("""
+            () => {
+                // Find the card containing "Free Trial Accounts" text
+                const all = document.querySelectorAll('*');
+                for (const el of all) {
+                    const txt = (el.innerText || '').trim();
+                    if (!txt.startsWith('Free Trial Accounts')) continue;
+                    if (txt.length > 300) continue;
+                    // Extract first number after the label
+                    const m = txt.match(/Free Trial Accounts\\s*\\n?\\s*(\\d[\\d,]*)/);
+                    if (m) return parseInt(m[1].replace(/,/g,''));
+                }
+                return -1;
+            }
+        """)
+    except Exception:
+        return -1
+
+
+def change_filter(page, target: str) -> tuple:
+    """
+    Change the dropdown filter and wait for data to refresh.
+    Returns (success, actual_filter, free_card_value).
+    """
+    log(f"\n{'='*50}")
+    log(f"CHANGING FILTER TO: '{target}'")
+    log(f"{'='*50}")
+
+    if not wait_for_dropdown_enabled(page):
+        log("FAILED: dropdown never enabled")
+        return False, "?", -1
+
+    current = get_current_filter(page)
+    baseline = get_free_card_value(page)
+    log(f"Current filter: '{current}', baseline FREE card: {baseline}")
 
     if current == target:
-        log(f"Already on '{target}' - skipping click")
-        return target
+        log(f"Already on '{target}' - but will re-click to force refresh")
+        # Don't skip - re-click to ensure fresh data is loaded
+        # (cached data from yesterday's run might be stale), baseline
 
-    # Step 3: Click to open
-    log(f"Step 3: Clicking dropdown to open menu...")
-    select_el.click()
-    time.sleep(2)
-    page.screenshot(path=str(DATA_DIR / "debug_F2_menu_open.png"))
+    # Open dropdown
+    log(f"Opening dropdown...")
+    page.locator(".MuiSelect-select").first.click()
+    time.sleep(2.5)
 
-    # Step 4: List all options
+    # Find and click target option
     options = page.locator("li[role='option']").all()
-    log(f"Step 4: Found {len(options)} options:")
-    
-    available_texts = []
+    avail = [(o.text_content() or "").strip() for o in options]
+    log(f"Available options: {avail}")
+
+    found = False
     for opt in options:
+        if (opt.text_content() or "").strip() == target:
+            opt.click()
+            found = True
+            log(f"Clicked: '{target}'")
+            break
+
+    if not found:
+        log(f"ERROR: '{target}' not found in {avail}")
+        page.keyboard.press("Escape")
+        return False, current, baseline
+
+    # CRITICAL: Wait for KPI card to change (proof data refreshed)
+    log(f"Waiting for KPI card to update from {baseline}...")
+    new_value = baseline
+    refreshed = False
+    for sec in range(90):
+        time.sleep(1)
+        new_value = get_free_card_value(page)
+        if new_value > 0 and new_value != baseline:
+            log(f"  KPI card updated after {sec+1}s: {baseline} → {new_value}")
+            refreshed = True
+            break
+        if sec % 5 == 0 and sec > 0:
+            log(f"  ({sec+1}s) Card still: {new_value}")
+
+    if not refreshed:
+        log(f"  WARNING: card never changed ({baseline} → {new_value})")
+        log(f"  Continuing anyway - dropdown shows: '{get_current_filter(page)}'")
+
+    # Extra wait for tables/charts to fully render
+    log(f"Waiting 8s for full data render...")
+    time.sleep(8)
+
+    actual = get_current_filter(page)
+    final = get_free_card_value(page)
+    log(f"DONE: filter='{actual}', FREE card={final}")
+    return True, actual, final
+
+
+# ─── TAB CLICKING (FORCES TABLE RELOAD) ────────────────
+
+
+def wait_for_table_stable(page, max_wait=30):
+    """
+    Wait until table footer total is the SAME for 5 consecutive seconds.
+    This means data has fully loaded and stopped changing.
+    Returns the stable total or -1 if never stable.
+    """
+    log("  Waiting for table to stabilize...")
+    last_total = -1
+    stable_count = 0
+    
+    for sec in range(max_wait):
         try:
-            txt = (opt.text_content() or "").strip()
-            available_texts.append(txt)
-            log(f"    - '{txt}'")
+            footer = page.evaluate("""
+                () => {
+                    const els = document.querySelectorAll('[class*="MuiTablePagination"]');
+                    for (const el of els) {
+                        const t = (el.innerText || '').trim();
+                        if (t.match(/of\\s+\\d/)) return t;
+                    }
+                    return '';
+                }
+            """)
+            
+            if footer:
+                m = re.search(r"of\s+(\d[\d,]*)", footer)
+                if m:
+                    total = int(m.group(1).replace(",",""))
+                    if total == last_total and total > 0:
+                        stable_count += 1
+                        if stable_count >= 5:
+                            log(f"  Table stable at {total} rows ({sec+1}s elapsed)")
+                            return total
+                    else:
+                        if last_total > 0 and total != last_total:
+                            log(f"  Total changed: {last_total} → {total}")
+                        stable_count = 0
+                        last_total = total
+        except Exception:
+            pass
+        time.sleep(1)
+    
+    log(f"  Table never stabilized in {max_wait}s (last total: {last_total})")
+    return last_total
+
+
+def click_tab_force_reload(page, tab_name: str, expected_min: int = 0) -> bool:
+    """
+    Click tab to force table to reload with current filter data.
+    Wait for footer total to be reasonable (matches expected_min if given).
+    """
+    log(f"\n--- Clicking tab: {tab_name} ---")
+
+    # Click another tab first to force reload state, then click target
+    # This handles MUI tab caching behavior
+    other_tabs = ["PAID", "500 MIN", "FIRST UPLOAD", "FREE"]
+    other = next((t for t in other_tabs if t != tab_name), None)
+
+    # Click an OTHER tab first to clear state
+    if other:
+        try:
+            for sel in [f'button:has-text("{other}")']:
+                el = page.locator(sel).first
+                if el.is_visible(timeout=1500):
+                    el.click()
+                    log(f"  Clicked '{other}' first to reset state")
+                    time.sleep(3)
+                    break
         except Exception:
             pass
 
-    # Step 5: Click the target
-    log(f"Step 5: Looking for option '{target}'...")
-    
-    # Try exact match first
-    for opt in options:
-        try:
-            txt = (opt.text_content() or "").strip()
-            if txt == target:
-                log(f"  EXACT MATCH FOUND - clicking '{target}'")
-                opt.click()
-                log(f"  Clicked. Waiting 10s for data refresh...")
-                time.sleep(10)
-                page.screenshot(path=str(DATA_DIR / "debug_F3_after_click.png"))
-                
-                # Verify selection
-                new_val = page.locator(".MuiSelect-select").first.inner_text().strip()
-                log(f"  Dropdown now shows: '{new_val}'")
-                return new_val
-        except Exception as e:
-            log(f"  Click error: {e}")
-
-    # Try fuzzy match
-    target_normalized = target.lower().replace(" ", "")
-    log(f"No exact match. Trying fuzzy for '{target_normalized}'")
-    for opt in options:
-        try:
-            txt = (opt.text_content() or "").strip()
-            if txt.lower().replace(" ", "") == target_normalized:
-                log(f"  FUZZY MATCH: '{txt}' - clicking")
-                opt.click()
-                time.sleep(10)
-                new_val = page.locator(".MuiSelect-select").first.inner_text().strip()
-                log(f"  Dropdown now: '{new_val}'")
-                return new_val
-        except Exception:
-            pass
-
-    log(f"FAILED: '{target}' not in options {available_texts}")
-    page.keyboard.press("Escape")
-    time.sleep(1)
-    return current
-
-
-# ─── TAB CLICK ─────────────────────────────────────────
-def click_tab(page, tab_name: str) -> bool:
-    log(f"Clicking tab: {tab_name}")
+    # Now click target tab
+    clicked = False
     for sel in [
         f'button:has-text("{tab_name}")',
         f'[role="tab"]:has-text("{tab_name}")',
-        f'div[role="button"]:has-text("{tab_name}")',
     ]:
         try:
             el = page.locator(sel).first
             if el.is_visible(timeout=2000):
                 el.click()
-                time.sleep(5)
-                log(f"  Tab '{tab_name}' clicked")
-                return True
+                clicked = True
+                log(f"  Clicked '{tab_name}'")
+                break
         except Exception:
             continue
-    log(f"  Tab '{tab_name}' NOT FOUND")
-    return False
+
+    if not clicked:
+        log(f"  Tab '{tab_name}' not found")
+        return False
+
+    # Wait for table to appear
+    try:
+        page.wait_for_selector(".MuiDataGrid-root, table", timeout=20000)
+    except Exception:
+        log(f"  No table appeared")
+        return False
+
+    time.sleep(5)
+
+    # Wait for footer to show expected total
+    log(f"  Waiting for footer total (expected ~{expected_min})...")
+    for sec in range(45):
+        time.sleep(1)
+        try:
+            footer = page.evaluate("""
+                () => {
+                    const els = document.querySelectorAll('[class*="MuiTablePagination"]');
+                    for (const el of els) {
+                        const t = (el.innerText || '').trim();
+                        if (t.match(/of\\s+\\d/)) return t;
+                    }
+                    return '';
+                }
+            """)
+            if footer:
+                m = re.search(r'of\s+(\d[\d,]*)', footer)
+                if m:
+                    total = int(m.group(1).replace(",",""))
+                    if expected_min == 0 or total >= expected_min * 0.5:
+                        log(f"  Footer: '{footer}' (total: {total})")
+                        return True
+                    elif sec >= 20:
+                        log(f"  Footer shows {total} but expected ~{expected_min}")
+                        log(f"  ({sec}s) waiting for more data...")
+        except Exception:
+            pass
+        if sec % 10 == 0 and sec > 0:
+            log(f"  ({sec}s) footer: '{footer}'...")
+
+    log(f"  Tab loaded (footer: '{footer}')")
+    return True
 
 
-# ─── TABLE EXTRACTION + PAGINATION ─────────────────────
-def extract_table(page) -> dict:
+# ─── MAX PAGE SIZE ─────────────────────────────────────
+def set_max_page_size(page) -> int:
+    log("Setting max page size...")
+
+    # Try multiple selectors
+    selectors = [
+        ".MuiTablePagination-select",
+        ".MuiTablePagination-input .MuiSelect-select",
+        ".MuiTablePagination-toolbar .MuiSelect-select",
+        ".MuiTablePagination-displayedRows + div .MuiSelect-select",
+        '[id*="MuiTablePagination"]',
+        'div.MuiTablePagination-root .MuiSelect-select',
+    ]
+
+    for sel in selectors:
+        try:
+            els = page.locator(sel).all()
+            for el in els:
+                try:
+                    if not el.is_visible(timeout=500):
+                        continue
+                    txt = el.inner_text().strip()
+                    # Page size selector usually shows a number like "5" or "10"
+                    if txt.isdigit():
+                        log(f"  Found page size selector via '{sel}' showing '{txt}'")
+                        el.click()
+                        time.sleep(2)
+
+                        options = page.locator("li[role='option']").all()
+                        sized = []
+                        for opt in options:
+                            t = (opt.text_content() or "").strip()
+                            if t.isdigit():
+                                sized.append((int(t), opt, t))
+
+                        if sized:
+                            sized.sort(key=lambda x: x[0], reverse=True)
+                            biggest = sized[0]
+                            log(f"  Available: {[s[2] for s in sized]}, picking {biggest[0]}")
+                            biggest[1].click()
+                            time.sleep(5)
+                            return biggest[0]
+                        else:
+                            page.keyboard.press("Escape")
+                except Exception:
+                    continue
+        except Exception:
+            continue
+
+    log("  No page size selector found - keeping default")
+    return 5
+
+
+# ─── EXTRACT TABLE ─────────────────────────────────────
+def extract_table_full(page) -> dict:
     return page.evaluate("""
         () => {
             const candidates = [
@@ -298,181 +419,133 @@ def extract_table(page) -> dict:
                 ...document.querySelectorAll('[class*="MuiDataGrid"]'),
                 ...document.querySelectorAll('table'),
             ];
-            let best=null, maxR=0;
+            let best = null, maxR = 0;
             for (const c of candidates) {
-                const r = c.querySelectorAll('[role="row"],tr').length;
+                const r = c.querySelectorAll('[role="row"], tr').length;
                 if (r > maxR) { maxR = r; best = c; }
             }
-            if (!best) return {headers:[], rows:[], total:-1};
+            if (!best) return {headers:[], rows:[], total:-1, footer:''};
 
-            const hEls = best.querySelectorAll('[role="columnheader"],th');
+            const hEls = best.querySelectorAll('[role="columnheader"], th');
             const headers = Array.from(hEls)
                 .map(h => h.innerText.trim())
                 .filter(h => h);
 
-            // Get rows from data-id attribute (more reliable for MUI DataGrid)
-            const rowEls = best.querySelectorAll('[role="row"][data-id], tr[data-id]');
             const rows = [];
             const seen_ids = new Set();
-            
-            for (const r of rowEls) {
+
+            const rowsWithId = best.querySelectorAll('[role="row"][data-id]');
+            for (const r of rowsWithId) {
                 const id = r.getAttribute('data-id');
                 if (seen_ids.has(id)) continue;
                 seen_ids.add(id);
-                
-                const cells = r.querySelectorAll('[role="cell"],[role="gridcell"],td');
+                const cells = r.querySelectorAll('[role="cell"], [role="gridcell"]');
                 if (!cells.length) continue;
                 const vals = Array.from(cells).map(c => c.innerText.trim());
                 if (vals.every(v => !v)) continue;
-                rows.push(vals);
+                rows.push({id: id, vals: vals});
             }
-            
-            // Fallback to all rows if no data-id rows found
+
             if (rows.length === 0) {
                 const allRows = best.querySelectorAll('[role="row"], tr');
+                let idx = 0;
                 for (const r of allRows) {
-                    const cells = r.querySelectorAll('[role="cell"],[role="gridcell"],td');
+                    const cells = r.querySelectorAll('[role="cell"], [role="gridcell"], td');
                     if (!cells.length) continue;
                     const vals = Array.from(cells).map(c => c.innerText.trim());
                     if (vals.every(v => !v)) continue;
                     if (headers.length && vals[0] === headers[0]) continue;
                     if (vals.filter(v => v.length > 0).length < 2) continue;
-                    rows.push(vals);
+                    rows.push({id: 'idx_' + idx++, vals: vals});
                 }
             }
 
-            // Total row count
             let total = -1;
-            const pagEls = document.querySelectorAll(
-                '[class*="MuiTablePagination"],[class*="pagination"]'
-            );
+            let footer = '';
+            const pagEls = document.querySelectorAll('[class*="MuiTablePagination"]');
             for (const el of pagEls) {
-                const txt = el.innerText || '';
-                const m = txt.match(/(\\d[\\d,]*)\\s*[-–]\\s*(\\d[\\d,]*)\\s+of\\s+(\\d[\\d,]*)/i);
+                const t = (el.innerText || '').trim();
+                if (t) footer = t;
+                const m = t.match(/of\\s+(\\d[\\d,]*)/i);
                 if (m) {
-                    total = parseInt(m[3].replace(/,/g,''));
-                    break;
-                }
-                const m2 = txt.match(/of\\s+(\\d[\\d,]*)/i);
-                if (m2) {
-                    total = parseInt(m2[1].replace(/,/g,''));
+                    total = parseInt(m[1].replace(/,/g,''));
                     break;
                 }
             }
-            return {headers, rows, total};
+            return {headers, rows, total, footer};
         }
     """)
 
 
-def set_max_page_size(page):
-    """Set rows-per-page to maximum to reduce pagination."""
-    try:
-        # MUI TablePagination select
-        rpp = page.locator(".MuiTablePagination-select").first
-        if rpp.count() == 0:
-            return
-        
-        rpp.click()
-        time.sleep(1.5)
-        
-        options = page.locator("li[role='option']").all()
-        values = []
-        for opt in options:
-            t = (opt.text_content() or "").strip()
-            if t.isdigit():
-                values.append((int(t), opt))
-        
-        if values:
-            values.sort(key=lambda x: x[0], reverse=True)
-            biggest = values[0]
-            log(f"  Set rows per page: {biggest[0]}")
-            biggest[1].click()
-            time.sleep(3)
-    except Exception as e:
-        log(f"  Page size error: {e}")
-
-
+# ─── PAGINATE ──────────────────────────────────────────
 def paginate_all(page, tab_label: str) -> tuple:
-    log(f"Pagination start for {tab_label}")
-    
-    # Wait for table to load
-    try:
-        page.wait_for_selector(".MuiDataGrid-root, table", timeout=15000)
-    except Exception:
-        log(f"  No table found")
-        return [], []
-    
-    time.sleep(3)
-    
-    # Maximize page size
-    set_max_page_size(page)
-    
-    all_rows    = []
-    headers     = []
-    seen_hashes = set()
-    page_num    = 1
-    expected    = -1
+    log(f"\nPagination: {tab_label}")
 
-    while page_num <= 500:
+    page_size = set_max_page_size(page)
+    log(f"  Page size: {page_size}")
+    time.sleep(3)
+
+    all_rows_dict = {}
+    headers       = []
+    page_num      = 1
+    expected      = -1
+    no_progress   = 0
+    max_pages     = 500
+
+    while page_num <= max_pages:
         time.sleep(2)
-        data = extract_table(page)
+        data = extract_table_full(page)
 
         if data.get("headers"):
             headers = data["headers"]
 
-        if expected < 0:
-            expected = data.get("total", -1)
-            if expected > 0:
-                log(f"  Expected total rows: {expected}")
+        if expected < 0 and data.get("total", -1) > 0:
+            expected = data["total"]
+            log(f"  EXPECTED TOTAL: {expected} rows")
 
-        rows = data.get("rows", [])
-        if not rows:
-            log(f"  p{page_num}: no rows extracted")
-            break
+        page_rows = data.get("rows", [])
+        if not page_rows:
+            log(f"  p{page_num}: 0 rows")
+            no_progress += 1
+            if no_progress >= 3:
+                break
+        else:
+            new_count = 0
+            for r in page_rows:
+                if r["id"] not in all_rows_dict:
+                    all_rows_dict[r["id"]] = r["vals"]
+                    new_count += 1
 
-        new = 0
-        for row in rows:
-            h = "|".join(row)
-            if h in seen_hashes:
-                continue
-            seen_hashes.add(h)
-            all_rows.append(row)
-            new += 1
+            footer = data.get("footer","")[:60]
+            suffix = f" / {expected}" if expected > 0 else ""
+            log(f"  p{page_num}: +{new_count} | total: {len(all_rows_dict)}{suffix} | {footer}")
 
-        suffix = f" of {expected}" if expected > 0 else ""
-        log(f"  p{page_num}: +{new} rows | total: {len(all_rows)}{suffix}")
+            if new_count == 0:
+                no_progress += 1
+                if no_progress >= 3:
+                    break
+            else:
+                no_progress = 0
 
-        if expected > 0 and len(all_rows) >= expected:
+        if expected > 0 and len(all_rows_dict) >= expected:
             log(f"  Reached expected total {expected}")
             break
 
-        if new == 0:
-            break
-
-        # Try scrolling first (for virtualized grids)
+        # Try scroll first
         try:
             scroller = page.locator(".MuiDataGrid-virtualScroller").first
             if scroller.count() > 0:
-                scroller.evaluate("el => el.scrollBy(0, 500)")
-                time.sleep(1.5)
-                
-                # Check if more rows appeared
-                data2 = extract_table(page)
-                rows2 = data2.get("rows", [])
-                more_added = 0
-                for row in rows2:
-                    h = "|".join(row)
-                    if h in seen_hashes:
-                        continue
-                    seen_hashes.add(h)
-                    all_rows.append(row)
-                    more_added += 1
-                
-                if more_added > 0:
-                    log(f"  Scroll added: +{more_added} rows (total: {len(all_rows)})")
-                    if expected > 0 and len(all_rows) >= expected:
-                        break
-                    continue  # don't go to next page yet, scroll more
+                scroller.evaluate("el => el.scrollTo(0, el.scrollHeight)")
+                time.sleep(2)
+                d2 = extract_table_full(page)
+                more = 0
+                for r in d2.get("rows", []):
+                    if r["id"] not in all_rows_dict:
+                        all_rows_dict[r["id"]] = r["vals"]
+                        more += 1
+                if more > 0:
+                    log(f"  Scroll added: +{more}")
+                    continue
         except Exception:
             pass
 
@@ -481,17 +554,16 @@ def paginate_all(page, tab_label: str) -> tuple:
         for sel in [
             'button[aria-label="Go to next page"]',
             'button[aria-label="Next page"]',
-            'button[title="Next page"]',
+            'button[title="Go to next page"]',
         ]:
             try:
                 btn = page.locator(sel).first
                 if btn.is_visible(timeout=800):
                     cls = btn.get_attribute("class") or ""
                     if (btn.get_attribute("disabled") is not None
-                            or "disabled" in cls.lower()
                             or "Mui-disabled" in cls):
-                        log(f"  Last page ({page_num})")
-                        return headers, all_rows
+                        log(f"  Last page reached")
+                        return headers, [v for v in all_rows_dict.values()]
                     btn.click()
                     clicked = True
                     page_num += 1
@@ -501,86 +573,63 @@ def paginate_all(page, tab_label: str) -> tuple:
                 continue
 
         if not clicked:
+            log(f"  No next button")
             break
 
-    log(f"{tab_label}: collected {len(all_rows)} rows")
-    return headers, all_rows
+    final = list(all_rows_dict.values())
+    log(f"{tab_label}: {len(final)} unique rows" +
+        (f" (expected {expected}, missing {expected-len(final)})" if expected > 0 else ""))
+    return headers, final
 
 
 # ─── APPEND MODE ───────────────────────────────────────
 def merge_with_existing(tab_name: str, new_rows: list) -> list:
-    """
-    Read existing data from Sheets and merge with new rows.
-    Deduplicates by email.
-    NEVER loses existing data.
-    """
     try:
         existing = read_tab_data(tab_name)
-        log(f"  Existing rows in {tab_name}: {len(existing)}")
-    except Exception as e:
-        log(f"  Could not read existing: {e}")
+        log(f"  Existing in {tab_name}: {len(existing)}")
+    except Exception:
         existing = []
 
-    # Build lookup by email
     by_email = {}
     for r in existing:
         email = ""
-        for k in ("Email", "email"):
+        for k in ("Email","email","__email_normalized__"):
             if k in r and r[k] and "@" in str(r[k]):
                 email = str(r[k]).strip().lower()
                 break
         if email:
             by_email[email] = r
-        else:
-            # No email - keep as-is using row hash
-            key = json.dumps(r, sort_keys=True, default=str)
-            by_email[f"_nokey_{hash(key)}"] = r
 
-    # Add new rows (overwrites only if same email exists - usually safe)
-    new_count = 0
-    updated_count = 0
+    new_count = updated = 0
     for r in new_rows:
         email = ""
-        for k in ("Email", "email"):
+        for k in ("Email","email"):
             if k in r and r[k] and "@" in str(r[k]):
                 email = str(r[k]).strip().lower()
                 break
         if email:
             if email in by_email:
-                # Update existing - merge fields (new wins)
-                merged = {**by_email[email], **r}
-                by_email[email] = merged
-                updated_count += 1
+                by_email[email] = {**by_email[email], **r}
+                updated += 1
             else:
                 by_email[email] = r
                 new_count += 1
-        else:
-            key = json.dumps(r, sort_keys=True, default=str)
-            if f"_nokey_{hash(key)}" not in by_email:
-                by_email[f"_nokey_{hash(key)}"] = r
-                new_count += 1
 
-    merged_list = list(by_email.values())
-    log(f"  After merge: {len(merged_list)} rows (+{new_count} new, {updated_count} updated)")
-    return merged_list
+    log(f"  After merge: {len(by_email)} (+{new_count} new, {updated} updated)")
+    return list(by_email.values())
 
 
-TABS = {
-    "FREE":         "FREE",
-    "FIRST UPLOAD": "FIRST_UPLOAD",
-}
+TABS = {"FREE": "FREE", "FIRST UPLOAD": "FIRST_UPLOAD"}
 
 
 # ─── MAIN ──────────────────────────────────────────────
 def main():
     log("=" * 60)
-    log("KPI SCRAPER")
-    log(f"Time: {SCRAPE_TS}")
-    log(f"FORCE_HISTORICAL: {FORCE_HISTORICAL}")
+    log(f"KPI SCRAPER - {SCRAPE_TS}")
     log("=" * 60)
 
     target_filter = determine_target_filter()
-    log(f"Target filter: '{target_filter}'")
+    log(f"TARGET FILTER: '{target_filter}'")
 
     with sync_playwright() as p:
         browser, ctx = get_context(p)
@@ -589,39 +638,37 @@ def main():
             page = ctx.new_page()
             log(f"Loading {KPI_URL}")
             page.goto(KPI_URL, wait_until="domcontentloaded", timeout=90000)
-            time.sleep(8)  # Longer wait for full app load
+            time.sleep(12)  # Long initial wait for full app load
 
-            log(f"URL:   {page.url}")
-            log(f"Title: {page.title()}")
+            log(f"URL: {page.url}")
             page.screenshot(path=str(DATA_DIR / "debug_01_loaded.png"))
 
             if not check_logged_in(page):
-                log("ERROR: Not logged in - run firebase_login.py first")
+                log("ERROR: Not logged in")
                 return
 
-            log("Logged in OK")
+            # ─── STEP 1: CHANGE FILTER FIRST ───
+            success, actual_filter, free_card = change_filter(page, target_filter)
+            log(f"\nFilter result: actual='{actual_filter}', FREE card={free_card}")
+            page.screenshot(path=str(DATA_DIR / "debug_02_filter_set.png"))
 
-            # Set filter (this is the critical step)
-            actual_filter = set_filter_to(page, target_filter)
-            log(f"Active filter: '{actual_filter}'")
+            if free_card <= 0:
+                log("WARNING: free_card is invalid - data may not have loaded")
 
-            if actual_filter != target_filter:
-                log(f"WARNING: Wanted '{target_filter}' but got '{actual_filter}'")
-
+            # ─── STEP 2: For each tab, click + wait + paginate ───
             summary = {}
             for tab_label, tab_key in TABS.items():
-                log(f"\n{'─'*50}")
-                log(f"TAB: {tab_label}")
-
-                if not click_tab(page, tab_label):
+                # CRITICAL: click tab AFTER filter is set, then paginate
+                if not click_tab_force_reload(page, tab_label,
+                                              expected_min=free_card if tab_label == "FREE" else 100):
                     summary[tab_key] = 0
                     continue
 
                 page.screenshot(path=str(DATA_DIR / f"debug_tab_{tab_key}.png"))
 
                 headers, raw_rows = paginate_all(page, tab_label)
+
                 if not raw_rows:
-                    log(f"NO DATA for {tab_label}")
                     summary[tab_key] = 0
                     continue
 
@@ -635,33 +682,41 @@ def main():
                     d["__scrape_date__"] = SCRAPE_DATE
                     enriched.append(d)
 
-                # APPEND MODE: merge with existing data
-                log(f"Merging with existing Sheets data...")
                 merged = merge_with_existing(f"Raw_{tab_key}", enriched)
-
-                log(f"Writing {len(merged)} total rows to Sheets...")
                 ok = write_tab_data(f"Raw_{tab_key}", merged)
-                log(f"Sheets write: {'OK' if ok else 'FAILED/CSV fallback'}")
-                summary[tab_key] = {
-                    "scraped":   len(enriched),
-                    "total_after_merge": len(merged),
-                }
+                summary[tab_key] = {"scraped": len(enriched), "total": len(merged)}
+
+            # Mark historical done if Last 6 Month succeeded
+            if (target_filter == "Last 6 Month"
+                    and isinstance(summary.get("FREE"), dict)
+                    and summary["FREE"].get("scraped", 0) >= 100):
+                HISTORICAL_MARKER.write_text(
+                    f"Historical scrape completed at {SCRAPE_TS}\n"
+                    f"Filter: {target_filter}\n"
+                    f"Free card: {free_card}\n"
+                    f"FREE scraped: {summary['FREE']['scraped']}\n"
+                    f"FIRST_UPLOAD scraped: {summary.get('FIRST_UPLOAD',{}).get('scraped',0)}\n"
+                    f"\nFrom now on, daily runs will use 'Current Month'.\n"
+                    f"Delete this file to force another historical scrape.\n"
+                )
+                log(f"\n✓ Marked HISTORICAL_DONE → {HISTORICAL_MARKER}")
+                log(f"  Future runs will use 'Current Month' (daily mode)")
 
             log(f"\n{'='*60}")
             log("COMPLETE")
             for k, v in summary.items():
                 if isinstance(v, dict):
-                    log(f"  {k}: scraped={v['scraped']}, total={v['total_after_merge']}")
-                else:
-                    log(f"  {k}: {v}")
+                    log(f"  {k}: scraped={v['scraped']}, total={v['total']}")
 
             write_run_summary({
-                "run_at":  SCRAPE_TS,
-                "stage":   "kpi",
-                "filter":  actual_filter,
+                "run_at":    SCRAPE_TS,
+                "stage":     "kpi",
+                "filter":    actual_filter,
+                "free_card": free_card,
+                "historical_done": HISTORICAL_MARKER.exists(),
                 **{f"{k}_scraped": v.get('scraped',0) if isinstance(v,dict) else v
                    for k,v in summary.items()},
-                **{f"{k}_total": v.get('total_after_merge',0) if isinstance(v,dict) else v
+                **{f"{k}_total": v.get('total',0) if isinstance(v,dict) else v
                    for k,v in summary.items()},
             })
 
@@ -673,7 +728,6 @@ def main():
                 page.screenshot(path=str(DATA_DIR / "debug_FATAL.png"))
             except Exception:
                 pass
-            raise
         finally:
             try: ctx.close()
             except: pass
