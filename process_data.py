@@ -1,8 +1,6 @@
 """
 process_data.py
-Validates ALL rows. Tags each with category instead of skipping.
-ACCEPTED rows go to dashboard counts.
-REJECTED rows still saved (categorized) for transparency.
+Validates ALL rows. Date-aware duplicate detection.
 """
 import csv
 import json
@@ -17,7 +15,10 @@ from email_validator_engine import (
     check_syntax, check_disposable, check_skip, check_mx,
     DISPOSABLE_DOMAINS, INTERNAL_DOMAINS, INTERNAL_KEYWORDS
 )
-from dedup_engine import load_old_database_emails, deduplicate
+from dedup_engine import (
+    load_old_database_with_dates, is_duplicate_different_date,
+    normalize_email, parse_date
+)
 from ml_intelligence import score_rows, needs_retrain, train_models
 
 DATA_DIR = Path("data_output")
@@ -30,49 +31,98 @@ def log(msg):
     print(f"[{ts}] [Process] {msg}", flush=True)
 
 
-def categorize_row(row, check_dns=False, old_db_emails=None, seen_in_batch=None):
-    """
-    Assign single category to a row.
-    Returns dict with: final_status, category, reason, email, in_old_db
-    """
-    if old_db_emails is None:
-        old_db_emails = {}
-    if seen_in_batch is None:
-        seen_in_batch = set()
-    
-    # Find email
-    email = ""
+def get_email(row):
     for k in ("Email", "email", "EMAIL"):
         if k in row and row[k] and "@" in str(row[k]):
-            email = str(row[k]).strip().lower()
-            break
+            return str(row[k]).strip().lower()
+    return ""
+
+
+def get_scraped_date(row, source_type):
+    """Get the actual date for this row based on source type."""
+    if source_type == "FREE":
+        date_field = "Account Created On"
+    elif source_type == "FIRST_UPLOAD":
+        date_field = "Upload Date"
+    elif source_type == "STRIPE":
+        # For Stripe, prefer First payment over Created
+        for f in ("First payment", "Created"):
+            if f in row and row[f]:
+                return parse_date(row[f])
+        return ""
+    else:
+        return ""
     
+    return parse_date(row.get(date_field, ""))
+
+
+def categorize_row(row, source_type, check_dns=False, old_db=None, seen_in_batch=None):
+    """
+    Assign category to a row based on validation + dedup.
+    
+    Categories:
+      ACCEPTED                  - new + valid email
+      DUPLICATE_DIFFERENT_DATE  - email in old DB with different date
+      DUPLICATE_IN_BATCH        - same email twice in this scrape
+      DISPOSABLE                - disposable email domain
+      INTERNAL                  - internal eagle3d email
+      SUSPICIOUS                - test/demo/fake patterns
+      INVALID_FORMAT            - bad email syntax
+      INVALID_DOMAIN            - no MX record
+      NO_EMAIL                  - missing email
+    """
+    if old_db is None:
+        old_db = {}
+    if seen_in_batch is None:
+        seen_in_batch = {}
+    
+    email = get_email(row)
     if not email:
-        return {"final_status": "REJECTED", "category": "NO_EMAIL",
-                "reason": "no email", "email": ""}
+        return {
+            "final_status": "REJECTED",
+            "category": "NO_EMAIL",
+            "reason": "no email",
+            "email": "",
+        }
     
     # Syntax check
     ok, reason = check_syntax(email)
     if not ok:
-        return {"final_status": "REJECTED", "category": "INVALID_FORMAT",
-                "reason": reason, "email": email}
+        return {
+            "final_status": "REJECTED",
+            "category": "INVALID_FORMAT",
+            "reason": reason,
+            "email": email,
+        }
     
-    # Internal/test/suspicious check (uses email_validator_engine.check_skip)
+    # Internal/test check
     ok, reason = check_skip(email)
     if not ok:
         if "internal" in reason.lower():
-            return {"final_status": "REJECTED", "category": "INTERNAL",
-                    "reason": reason, "email": email}
-        return {"final_status": "REJECTED", "category": "SUSPICIOUS",
-                "reason": reason, "email": email}
+            return {
+                "final_status": "REJECTED",
+                "category": "INTERNAL",
+                "reason": reason,
+                "email": email,
+            }
+        return {
+            "final_status": "REJECTED",
+            "category": "SUSPICIOUS",
+            "reason": reason,
+            "email": email,
+        }
     
     # Disposable check
     ok, reason = check_disposable(email)
     if not ok:
-        return {"final_status": "REJECTED", "category": "DISPOSABLE",
-                "reason": reason, "email": email}
+        return {
+            "final_status": "REJECTED",
+            "category": "DISPOSABLE",
+            "reason": reason,
+            "email": email,
+        }
     
-    # Lead source check (catches internal-testing and similar)
+    # Lead source check (catches internal-testing)
     lead_source = ""
     for k, v in row.items():
         if "lead" in k.lower() or "source" in k.lower():
@@ -83,33 +133,73 @@ def categorize_row(row, check_dns=False, old_db_emails=None, seen_in_batch=None)
     INTERNAL_LEAD_KEYWORDS = ["internal", "test", "demo", "fake", "sample"]
     for kw in INTERNAL_LEAD_KEYWORDS:
         if kw in lead_source:
-            return {"final_status": "REJECTED", "category": "INTERNAL",
-                    "reason": f"lead_source contains '{kw}'", "email": email}
+            return {
+                "final_status": "REJECTED",
+                "category": "INTERNAL",
+                "reason": f"lead_source contains '{kw}'",
+                "email": email,
+            }
     
-    # MX check (optional, slow)
+    # MX check
     if check_dns:
         domain = email.split("@")[-1]
         ok, reason = check_mx(domain)
         if not ok:
-            return {"final_status": "REJECTED", "category": "INVALID_DOMAIN",
-                    "reason": reason, "email": email}
+            return {
+                "final_status": "REJECTED",
+                "category": "INVALID_DOMAIN",
+                "reason": reason,
+                "email": email,
+            }
     
-    # Duplicate within this batch?
-    if email in seen_in_batch:
-        return {"final_status": "REJECTED", "category": "DUPLICATE_IN_BATCH",
-                "reason": "seen earlier in this scrape", "email": email}
+    # Get scraped date
+    scraped_date = get_scraped_date(row, source_type)
     
-    # Check old DB
-    in_old_db = "yes" if email in old_db_emails else "no"
+    # Batch dup check
+    normalized = normalize_email(email)
+    if normalized in seen_in_batch:
+        existing_dates = seen_in_batch[normalized]
+        if scraped_date and scraped_date in existing_dates:
+            return {
+                "final_status": "REJECTED",
+                "category": "DUPLICATE_IN_BATCH",
+                "reason": "same email + same date in this scrape",
+                "email": email,
+            }
+        else:
+            return {
+                "final_status": "REJECTED",
+                "category": "DUPLICATE_IN_BATCH",
+                "reason": f"same email different date in batch: {existing_dates}",
+                "email": email,
+            }
     
-    return {"final_status": "ACCEPTED", "category": "ACCEPTED",
-            "reason": "passed all checks", "email": email,
-            "in_old_db": in_old_db}
+    # Date-aware old DB check
+    is_dup, dup_reason = is_duplicate_different_date(normalized, scraped_date, old_db)
+    if is_dup:
+        return {
+            "final_status": "REJECTED",
+            "category": "DUPLICATE_DIFFERENT_DATE",
+            "reason": dup_reason,
+            "email": email,
+            "scraped_date": scraped_date,
+        }
+    
+    # Mark as accepted
+    in_old_db = "yes" if normalized in old_db else "no"
+    return {
+        "final_status": "ACCEPTED",
+        "category": "ACCEPTED",
+        "reason": dup_reason,
+        "email": email,
+        "in_old_db": in_old_db,
+        "scraped_date": scraped_date,
+    }
 
 
-def process_tab(raw_tab, verified_tab, old_db_emails, check_dns=True):
+def process_tab(raw_tab, verified_tab, source_type, old_db, check_dns=True):
     log("-" * 60)
-    log(f"PROCESSING: {raw_tab} -> {verified_tab}")
+    log(f"PROCESSING: {raw_tab} -> {verified_tab} (source={source_type})")
     
     source = read_tab_data(raw_tab)
     log(f"  Source rows: {len(source)}")
@@ -119,17 +209,25 @@ def process_tab(raw_tab, verified_tab, old_db_emails, check_dns=True):
     
     log(f"  Categorizing {len(source)} rows (DNS check: {check_dns})...")
     
-    seen_in_batch = set()
+    seen_in_batch = {}
     categorized = []
     
     for row in source:
-        cat = categorize_row(row,
-                              check_dns=check_dns,
-                              old_db_emails=old_db_emails,
-                              seen_in_batch=seen_in_batch)
+        cat = categorize_row(
+            row, source_type,
+            check_dns=check_dns,
+            old_db=old_db,
+            seen_in_batch=seen_in_batch
+        )
         
+        # Update seen_in_batch
         if cat["email"] and cat["final_status"] == "ACCEPTED":
-            seen_in_batch.add(cat["email"])
+            normalized = normalize_email(cat["email"])
+            scraped_date = cat.get("scraped_date", "")
+            if normalized not in seen_in_batch:
+                seen_in_batch[normalized] = set()
+            if scraped_date:
+                seen_in_batch[normalized].add(scraped_date)
         
         # Build enriched row
         enriched = dict(row)
@@ -139,6 +237,7 @@ def process_tab(raw_tab, verified_tab, old_db_emails, check_dns=True):
         enriched["__rejection_reason__"]  = cat.get("reason", "")
         enriched["__email_normalized__"]  = cat.get("email", "")
         enriched["__in_old_db__"]         = cat.get("in_old_db", "")
+        enriched["__scraped_date__"]      = cat.get("scraped_date", "")
         enriched["__processed_at__"]      = PROCESS_TS
         enriched["__validation_status__"] = (
             "verified" if cat["final_status"] == "ACCEPTED" else "rejected"
@@ -146,18 +245,17 @@ def process_tab(raw_tab, verified_tab, old_db_emails, check_dns=True):
         
         categorized.append(enriched)
     
-    # Stats
     cats = Counter(r["category"] for r in categorized)
     log(f"  Categories breakdown:")
     for c, n in cats.most_common():
-        log(f"    {c:20s}: {n}")
+        log(f"    {c:30s}: {n}")
     
     accepted = [r for r in categorized if r["final_status"] == "ACCEPTED"]
     rejected = [r for r in categorized if r["final_status"] == "REJECTED"]
     
     log(f"  ACCEPTED: {len(accepted)}, REJECTED: {len(rejected)}")
     
-    # ML scoring on accepted only
+    # ML scoring on accepted
     if accepted:
         log(f"  ML scoring {len(accepted)} accepted rows...")
         try:
@@ -165,10 +263,9 @@ def process_tab(raw_tab, verified_tab, old_db_emails, check_dns=True):
         except Exception as e:
             log(f"  ML scoring error (continuing): {e}")
     
-    # Combine all rows
     all_rows = accepted + rejected
     
-    # Save rejected to local CSV for inspection
+    # Save rejected to local CSV
     if rejected:
         rejected_csv = DATA_DIR / f"Rejected_{verified_tab}.csv"
         try:
@@ -179,9 +276,8 @@ def process_tab(raw_tab, verified_tab, old_db_emails, check_dns=True):
                 w.writerows(rejected)
             log(f"  Rejected CSV: {rejected_csv}")
         except Exception as e:
-            log(f"  Rejected CSV save error: {e}")
+            log(f"  Rejected CSV save: {e}")
     
-    # Write all categorized rows to Sheets
     log(f"  Writing {len(all_rows)} rows to {verified_tab}...")
     ok = write_tab_data(verified_tab, all_rows)
     log(f"  Sheets write: {'OK' if ok else 'FAILED'}")
@@ -201,7 +297,6 @@ def main():
     log(f"PROCESS DATA - {PROCESS_TS}")
     log("=" * 60)
     
-    # Train ML if needed
     if needs_retrain():
         log("Models need retraining...")
         try:
@@ -209,17 +304,16 @@ def main():
         except Exception as e:
             log(f"Training failed (will use heuristics): {e}")
     
-    # Load old DB emails for cross-reference
-    old_db_emails = load_old_database_emails()
-    log(f"Old DB emails loaded: {len(old_db_emails)}")
+    log("Loading old database with dates...")
+    old_db = load_old_database_with_dates()
+    log(f"Old DB: {len(old_db)} unique emails")
     
-    TAB_MAP = {
-        "Raw_FREE":         "Verified_FREE",
-        "Raw_FIRST_UPLOAD": "Verified_FIRST_UPLOAD",
-        "Raw_STRIPE":       "Verified_STRIPE",
-    }
+    TAB_MAP = [
+        ("Raw_FREE",         "Verified_FREE",          "FREE"),
+        ("Raw_FIRST_UPLOAD", "Verified_FIRST_UPLOAD",  "FIRST_UPLOAD"),
+        ("Raw_STRIPE",       "Verified_STRIPE",        "STRIPE"),
+    ]
     
-    # MX check is slow - only do it for FREE signups
     check_mx_for = {
         "Raw_FREE":         True,
         "Raw_FIRST_UPLOAD": False,
@@ -227,10 +321,12 @@ def main():
     }
     
     results = []
-    for raw_tab, verified_tab in TAB_MAP.items():
+    for raw_tab, verified_tab, source_type in TAB_MAP:
         try:
-            r = process_tab(raw_tab, verified_tab, old_db_emails,
-                            check_dns=check_mx_for.get(raw_tab, False))
+            r = process_tab(
+                raw_tab, verified_tab, source_type, old_db,
+                check_dns=check_mx_for.get(raw_tab, False)
+            )
             results.append(r)
         except Exception as e:
             log(f"Error processing {raw_tab}: {e}")
@@ -247,7 +343,7 @@ def main():
         rej = r.get("rejected", 0)
         log(f"  {raw:25s}: {src:>4} src -> {acc:>4} ACCEPTED, {rej:>4} REJECTED")
         for cat, n in (r.get("categories") or {}).items():
-            log(f"      {cat:20s}: {n}")
+            log(f"      {cat:30s}: {n}")
     
     return results
 
