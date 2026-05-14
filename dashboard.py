@@ -505,8 +505,11 @@ else:
         sum_signups = int(per_month["_signups"].sum())
         sum_uploads = int(per_month["_uploads"].sum())
         sum_paid = int(per_month["_paid"].sum())
-
-        st.markdown(f"### 📊 KPI Snapshot — {_current_month_label})")
+    # ─── KPI Snapshot (current month only) ───
+    # ─── KPI Snapshot (current month only) ───
+    from datetime import datetime as _dt_now
+    _current_month_label = _dt_now.now().strftime("%B %Y")
+    st.markdown(f"### 📊 KPI Snapshot — {_current_month_label}")
     l1, l2, l3 = st.columns(3)
     with l1:
         card("Sign-ups",
@@ -517,7 +520,6 @@ else:
              n_accepted_current_month(upload, "Upload Date"),
              "#22c55e", "this month, accepted")
     with l3:
-        # Stripe: try First payment first, fall back to Created
         if not stripe.empty and "First payment" in stripe.columns:
             paid_count = n_accepted_current_month(stripe, "First payment")
         elif not stripe.empty and "Created" in stripe.columns:
@@ -525,7 +527,7 @@ else:
         else:
             paid_count = 0
         card("Paid", paid_count, "#f97316", "this month, paid")
-
+    
     st.divider()
 
     # Trend chart
