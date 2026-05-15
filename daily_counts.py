@@ -1,12 +1,12 @@
 """
 daily_counts.py
-EXPLICIT date field per source. Falls back to scrape_date for missing dates.
-Tags rows with date_source: "actual" or "estimated".
+Counts ONLY final_status=ACCEPTED rows, grouped by actual event date.
+Writes Daily_Counts and Monthly_Counts to Sheets.
 """
-import re
 from collections import defaultdict
 from datetime import datetime
 from email.utils import parsedate_to_datetime
+import re
 
 from sheets_writer import read_tab_data, write_tab_data
 
@@ -18,44 +18,53 @@ def log(msg):
 DATE_FORMATS = [
     "%Y-%m-%d %H:%M:%S",
     "%Y-%m-%d",
-    "%m/%d/%y, %I:%M %p",   # Stripe: "5/8/26, 5:25 AM"
+    "%m/%d/%y, %I:%M %p",
     "%m/%d/%Y, %I:%M %p",
     "%m/%d/%y %I:%M %p",
     "%m/%d/%Y %I:%M %p",
     "%m/%d/%y",
     "%m/%d/%Y",
-    "%a %b %d %Y",          # First Upload: "Tue May 05 2026"
+    "%a %b %d %Y",
     "%a %b %d %Y %H:%M:%S",
     "%b %d, %Y",
     "%d %b %Y",
+    "%a, %d %b %Y %H:%M:%S %Z",
+    "%a, %d %b %Y %H:%M:%S GMT",
 ]
 
 
 def parse_date(raw):
+    """Parse any date string to YYYY-MM-DD. Returns '' on failure."""
     if not raw or not str(raw).strip():
         return ""
     raw = str(raw).strip()
-    
+    if raw in ("—", "-", "N/A", "nan", "None"):
+        return ""
+
+    # Try RFC 2822 (used by KPI dashboard "Account Created On")
     try:
         dt = parsedate_to_datetime(raw)
         if dt:
             return dt.strftime("%Y-%m-%d")
     except Exception:
         pass
-    
+
+    # Try known formats
     for fmt in DATE_FORMATS:
         try:
             return datetime.strptime(raw, fmt).strftime("%Y-%m-%d")
         except Exception:
             continue
-    
+
+    # Regex: YYYY-MM-DD anywhere in string
     m = re.search(r"(\d{4})-(\d{1,2})-(\d{1,2})", raw)
     if m:
         try:
             return datetime(int(m.group(1)), int(m.group(2)), int(m.group(3))).strftime("%Y-%m-%d")
         except Exception:
             pass
-    
+
+    # Regex: MM/DD/YY or MM/DD/YYYY
     m = re.search(r"(\d{1,2})/(\d{1,2})/(\d{2,4})", raw)
     if m:
         try:
@@ -65,74 +74,122 @@ def parse_date(raw):
             return datetime(year, month, day).strftime("%Y-%m-%d")
         except Exception:
             pass
-    
+
     return ""
 
 
-def extract_email(row):
-    for k in ("Email", "email", "EMAIL", "__email_normalized__"):
-        if k in row and row[k] and "@" in str(row[k]):
-            return str(row[k]).strip()
+def is_accepted(row):
+    """Return True only if row is explicitly ACCEPTED."""
+    status = str(row.get("final_status", "")).strip().upper()
+    return status == "ACCEPTED"
+
+
+def get_email(row):
+    for k in ("Email", "email", "EMAIL", "__email_normalized__", "normalized_email"):
+        v = row.get(k, "")
+        if v and "@" in str(v):
+            return str(v).strip()
     return ""
 
 
-def emails_str(rows):
-    return "; ".join(sorted({extract_email(r) for r in rows if extract_email(r)}))
+def get_display(row, source_type):
+    """Build display string like 'Username <email>'."""
+    email = get_email(row)
+    if source_type == "FREE":
+        name = row.get("Username", "") or row.get("username", "")
+    elif source_type == "UPLOAD":
+        name = row.get("Username", "") or row.get("App Name", "")
+    else:
+        name = row.get("Customer", "") or row.get("customer", "")
+    if name and email:
+        return f"{name} <{email}>"
+    return email or name or "?"
 
 
-def group_by_date(rows, primary_date_field, fallback_field="__scrape_date__"):
+def group_accepted_by_date(rows, date_field, source_type, fallback_field="__scraped_date__"):
     """
-    Group rows by date.
-    Try primary field first, fall back to scrape_date if missing.
-    Returns (grouped_dict, actual_count, estimated_count, skipped_count)
+    Group ACCEPTED-only rows by date.
+    Returns (grouped dict, stats dict)
     """
     grouped = defaultdict(list)
-    actual_count = 0
-    estimated_count = 0
-    skipped = 0
-    
+    stats = {"accepted": 0, "rejected": 0, "no_date": 0, "fallback_used": 0}
+
     for r in rows:
-        primary = r.get(primary_date_field, "")
-        parsed = parse_date(primary)
-        
-        if parsed:
-            grouped[parsed].append(r)
-            actual_count += 1
+        # ONLY process accepted rows
+        if not is_accepted(r):
+            stats["rejected"] += 1
+            continue
+        stats["accepted"] += 1
+
+        # Try primary date field
+        date_str = parse_date(r.get(date_field, ""))
+
+        if not date_str:
+            # Try row_date_used (set by process_data)
+            date_str = parse_date(r.get("row_date_used", ""))
+
+        if not date_str:
+            # Try scraped_date fallback
+            date_str = parse_date(r.get(fallback_field, ""))
+
+        if not date_str:
+            # Try __scraped_at__
+            date_str = parse_date(r.get("__scraped_at__", ""))
+
+        if date_str:
+            grouped[date_str].append(r)
+            if not parse_date(r.get(date_field, "")):
+                stats["fallback_used"] += 1
         else:
-            # Fall back to scrape_date
-            fallback = r.get(fallback_field, "")
-            parsed_fb = parse_date(fallback)
-            if parsed_fb:
-                grouped[parsed_fb].append(r)
-                estimated_count += 1
-            else:
-                skipped += 1
-    
-    return grouped, actual_count, estimated_count, skipped
+            stats["no_date"] += 1
+            log(f"  WARNING: No date for {get_email(r)} (fields checked: {date_field}, row_date_used, {fallback_field})")
+
+    return grouped, stats
+
+
+def emails_display(rows, source_type):
+    """Build semicolon-joined display string."""
+    parts = []
+    seen = set()
+    for r in rows:
+        e = get_email(r)
+        if e and e not in seen:
+            seen.add(e)
+            parts.append(get_display(r, source_type))
+    return "; ".join(sorted(parts))
 
 
 def build_daily_counts_table():
     log("=" * 60)
     log("Building Daily_Counts and Monthly_Counts")
     log("=" * 60)
-    
+
+    # Read verified tabs
     free_rows   = read_tab_data("Verified_FREE")
     upload_rows = read_tab_data("Verified_FIRST_UPLOAD")
     stripe_rows = read_tab_data("Verified_STRIPE")
-    
+
     log(f"Loaded: free={len(free_rows)}, upload={len(upload_rows)}, stripe={len(stripe_rows)}")
-    
-    free_by_date, fa, fe, fs     = group_by_date(free_rows,   "Account Created On")
-    upload_by_date, ua, ue, us   = group_by_date(upload_rows, "Upload Date")
-    stripe_by_date, sa, se, ss_  = group_by_date(stripe_rows, "Created")
-    
-    log(f"Free:   {len(free_by_date)} dates ({fa} actual, {fe} estimated, {fs} skipped)")
-    log(f"Upload: {len(upload_by_date)} dates ({ua} actual, {ue} estimated, {us} skipped)")
-    log(f"Stripe: {len(stripe_by_date)} dates ({sa} actual, {se} estimated, {ss_} skipped)")
-    
-    if se > 0:
-        log(f"NOTE: {se} Stripe rows used scrape_date as fallback (Stripe view doesn't show Created for past subscribers)")
-    
+
+    # Count accepted vs rejected before grouping
+    free_acc   = sum(1 for r in free_rows   if is_accepted(r))
+    upload_acc = sum(1 for r in upload_rows if is_accepted(r))
+    stripe_acc = sum(1 for r in stripe_rows if is_accepted(r))
+    log(f"ACCEPTED: free={free_acc}, upload={upload_acc}, stripe={stripe_acc}")
+
+    # Group by date (ACCEPTED only)
+    free_by_date,   free_stats   = group_accepted_by_date(free_rows,   "Account Created On", "FREE")
+    upload_by_date, upload_stats = group_accepted_by_date(upload_rows, "Upload Date",        "UPLOAD")
+    stripe_by_date, stripe_stats = group_accepted_by_date(stripe_rows, "Created",            "STRIPE")
+
+    log(f"Free grouping:   {dict(free_stats)}")
+    log(f"Upload grouping: {dict(upload_stats)}")
+    log(f"Stripe grouping: {dict(stripe_stats)}")
+    log(f"Free dates:   {sorted(free_by_date.keys())}")
+    log(f"Upload dates: {sorted(upload_by_date.keys())}")
+    log(f"Stripe dates: {sorted(stripe_by_date.keys())}")
+
+    # Union of all dates
     all_dates = sorted({
         d for d in (
             list(free_by_date.keys())
@@ -141,64 +198,70 @@ def build_daily_counts_table():
         )
         if d
     })
-    
+
+    log(f"Total unique dates: {len(all_dates)}")
+
+    # Build daily rows
     daily_dicts = []
     for date in all_dates:
         fr = free_by_date.get(date, [])
         up = upload_by_date.get(date, [])
         st = stripe_by_date.get(date, [])
-        
+
         daily_dicts.append({
             "Date":                     date,
+            "Year":                     date[:4],
+            "Month":                    date[:7],
             "SignUps_Accepted":         len(fr),
             "FirstUploads_Accepted":    len(up),
             "PaidSubscribers_Accepted": len(st),
-            "Free Signups":             len(fr),
-            "First Uploads":            len(up),
-            "Paid Customers":           len(st),
-            "Free Emails":              emails_str(fr),
-            "Upload Emails":            emails_str(up),
-            "Stripe Emails":            emails_str(st),
+            "SignUp_Details":           emails_display(fr, "FREE"),
+            "Upload_Details":           emails_display(up, "UPLOAD"),
+            "Paid_Details":             emails_display(st, "STRIPE"),
+            "LastUpdated":              datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         })
-    
-    log(f"Daily_Counts: {len(daily_dicts)} date rows")
-    
+
+    log(f"Daily_Counts rows: {len(daily_dicts)}")
+    if daily_dicts:
+        # Sanity check totals
+        t_s = sum(d["SignUps_Accepted"] for d in daily_dicts)
+        t_u = sum(d["FirstUploads_Accepted"] for d in daily_dicts)
+        t_p = sum(d["PaidSubscribers_Accepted"] for d in daily_dicts)
+        log(f"TOTALS CHECK: signups={t_s}, uploads={t_u}, paid={t_p}")
+        log(f"  (Should match ACCEPTED counts: free={free_acc}, upload={upload_acc}, stripe={stripe_acc})")
+
     ok1 = write_tab_data("Daily_Counts", daily_dicts)
     log(f"Daily_Counts write: {'OK' if ok1 else 'FAILED'}")
-    
-    monthly = defaultdict(lambda: [0, 0, 0])
+
+    # Build monthly rollup
+    monthly = defaultdict(lambda: {"s": 0, "u": 0, "p": 0})
     for d in daily_dicts:
-        month = d["Date"][:7]
-        monthly[month][0] += d["SignUps_Accepted"]
-        monthly[month][1] += d["FirstUploads_Accepted"]
-        monthly[month][2] += d["PaidSubscribers_Accepted"]
-    
+        m = d["Date"][:7]
+        monthly[m]["s"] += d["SignUps_Accepted"]
+        monthly[m]["u"] += d["FirstUploads_Accepted"]
+        monthly[m]["p"] += d["PaidSubscribers_Accepted"]
+
     monthly_dicts = []
-    for m, v in sorted(monthly.items()):
+    for m in sorted(monthly.keys()):
+        v = monthly[m]
         monthly_dicts.append({
             "Month":                    m,
-            "SignUps_Accepted":         v[0],
-            "FirstUploads_Accepted":    v[1],
-            "PaidSubscribers_Accepted": v[2],
-            "Free Signups":             v[0],
-            "First Uploads":            v[1],
-            "Paid Customers":           v[2],
+            "SignUps_Accepted":         v["s"],
+            "FirstUploads_Accepted":    v["u"],
+            "PaidSubscribers_Accepted": v["p"],
         })
-    
-    log(f"Monthly_Counts: {len(monthly_dicts)} months")
-    
+
+    log(f"Monthly_Counts rows: {len(monthly_dicts)}")
     ok2 = write_tab_data("Monthly_Counts", monthly_dicts)
     log(f"Monthly_Counts write: {'OK' if ok2 else 'FAILED'}")
-    
+
     log("Done.")
     return {
-        "free_dates":     len(free_by_date),
-        "upload_dates":   len(upload_by_date),
-        "stripe_dates":   len(stripe_by_date),
-        "stripe_actual":  sa,
-        "stripe_estimated": se,
         "daily_rows":     len(daily_dicts),
         "monthly_rows":   len(monthly_dicts),
+        "free_accepted":  free_acc,
+        "upload_accepted": upload_acc,
+        "stripe_accepted": stripe_acc,
     }
 
 

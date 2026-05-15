@@ -1,10 +1,11 @@
 """
-DASHBOARD v9 - Eagle3D KPI
-- Fixed AttrDict bug (st.secrets returns dict, not JSON string)
-- Uses Daily_Counts (true per-day counts by sign-up date)
-- Browse Data tab shows actual emails/usernames/etc
-- Sidebar with Run Now, Refresh, Diagnostics
-- Works whether Daily_Counts exists or not
+DASHBOARD v10 - Eagle3D KPI
+Fixed:
+- Date range filter applies to ALL metrics (cards + charts + tables)
+- Disposable/Duplicate counters use correct column names
+- Browse Data has date filter
+- All Time vs This Month works correctly
+- Daily breakdown respects selected date range
 """
 import json
 import os
@@ -18,80 +19,27 @@ import gspread
 import requests
 from google.oauth2.service_account import Credentials
 
-st.set_page_config(page_title="Eagle3D KPI Dashboard", page_icon="🦅",
-                   layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(
+    page_title="Eagle3D KPI Dashboard",
+    page_icon="🦅",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
 
-SCOPES = ["https://www.googleapis.com/auth/spreadsheets",
-          "https://www.googleapis.com/auth/drive"]
-
-
-# ─── SECRETS ─────────────────────────────────────────────────────
-
-
-# ─── Pipeline health monitoring ───
-def show_pipeline_health():
-    """Show health banner at top of dashboard."""
-    try:
-        from pathlib import Path as _P
-        import json as _json
-        import datetime as _dt
-        
-        health_file = _P("data_output/pipeline_health.json")
-        if not health_file.exists():
-            return
-        
-        with open(health_file) as f:
-            health = _json.load(f)
-        
-        # Check Stripe cookie health
-        stripe = health.get("stripe", {})
-        if stripe.get("status") == "failed":
-            err = stripe.get("last_error", "").lower()
-            cookie_indicators = ["login", "signin", "401", "unauthorized",
-                                 "session expired", "auth"]
-            if any(k in err for k in cookie_indicators):
-                fails = stripe.get("consecutive_failures", 0)
-                last_fail = stripe.get("last_failure", "?")
-                
-                st.error(
-                    f"STRIPE COOKIES EXPIRED ({fails} failures since {last_fail[:10]})  \n"
-                    f"Stripe paid customer data is NOT updating.  \n"
-                    f"**To fix:** Refresh cookies via Cookie-Editor browser extension, "
-                    f"then update GitHub Secret `STRIPE_COOKIES_JSON`.  \n"
-                    f"[GitHub Secrets](https://github.com/fozayelibnayaz/eagle3d-kpi-automation/settings/secrets/actions)"
-                )
-                return
-        
-        # Show issues for other stages
-        issues = []
-        for stage in ["kpi", "process"]:
-            s = health.get(stage, {})
-            if s.get("status") == "failed":
-                fails = s.get("consecutive_failures", 0)
-                if fails >= 2:
-                    issues.append(f"{stage}: {fails} consecutive failures")
-        
-        if issues:
-            st.warning("Pipeline issues: " + " | ".join(issues))
-    except Exception as e:
-        # Don't crash dashboard if health file is broken
-        pass
+SCOPES = [
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive",
+]
 
 
+# ─── CREDENTIALS ─────────────────────────────────────────────────
 def get_creds_path():
-    """Resolve Google credentials from local file OR Streamlit secrets."""
     if os.path.exists("google_creds.json"):
         return "google_creds.json"
-
-    # Try [GOOGLE_CREDS] TOML section
     try:
         if "GOOGLE_CREDS" in st.secrets:
             raw = st.secrets["GOOGLE_CREDS"]
-            # st.secrets returns AttrDict (dict-like), so just convert it
-            if isinstance(raw, str):
-                creds = json.loads(raw)
-            else:
-                creds = dict(raw)
+            creds = json.loads(raw) if isinstance(raw, str) else dict(raw)
             tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
             json.dump(creds, tmp)
             tmp.close()
@@ -99,8 +47,6 @@ def get_creds_path():
     except Exception as e:
         st.error(f"Failed to read GOOGLE_CREDS: {e}")
         st.stop()
-
-    # Try GOOGLE_CREDS_JSON (legacy)
     try:
         raw = st.secrets["GOOGLE_CREDS_JSON"]
         creds = json.loads(raw) if isinstance(raw, str) else dict(raw)
@@ -110,8 +56,7 @@ def get_creds_path():
         return tmp.name
     except Exception:
         pass
-
-    st.error("Google credentials not found in any expected location.")
+    st.error("Google credentials not found.")
     st.stop()
 
 
@@ -133,23 +78,24 @@ def secret_exists(key):
 
 CREDS_PATH = get_creds_path()
 MASTER_SHEET_URL = get_secret("MASTER_SHEET_URL")
-GITHUB_TOKEN = get_secret("GITHUB_TOKEN")
-GITHUB_REPO = get_secret("GITHUB_REPO", "fozayelibnayaz/eagle3d-kpi-automation")
-WORKFLOW_FILE = get_secret("WORKFLOW_FILE", "daily.yml")
+GITHUB_TOKEN     = get_secret("GITHUB_TOKEN")
+GITHUB_REPO      = get_secret("GITHUB_REPO", "fozayelibnayaz/eagle3d-kpi-automation")
+WORKFLOW_FILE    = get_secret("WORKFLOW_FILE", "daily.yml")
 
 
 # ─── DATA LOADING ────────────────────────────────────────────────
 @st.cache_data(ttl=120)
 def load_sheet(tab):
-    creds = Credentials.from_service_account_file(CREDS_PATH, scopes=SCOPES)
-    gc = gspread.authorize(creds)
-    sh = gc.open_by_url(MASTER_SHEET_URL)
     try:
+        creds = Credentials.from_service_account_file(CREDS_PATH, scopes=SCOPES)
+        gc = gspread.authorize(creds)
+        sh = gc.open_by_url(MASTER_SHEET_URL)
         ws = sh.worksheet(tab)
         data = ws.get_all_values()
         if len(data) < 2:
             return pd.DataFrame()
         headers = data[0]
+        # Deduplicate column names
         seen = {}
         clean = []
         for h in headers:
@@ -161,61 +107,60 @@ def load_sheet(tab):
                 seen[h] = 0
                 clean.append(h)
         return pd.DataFrame(data[1:], columns=clean)
-    except gspread.WorksheetNotFound:
+    except Exception:
         return pd.DataFrame()
 
 
-# ─── GITHUB API ──────────────────────────────────────────────────
-def github_headers():
-    return {
-        "Accept": "application/vnd.github+json",
-        "Authorization": f"Bearer {GITHUB_TOKEN}",
-        "X-GitHub-Api-Version": "2022-11-28",
-    }
+# ─── DATE PARSING ────────────────────────────────────────────────
+import re
+from email.utils import parsedate_to_datetime
+
+DATE_FORMATS = [
+    "%Y-%m-%d %H:%M:%S", "%Y-%m-%d",
+    "%m/%d/%y, %I:%M %p", "%m/%d/%Y, %I:%M %p",
+    "%m/%d/%y %I:%M %p", "%m/%d/%Y %I:%M %p",
+    "%m/%d/%y", "%m/%d/%Y",
+    "%a %b %d %Y", "%a %b %d %Y %H:%M:%S",
+    "%b %d, %Y", "%d %b %Y",
+    "%a, %d %b %Y %H:%M:%S %Z", "%a, %d %b %Y %H:%M:%S GMT",
+]
 
 
-def trigger_workflow():
-    if not GITHUB_TOKEN:
-        return False, "GITHUB_TOKEN missing in secrets"
-    url = f"https://api.github.com/repos/{GITHUB_REPO}/actions/workflows/{WORKFLOW_FILE}/dispatches"
+def parse_to_date(raw):
+    """Parse any date string to datetime.date. Returns None on failure."""
+    if not raw or str(raw).strip() in ("", "—", "-", "nan", "None"):
+        return None
+    raw = str(raw).strip()
     try:
-        r = requests.post(url, headers=github_headers(), json={"ref": "main"}, timeout=15)
-        if r.status_code == 204:
-            return True, "Pipeline triggered. Refresh in 5-10 minutes."
-        return False, f"HTTP {r.status_code}: {r.text[:200]}"
-    except Exception as e:
-        return False, str(e)
-
-
-def get_workflow_runs(limit=10):
-    if not GITHUB_TOKEN:
-        return []
-    url = f"https://api.github.com/repos/{GITHUB_REPO}/actions/workflows/{WORKFLOW_FILE}/runs?per_page={limit}"
-    try:
-        r = requests.get(url, headers=github_headers(), timeout=15)
-        if r.status_code == 200:
-            return r.json().get("workflow_runs", [])
+        dt = parsedate_to_datetime(raw)
+        if dt:
+            return dt.date()
     except Exception:
         pass
-    return []
 
-
-def format_age(iso_str):
-    if not iso_str:
-        return "?"
-    try:
-        ts = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
-        age = datetime.now(timezone.utc) - ts
-        s = age.total_seconds()
-        if s < 60: return f"{int(s)}s ago"
-        if s < 3600: return f"{int(s//60)}m ago"
-        if s < 86400: return f"{int(s//3600)}h ago"
-        return f"{int(s//86400)}d ago"
-    except Exception:
-        return iso_str
-
-
-# ─── HELPERS ─────────────────────────────────────────────────────
+    # Try known formats
+    for fmt in DATE_FORMATS:
+        try:
+            return datetime.strptime(raw, fmt).date()
+        except Exception:
+            continue
+    # ISO-like fallback
+    m = re.search(r"(\d{4})-(\d{1,2})-(\d{1,2})", raw)
+    if m:
+        try:
+            return datetime(int(m.group(1)), int(m.group(2)), int(m.group(3))).date()
+        except Exception:
+            pass
+    m = re.search(r"(\d{1,2})/(\d{1,2})/(\d{2,4})", raw)
+    if m:
+        try:
+            mo, day, yr = int(m.group(1)), int(m.group(2)), int(m.group(3))
+            if yr < 100:
+                yr += 2000
+            return datetime(yr, mo, day).date()
+        except Exception:
+            pass
+    return None
 def card(label, value, color, sub=None):
     sub_html = f"<div style=\"font-size:13px;opacity:0.85;margin-top:4px;\">{sub}</div>" if sub else ""
     html = f"<div style=\"background:{color};color:white;padding:25px;border-radius:12px;text-align:center;\">"
@@ -355,47 +300,32 @@ def n_accepted_current_month(df, date_field):
         if s.startswith(current_month):
             return True
         # Try MM/DD/YY or MM/DD/YYYY (Stripe)
+=======
+    for fmt in DATE_FORMATS:
+>>>>>>> 3afbacd (Fix: date-range-aware cards, correct column names, first-upload logic, ACCEPTED-only counting)
         try:
-            from datetime import datetime as _dt
-            for fmt in ["%m/%d/%y, %I:%M %p", "%m/%d/%Y, %I:%M %p",
-                        "%m/%d/%y", "%m/%d/%Y", "%a %b %d %Y",
-                        "%a %b %d %Y %H:%M:%S"]:
-                try:
-                    parsed = _dt.strptime(s, fmt)
-                    if parsed.strftime("%Y-%m") == current_month:
-                        return True
-                    return False
-                except Exception:
-                    continue
+            return datetime.strptime(raw, fmt).date()
+        except Exception:
+            continue
+    m = re.search(r"(\d{4})-(\d{1,2})-(\d{1,2})", raw)
+    if m:
+        try:
+            return datetime(int(m.group(1)), int(m.group(2)), int(m.group(3))).date()
         except Exception:
             pass
-        # Try RFC 2822 (KPI dashboard)
+    m = re.search(r"(\d{1,2})/(\d{1,2})/(\d{2,4})", raw)
+    if m:
         try:
-            from email.utils import parsedate_to_datetime
-            parsed = parsedate_to_datetime(s)
-            if parsed and parsed.strftime("%Y-%m") == current_month:
-                return True
+            mo, day, yr = int(m.group(1)), int(m.group(2)), int(m.group(3))
+            if yr < 100:
+                yr += 2000
+            return datetime(yr, mo, day).date()
         except Exception:
             pass
-        return False
-    
-    in_month_mask = accepted[date_field].apply(in_current_month)
-    return int(in_month_mask.sum())
+    return None
 
 
-
-def n_rejected_for(df, reason):
-    if df.empty or "verdict_reason" not in df.columns:
-        return 0
-    return int(df["verdict_reason"].str.contains(reason, case=False, na=False).sum())
-
-
-def safe_int_col(df, col):
-    if col not in df.columns:
-        return pd.Series([0] * len(df))
-    return pd.to_numeric(df[col], errors="coerce").fillna(0).astype(int)
-
-
+# ─── DATE RANGE ──────────────────────────────────────────────────
 def get_date_range(preset):
     today = datetime.now().date()
     if preset == "Today":
@@ -426,14 +356,136 @@ def get_date_range(preset):
     if preset == "Last Year":
         ly = today.year - 1
         return (datetime(ly, 1, 1).date(), datetime(ly, 12, 31).date())
-    return None
+    return None  # All Time
 
 
-def detect_metric_columns(df):
-    """Return tuple (signups_col, uploads_col, paid_col) detecting which schema."""
-    if "SignUps" in df.columns:
-        return ("SignUps", "FirstUploads", "PaidSubscribers")
-    return ("SignUps_Accepted", "FirstUploads_Accepted", "PaidSubscribers_Accepted")
+# ─── GITHUB ──────────────────────────────────────────────────────
+def github_headers():
+    return {
+        "Accept": "application/vnd.github+json",
+        "Authorization": f"Bearer {GITHUB_TOKEN}",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+
+
+def trigger_workflow():
+    if not GITHUB_TOKEN:
+        return False, "GITHUB_TOKEN missing"
+    url = (f"https://api.github.com/repos/{GITHUB_REPO}/actions/"
+           f"workflows/{WORKFLOW_FILE}/dispatches")
+    try:
+        r = requests.post(url, headers=github_headers(), json={"ref": "main"}, timeout=15)
+        if r.status_code == 204:
+            return True, "Pipeline triggered. Refresh in 5–10 minutes."
+        return False, f"HTTP {r.status_code}: {r.text[:200]}"
+    except Exception as e:
+        return False, str(e)
+
+
+def get_workflow_runs(limit=5):
+    if not GITHUB_TOKEN:
+        return []
+    url = (f"https://api.github.com/repos/{GITHUB_REPO}/actions/"
+           f"workflows/{WORKFLOW_FILE}/runs?per_page={limit}")
+    try:
+        r = requests.get(url, headers=github_headers(), timeout=15)
+        if r.status_code == 200:
+            return r.json().get("workflow_runs", [])
+    except Exception:
+        pass
+    return []
+
+
+def format_age(iso_str):
+    if not iso_str:
+        return "?"
+    try:
+        ts = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
+        age = datetime.now(timezone.utc) - ts
+        s = age.total_seconds()
+        if s < 60:    return f"{int(s)}s ago"
+        if s < 3600:  return f"{int(s//60)}m ago"
+        if s < 86400: return f"{int(s//3600)}h ago"
+        return f"{int(s//86400)}d ago"
+    except Exception:
+        return iso_str
+
+
+# ─── HELPERS ─────────────────────────────────────────────────────
+def card(label, value, color, sub=None):
+    sub_html = (f'<div style="font-size:13px;opacity:0.85;margin-top:4px;">{sub}</div>'
+                if sub else "")
+    st.markdown(
+        f'<div style="background:{color};color:white;padding:25px;border-radius:12px;'
+        f'text-align:center;">'
+        f'<div style="font-size:14px;opacity:0.9;">{label}</div>'
+        f'<div style="font-size:48px;font-weight:bold;margin:8px 0;">{value}</div>'
+        f'{sub_html}</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def safe_int_col(df, col):
+    if col not in df.columns:
+        return pd.Series([0] * len(df))
+    return pd.to_numeric(df[col], errors="coerce").fillna(0).astype(int)
+
+
+def n_accepted(df):
+    """Count ACCEPTED rows in a verified dataframe."""
+    if df.empty or "final_status" not in df.columns:
+        return 0
+    return int((df["final_status"].astype(str).str.upper() == "ACCEPTED").sum())
+
+
+def count_by_reason(df, keyword):
+    """
+    Count rows where category OR email_verdict OR verdict_reason contains keyword.
+    Case-insensitive. Used for Disposable, Duplicate, etc.
+    """
+    if df.empty:
+        return 0
+    total = 0
+    for col in ("category", "email_verdict", "verdict_reason", "__rejection_reason__"):
+        if col in df.columns:
+            total = int(df[col].astype(str).str.contains(keyword, case=False, na=False).sum())
+            if total > 0:
+                return total
+    return 0
+
+
+def filter_df_by_date_range(df, date_field, date_range):
+    """
+    Filter dataframe by date range using the specified date_field.
+    Returns filtered dataframe.
+    """
+    if df.empty or date_range is None:
+        return df
+    if date_field not in df.columns:
+        return df
+
+    start_date, end_date = date_range
+    dates = df[date_field].apply(parse_to_date)
+    mask = dates.apply(
+        lambda d: d is not None and start_date <= d <= end_date
+    )
+    return df[mask]
+
+
+def count_accepted_in_range(df, date_field, date_range):
+    """Count ACCEPTED rows within date range."""
+    if df.empty:
+        return 0
+    # First filter to ACCEPTED
+    if "final_status" in df.columns:
+        acc = df[df["final_status"].astype(str).str.upper() == "ACCEPTED"]
+    else:
+        acc = df
+    if acc.empty:
+        return 0
+    # Then filter by date range
+    filtered = filter_df_by_date_range(acc, date_field, date_range)
+    return len(filtered)
 
 
 # ════════════════════════════════════════════════════════════════
@@ -441,16 +493,15 @@ def detect_metric_columns(df):
 # ════════════════════════════════════════════════════════════════
 with st.sidebar:
     st.title("🦅 Eagle3D KPIs")
-
     st.divider()
-    st.subheader("⚙️ Pipeline Control")
 
-    runs = get_workflow_runs(limit=5)
+    st.subheader("⚙️ Pipeline Control")
+    runs = get_workflow_runs()
     if runs:
         latest = runs[0]
-        status = latest.get("status", "?")
+        status     = latest.get("status", "?")
         conclusion = latest.get("conclusion", "?")
-        ago = format_age(latest.get("created_at"))
+        ago        = format_age(latest.get("created_at"))
         if status in ("in_progress", "queued"):
             st.info(f"🔄 Running ({ago})")
         elif conclusion == "success":
@@ -474,47 +525,44 @@ with st.sidebar:
         st.cache_data.clear()
         st.rerun()
 
-    
-    
-    # ─── Stripe Cookie Refresh Helper ───
     with st.expander("Stripe Cookie Refresh"):
         st.markdown("""
 **When Stripe data stops updating:**
-
-1. Open Chrome -> https://dashboard.stripe.com/customers
-2. Click Cookie-Editor extension
-3. Click Export -> Export as JSON
-4. Paste into [GitHub Secrets](https://github.com/fozayelibnayaz/eagle3d-kpi-automation/settings/secrets/actions)
-5. Update `STRIPE_COOKIES_JSON`
-
-Pipeline resumes on next run (04:00 UTC daily).
+1. Open Chrome → https://dashboard.stripe.com/customers
+2. Click Cookie-Editor extension → Export as JSON
+3. Paste into [GitHub Secrets](https://github.com/fozayelibnayaz/eagle3d-kpi-automation/settings/secrets/actions)
+4. Update `STRIPE_COOKIES_JSON`
         """)
 
     st.divider()
     st.subheader("🗓 Date Filter")
-    PRESETS = ["Today", "This Week", "Last Week", "Last 7 Days", "Last 15 Days",
-               "Last 28 Days", "This Month", "Last Month", "Last 3 Months",
-               "Last 6 Months", "This Year", "Last Year", "All Time", "Custom"]
-    preset = st.selectbox("View Range", PRESETS, index=12)  # default All Time
+    PRESETS = [
+        "Today", "This Week", "Last Week", "Last 7 Days", "Last 15 Days",
+        "Last 28 Days", "This Month", "Last Month", "Last 3 Months",
+        "Last 6 Months", "This Year", "Last Year", "All Time", "Custom",
+    ]
+    preset = st.selectbox("View Range", PRESETS, index=6)  # default: This Month
 
     if preset == "Custom":
         custom_start = st.date_input("Start", value=datetime.now().date() - timedelta(days=30))
-        custom_end = st.date_input("End", value=datetime.now().date())
-        date_range = (custom_start, custom_end)
+        custom_end   = st.date_input("End",   value=datetime.now().date())
+        date_range   = (custom_start, custom_end)
     else:
         date_range = get_date_range(preset)
 
     st.divider()
     st.subheader("📍 Navigation")
-    page = st.radio("Page", ["📊 Dashboard", "🔍 Browse Data", "🛠 Diagnostics"],
-                    label_visibility="collapsed")
-
+    page = st.radio(
+        "Page",
+        ["📊 Dashboard", "🔍 Browse Data", "🛠 Diagnostics"],
+        label_visibility="collapsed",
+    )
     st.divider()
     st.caption("Pipeline auto-runs daily at 10 AM Bangladesh.")
 
 
 # ════════════════════════════════════════════════════════════════
-#  MAIN
+#  HEADER
 # ════════════════════════════════════════════════════════════════
 st.title("🦅 Eagle3D Streaming — KPI Dashboard")
 
@@ -524,7 +572,9 @@ else:
     st.caption("Showing: **All Time**")
 
 
-# ─── DIAGNOSTICS PAGE ────────────────────────────────────────────
+# ════════════════════════════════════════════════════════════════
+#  DIAGNOSTICS
+# ════════════════════════════════════════════════════════════════
 if page == "🛠 Diagnostics":
     st.header("System Diagnostics")
     expected = ["MASTER_SHEET_URL", "GOOGLE_CREDS", "GITHUB_TOKEN", "GITHUB_REPO", "WORKFLOW_FILE"]
@@ -549,178 +599,251 @@ if page == "🛠 Diagnostics":
     st.table(pd.DataFrame(rows))
 
     if st.button("🧪 Test Sheet Read"):
-        for tab_name in ["Daily_Counts", "Daily_Report", "Verified_FREE",
-                        "Verified_FIRST_UPLOAD", "Verified_STRIPE"]:
+        for tab_name in ["Daily_Counts", "Verified_FREE", "Verified_FIRST_UPLOAD", "Verified_STRIPE"]:
             df = load_sheet(tab_name)
             if df.empty:
                 st.warning(f"❌ {tab_name}: empty or not found")
             else:
-                st.success(f"✅ {tab_name}: {len(df)} rows")
+                st.success(f"✅ {tab_name}: {len(df)} rows, cols: {list(df.columns[:6])}")
 
 
-# ─── BROWSE DATA PAGE ────────────────────────────────────────────
+# ════════════════════════════════════════════════════════════════
+#  BROWSE DATA
+# ════════════════════════════════════════════════════════════════
 elif page == "🔍 Browse Data":
     st.header("Browse Customer Data")
-    free = load_sheet("Verified_FREE")
+
+    free   = load_sheet("Verified_FREE")
     upload = load_sheet("Verified_FIRST_UPLOAD")
     stripe = load_sheet("Verified_STRIPE")
+
+    # Date fields per source
+    DATE_FIELD = {
+        "Sign-ups":         "Account Created On",
+        "First Uploads":    "Upload Date",
+        "Paid Subscribers": "Created",
+    }
 
     browse_tabs = st.tabs(["📥 Sign-ups", "📦 First Uploads", "💳 Paid Subscribers"])
 
     for tab, (label, df) in zip(browse_tabs, [
-        ("Sign-ups", free), ("First Uploads", upload), ("Paid Subscribers", stripe)
+        ("Sign-ups", free),
+        ("First Uploads", upload),
+        ("Paid Subscribers", stripe),
     ]):
         with tab:
             if df.empty:
                 st.warning(f"No {label} data yet.")
                 continue
 
-            f1, f2, f3 = st.columns([2, 2, 4])
-            with f1:
-                status_filter = st.selectbox("Status:", ["All", "ACCEPTED only", "REJECTED only"], key=f"s_{label}")
-            with f2:
-                vo = ["All"]
-                if "email_verdict" in df.columns:
-                    vo += sorted(df["email_verdict"].dropna().unique().tolist())
-                verdict_filter = st.selectbox("Verdict:", vo, key=f"v_{label}")
-            with f3:
-                search = st.text_input("Search:", key=f"q_{label}", placeholder="any text...")
+            # ── Filters row ──
+            f1, f2, f3, f4 = st.columns([2, 2, 2, 3])
 
+            with f1:
+                status_opts = ["All", "ACCEPTED only", "REJECTED only"]
+                status_filter = st.selectbox("Status:", status_opts, key=f"sf_{label}")
+
+            with f2:
+                verdict_opts = ["All"]
+                for col in ("email_verdict", "category"):
+                    if col in df.columns:
+                        verdict_opts += sorted(df[col].dropna().unique().tolist())
+                        break
+                verdict_filter = st.selectbox("Verdict:", verdict_opts, key=f"vf_{label}")
+
+            with f3:
+                # Date range filter within Browse Data
+                date_opts = ["All Dates"] + PRESETS[:-1]  # exclude Custom
+                browse_date_preset = st.selectbox("Date:", date_opts, key=f"df_{label}")
+                if browse_date_preset == "All Dates":
+                    browse_range = None
+                else:
+                    browse_range = get_date_range(browse_date_preset) or date_range
+
+            with f4:
+                search = st.text_input("Search:", key=f"sq_{label}", placeholder="email, name...")
+
+            # ── Apply filters ──
             filt = df.copy()
-            if status_filter == "ACCEPTED only":
-                filt = filt[filt["final_status"].str.upper() == "ACCEPTED"]
-            elif status_filter == "REJECTED only":
-                filt = filt[filt["final_status"].str.upper() == "REJECTED"]
-            if verdict_filter != "All" and "email_verdict" in filt.columns:
-                filt = filt[filt["email_verdict"] == verdict_filter]
+
+            if status_filter == "ACCEPTED only" and "final_status" in filt.columns:
+                filt = filt[filt["final_status"].astype(str).str.upper() == "ACCEPTED"]
+            elif status_filter == "REJECTED only" and "final_status" in filt.columns:
+                filt = filt[filt["final_status"].astype(str).str.upper() == "REJECTED"]
+
+            for col in ("email_verdict", "category"):
+                if verdict_filter != "All" and col in filt.columns:
+                    filt = filt[filt[col].astype(str) == verdict_filter]
+                    break
+
+            date_col = DATE_FIELD.get(label)
+            if browse_range and date_col and date_col in filt.columns:
+                filt = filter_df_by_date_range(filt, date_col, browse_range)
+
             if search:
-                mask = pd.Series([False] * len(filt))
+                mask = pd.Series([False] * len(filt), index=filt.index)
                 for col in filt.columns:
-                    mask = mask | filt[col].astype(str).str.contains(search, case=False, na=False)
+                    mask = mask | filt[col].astype(str).str.contains(
+                        search, case=False, na=False
+                    )
                 filt = filt[mask]
 
+            # ── Summary metrics ──
             m1, m2, m3, m4 = st.columns(4)
             m1.metric("Showing", len(filt))
             m2.metric("Accepted", n_accepted(filt))
-            m3.metric("Disposable", n_rejected_for(filt, "isposable"))
-            m4.metric("Duplicate", n_rejected_for(filt, "database"))
+            m3.metric("Disposable", count_by_reason(filt, "DISPOSABLE"))
+            m4.metric("Duplicate", count_by_reason(filt, "DUPLICATE"))
 
             st.dataframe(filt, height=500, hide_index=True)
-            csv = filt.to_csv(index=False).encode("utf-8")
-            st.download_button(f"⬇️ Download {label}", data=csv,
-                              file_name=f"{label.lower().replace(' ', '_')}.csv",
-                              mime="text/csv", key=f"dl_{label}")
+
+            csv_bytes = filt.to_csv(index=False).encode("utf-8")
+            st.download_button(
+                f"⬇️ Download {label}",
+                data=csv_bytes,
+                file_name=f"{label.lower().replace(' ', '_')}.csv",
+                mime="text/csv",
+                key=f"dl_{label}",
+            )
 
 
-# ─── DASHBOARD PAGE ──────────────────────────────────────────────
+# ════════════════════════════════════════════════════════════════
+#  MAIN DASHBOARD
+# ════════════════════════════════════════════════════════════════
 else:
-    free = load_sheet("Verified_FREE")
+    # Load all sources
+    free   = load_sheet("Verified_FREE")
     upload = load_sheet("Verified_FIRST_UPLOAD")
     stripe = load_sheet("Verified_STRIPE")
-
-    # PRIMARY source: Daily_Counts (true per-day from sign-up dates)
-    daily = load_sheet("Daily_Counts")
-    if daily.empty:
-        st.warning("Daily_Counts not yet populated. Run pipeline once to generate it.")
-        daily = load_sheet("Daily_Report")  # fallback
+    daily  = load_sheet("Daily_Counts")
 
     if daily.empty:
-        st.error("No daily data available. Trigger the pipeline first.")
+        st.error("Daily_Counts not yet populated. Run the pipeline first.")
         st.stop()
 
-    sc, uc, pc = detect_metric_columns(daily)
-    st.caption(f"Data source columns: {sc}, {uc}, {pc}")
+    # ── Validate required columns ──
+    required_cols = ["SignUps_Accepted", "FirstUploads_Accepted", "PaidSubscribers_Accepted"]
+    missing = [c for c in required_cols if c not in daily.columns]
+    if missing:
+        st.error(f"Daily_Counts missing columns: {missing}. Re-run pipeline.")
+        st.stop()
 
-    # Build _dt
+    st.caption(f"Data source columns: {', '.join(required_cols)}")
+
+    # ── Build _dt column ──
     if "Date" in daily.columns:
         daily["_dt"] = pd.to_datetime(daily["Date"], errors="coerce").dt.date
-    elif "Timestamp" in daily.columns:
-        daily["_dt"] = pd.to_datetime(daily["Timestamp"], errors="coerce").dt.date
+    else:
+        st.error("Daily_Counts has no 'Date' column.")
+        st.stop()
+
     daily = daily.dropna(subset=["_dt"])
 
-    # Filter by date range
+    # ── Apply date range to daily ──
     if date_range:
-        daily_filtered = daily[(daily["_dt"] >= date_range[0]) & (daily["_dt"] <= date_range[1])]
+        daily_filtered = daily[
+            (daily["_dt"] >= date_range[0]) & (daily["_dt"] <= date_range[1])
+        ].copy()
     else:
-        daily_filtered = daily
+        daily_filtered = daily.copy()
 
-    # Convert to int
-    daily_filtered = daily_filtered.copy()
-    daily_filtered["_signups"] = safe_int_col(daily_filtered, sc)
-    daily_filtered["_uploads"] = safe_int_col(daily_filtered, uc)
-    daily_filtered["_paid"] = safe_int_col(daily_filtered, pc)
+    # ── Integer columns ──
+    daily_filtered["_signups"] = safe_int_col(daily_filtered, "SignUps_Accepted")
+    daily_filtered["_uploads"] = safe_int_col(daily_filtered, "FirstUploads_Accepted")
+    daily_filtered["_paid"]    = safe_int_col(daily_filtered, "PaidSubscribers_Accepted")
 
-    # Compute totals based on schema
-    if "SignUps" in daily.columns:
-        # Daily_Counts: each row = real daily count → SUM
-        sum_signups = int(daily_filtered["_signups"].sum())
-        sum_uploads = int(daily_filtered["_uploads"].sum())
-        sum_paid = int(daily_filtered["_paid"].sum())
+    # ── Period totals (from daily_filtered → SUM) ──
+    sum_signups = int(daily_filtered["_signups"].sum())
+    sum_uploads = int(daily_filtered["_uploads"].sum())
+    sum_paid    = int(daily_filtered["_paid"].sum())
+
+    # ── Period label for cards ──
+    if date_range:
+        period_label = preset
     else:
-        # Daily_Report (legacy): cumulative snapshot → MAX per day, then sum across months
-        per_day = daily_filtered.groupby("_dt", as_index=False).agg({
-            "_signups": "max", "_uploads": "max", "_paid": "max"
-        })
-        per_day["_dt"] = pd.to_datetime(per_day["_dt"])
-        per_day["_ym"] = per_day["_dt"].dt.strftime("%Y-%m")
-        per_month = per_day.groupby("_ym").agg({
-            "_signups": "max", "_uploads": "max", "_paid": "max"
-        })
-        sum_signups = int(per_month["_signups"].sum())
-        sum_uploads = int(per_month["_uploads"].sum())
-        sum_paid = int(per_month["_paid"].sum())
-    # ─── KPI Snapshot (current month only) ───
-    # ─── KPI Snapshot (current month only) ───
-    from datetime import datetime as _dt_now
-    _current_month_label = _dt_now.now().strftime("%B %Y")
-    st.markdown(f"### 📊 KPI Snapshot — {_current_month_label}")
-    l1, l2, l3 = st.columns(3)
-    with l1:
-        card("Sign-ups",
-             n_accepted_current_month(free, "Account Created On"),
-             "#3b82f6", "this month, accepted")
-    with l2:
-        card("First Uploads",
-             n_accepted_current_month(upload, "Upload Date"),
-             "#22c55e", "this month, accepted")
-    with l3:
-        if not stripe.empty and "First payment" in stripe.columns:
-            paid_count = n_accepted_current_month(stripe, "First payment")
-        elif not stripe.empty and "Created" in stripe.columns:
-            paid_count = n_accepted_current_month(stripe, "Created")
-        else:
-            paid_count = 0
-        card("Paid", paid_count, "#f97316", "this month, paid")
-    
+        period_label = "All Time"
+
+    # ══════════════════════════════════════════════
+    #  KPI CARDS — respects selected date range
+    # ══════════════════════════════════════════════
+    st.markdown(f"### 📊 Totals for: {period_label}")
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        card("Sign-ups", sum_signups, "#3b82f6",
+             f"{period_label.lower()} · verified · deduped")
+    with c2:
+        card("First Uploads", sum_uploads, "#22c55e",
+             f"{period_label.lower()} · verified · deduped")
+    with c3:
+        card("Paid Subscribers", sum_paid, "#f97316",
+             f"{period_label.lower()} · active")
+
     st.divider()
 
-    # Trend chart
+    # ══════════════════════════════════════════════
+    #  LIVE SNAPSHOT — always today
+    # ══════════════════════════════════════════════
+    today = datetime.now().date()
+    today_row = daily[daily["_dt"] == today]
+    today_s = int(safe_int_col(today_row, "SignUps_Accepted").sum())
+    today_u = int(safe_int_col(today_row, "FirstUploads_Accepted").sum())
+    today_p = int(safe_int_col(today_row, "PaidSubscribers_Accepted").sum())
+
+    st.markdown("### 🔴 Live Snapshot (today)")
+    l1, l2, l3 = st.columns(3)
+    with l1:
+        card("Sign-ups",      today_s, "#1e40af", "today")
+    with l2:
+        card("First Uploads", today_u, "#15803d", "today")
+    with l3:
+        card("Paid",          today_p, "#c2410c", "today")
+
+    st.divider()
+
+    # ══════════════════════════════════════════════
+    #  TREND CHART
+    # ══════════════════════════════════════════════
     st.markdown("### 📈 Daily Trend")
     if not daily_filtered.empty:
         chart_df = daily_filtered[["_dt", "_signups", "_uploads", "_paid"]].copy()
         chart_df.columns = ["Date", "Sign-ups", "First Uploads", "Paid"]
         chart_df["Date"] = pd.to_datetime(chart_df["Date"])
         chart_df = chart_df.sort_values("Date")
-        chart = chart_df.set_index("Date")
-        st.plotly_chart(px.line(chart, title=f"Daily Trend - {preset}", markers=True))
+        fig = px.line(
+            chart_df.set_index("Date"),
+            title=f"Daily Trend — {period_label}",
+            markers=True,
+        )
+        st.plotly_chart(fig, use_container_width=True)
 
+        # Funnel
         funnel_df = pd.DataFrame({
             "Stage": ["Sign-ups", "First Upload", "Paid"],
             "Count": [sum_signups, sum_uploads, sum_paid],
         })
-        st.plotly_chart(px.funnel(funnel_df, x="Count", y="Stage", title=f"Funnel - {preset}"))
+        fig2 = px.funnel(funnel_df, x="Count", y="Stage",
+                         title=f"Funnel — {period_label}")
+        st.plotly_chart(fig2, use_container_width=True)
+    else:
+        st.info("No data in selected date range.")
 
-    # Daily breakdown table
+    # ══════════════════════════════════════════════
+    #  DAILY BREAKDOWN TABLE
+    # ══════════════════════════════════════════════
     st.markdown("### 📋 Daily Breakdown")
     if not daily_filtered.empty:
         show_df = daily_filtered[["_dt", "_signups", "_uploads", "_paid"]].copy()
         show_df.columns = ["Date", "Sign-ups", "First Uploads", "Paid Subscribers"]
         show_df = show_df.sort_values("Date", ascending=False)
         st.dataframe(show_df, hide_index=True, height=400)
+    else:
+        st.info("No rows in selected date range.")
 
     st.divider()
 
-    # Group by
+    # ══════════════════════════════════════════════
+    #  GROUPED ANALYSIS
+    # ══════════════════════════════════════════════
     st.markdown("### 🗓️ Grouped Analysis")
     group_by = st.radio("Group by:", ["Day", "Week", "Month", "Year"], horizontal=True)
 
@@ -730,16 +853,24 @@ else:
         if group_by == "Day":
             gdf["bucket"] = gdf["_dt"].dt.strftime("%Y-%m-%d")
         elif group_by == "Week":
-            gdf["bucket"] = gdf["_dt"].dt.strftime("%Y-W%U")
+            gdf["bucket"] = gdf["_dt"].dt.to_period("W").dt.start_time.dt.strftime("%Y-%m-%d")
         elif group_by == "Month":
             gdf["bucket"] = gdf["_dt"].dt.strftime("%Y-%m")
         else:
             gdf["bucket"] = gdf["_dt"].dt.strftime("%Y")
 
-        grouped = gdf.groupby("bucket").agg({
-            "_signups": "sum", "_uploads": "sum", "_paid": "sum"
-        }).reset_index()
+        grouped = gdf.groupby("bucket").agg(
+            {"_signups": "sum", "_uploads": "sum", "_paid": "sum"}
+        ).reset_index()
         grouped.columns = ["Period", "Sign-ups", "First Uploads", "Paid"]
-        st.plotly_chart(px.bar(grouped, x="Period", y=["Sign-ups", "First Uploads", "Paid"],
-                              title=f"Grouped by {group_by}", barmode="group"))
+
+        fig3 = px.bar(
+            grouped, x="Period",
+            y=["Sign-ups", "First Uploads", "Paid"],
+            title=f"Grouped by {group_by} — {period_label}",
+            barmode="group",
+        )
+        st.plotly_chart(fig3, use_container_width=True)
         st.dataframe(grouped, hide_index=True)
+    else:
+        st.info("No data to group.")

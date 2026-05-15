@@ -1,26 +1,28 @@
 """
 upload_history.py
-Maintains a permanent record of every email we have EVER seen uploading.
-This is the source of truth for "is this their first ever upload?"
+Persistent first-upload registry. One-way ratchet.
 
-Logic:
-  - First time we see email upload (in any scrape) -> add to history -> ACCEPT
-  - Email already in history -> REJECT as REPEAT_UPLOAD
-  - File grows monotonically; once added, email is permanently "has uploaded"
-
-Bootstrap:
-  - On first run, load ALL existing Verified_FIRST_UPLOAD entries into history
-  - This sets the baseline of "users we already counted"
+Logic for is_truly_first_upload:
+  1. Check upload_history.json → if email exists = REPEAT
+  2. Check old_db project_dates → if any project date exists before upload_date = REPEAT
+  3. Check old_db signup_dates:
+     - If signup is MORE than 30 days before upload_date = REPEAT (old user finally uploading)
+     - If signup is within 30 days of upload_date = could be FIRST
+     - If no signup in old_db = brand new = FIRST
+  4. If FIRST → record in upload_history.json permanently
 """
 import json
 from pathlib import Path
-from datetime import datetime
-from dedup_engine import normalize_email, parse_date
+from datetime import datetime, timedelta
 
 DATA_DIR = Path("data_output")
 DATA_DIR.mkdir(exist_ok=True)
 
 HISTORY_FILE = DATA_DIR / "upload_history.json"
+
+# Days between signup and first upload to still count as "first upload"
+# If someone signed up 6 months ago and uploads today = repeat user (already an account)
+FIRST_UPLOAD_WINDOW_DAYS = 60
 
 
 def log(msg):
@@ -29,11 +31,11 @@ def log(msg):
 
 
 def load_history():
-    """Load upload history. Returns {email: {"first_seen": date, "all_dates": [list]}}."""
+    """Load upload history from disk. Returns dict keyed by normalized_email."""
     if not HISTORY_FILE.exists():
         return {}
     try:
-        with open(HISTORY_FILE) as f:
+        with open(HISTORY_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
     except Exception as e:
         log(f"Load error: {e}")
@@ -41,161 +43,178 @@ def load_history():
 
 
 def save_history(history):
+    """Save upload history to disk."""
     try:
-        with open(HISTORY_FILE, "w") as f:
+        with open(HISTORY_FILE, "w", encoding="utf-8") as f:
             json.dump(history, f, indent=2, sort_keys=True)
-        log(f"Saved {len(history)} entries to {HISTORY_FILE}")
     except Exception as e:
         log(f"Save error: {e}")
 
 
-def has_uploaded_before(email, history):
-    """Check if this email has ever been recorded as uploading."""
-    norm = normalize_email(email)
-    if not norm:
-        return False
-    return norm in history
+def _parse_date_str(s):
+    """Parse YYYY-MM-DD string to date object. Returns None on failure."""
+    if not s or str(s).strip() in ("", "—", "-", "nan", "None"):
+        return None
+    s = str(s).strip()
+    # Try YYYY-MM-DD
+    try:
+        return datetime.strptime(s[:10], "%Y-%m-%d").date()
+    except Exception:
+        pass
+    return None
 
 
-def record_upload(email, upload_date, history):
-    """Record an upload. Returns True if this is the FIRST upload, False if repeat."""
-    norm = normalize_email(email)
-    if not norm:
-        return False
-    
-    parsed_date = parse_date(upload_date) if upload_date else ""
-    
-    if norm in history:
-        # Already in history - this is a repeat
-        if parsed_date:
-            entry = history[norm]
-            if parsed_date not in entry.get("all_dates", []):
-                entry["all_dates"].append(parsed_date)
-                entry["all_dates"].sort()
-        return False
-    
-    # First time we see this upload
-    history[norm] = {
-        "first_seen": parsed_date or datetime.now().strftime("%Y-%m-%d"),
+def is_truly_first_upload(normalized_email, upload_date_str, history):
+    """
+    Returns (is_first: bool, reason: str).
+
+    Rules:
+    1. Already in upload_history → REPEAT
+    2. Has project_dates in old_db before upload_date → REPEAT
+    3. Has signup_date more than FIRST_UPLOAD_WINDOW_DAYS before upload → REPEAT
+       (old account = not a new user doing their first upload)
+    4. Otherwise → FIRST
+    """
+    email = normalized_email.strip().lower() if normalized_email else ""
+    if not email:
+        return False, "no_email"
+
+    # Rule 1: Already tracked
+    if email in history:
+        first = history[email].get("first_seen", "?")
+        return False, f"repeat_already_in_history_since_{first}"
+
+    upload_date = _parse_date_str(upload_date_str)
+
+    # If no upload date, we can't determine — default to checking old_db only
+    if not upload_date:
+        return True, "no_upload_date_assume_first"
+
+    # Load old_db to cross-check
+    try:
+        from dedup_engine import load_old_database_with_dates
+        old_db = load_old_database_with_dates()
+        entry = old_db.get(email)
+    except Exception:
+        entry = None
+
+    if entry is None:
+        # Not in old_db at all = brand new user
+        return True, "not_in_old_db_brand_new"
+
+    # Rule 2: Check project_dates (prior uploads in DB)
+    project_dates = entry.get("project_dates", [])
+    for pd_str in project_dates:
+        pd = _parse_date_str(pd_str)
+        if pd and pd < upload_date:
+            return False, f"prior_project_upload_found_{pd_str}"
+
+    # Rule 3: Check signup_dates
+    signup_dates = entry.get("signup_dates", [])
+    earliest_signup = None
+    for sd_str in signup_dates:
+        sd = _parse_date_str(sd_str)
+        if sd:
+            if earliest_signup is None or sd < earliest_signup:
+                earliest_signup = sd
+
+    if earliest_signup:
+        days_diff = (upload_date - earliest_signup).days
+        if days_diff > FIRST_UPLOAD_WINDOW_DAYS:
+            return False, (
+                f"old_account_signed_up_{earliest_signup}_upload_{upload_date}"
+                f"_{days_diff}days_gap_exceeds_{FIRST_UPLOAD_WINDOW_DAYS}day_window"
+            )
+        elif days_diff >= 0:
+            # Signed up recently = likely first upload
+            return True, f"signed_up_{earliest_signup}_uploaded_{upload_date}_{days_diff}days_gap_within_window"
+        else:
+            # Upload date BEFORE signup date = data anomaly, default FIRST
+            return True, f"upload_before_signup_anomaly_{earliest_signup}_vs_{upload_date}"
+
+    # In old_db but no signup dates and no project dates = treat as FIRST
+    return True, "in_old_db_but_no_dates_found_assume_first"
+
+
+def record_upload(normalized_email, upload_date_str, history):
+    """
+    Record a confirmed first upload into history dict (in-place).
+    Caller must call save_history() after processing all rows.
+    """
+    email = normalized_email.strip().lower() if normalized_email else ""
+    if not email:
+        return
+
+    if email in history:
+        # Already exists — add date to all_dates if new
+        existing_dates = history[email].get("all_dates", [])
+        if upload_date_str and upload_date_str not in existing_dates:
+            existing_dates.append(upload_date_str)
+            existing_dates.sort()
+            history[email]["all_dates"] = existing_dates
+        return
+
+    history[email] = {
+        "first_seen": upload_date_str or datetime.now().strftime("%Y-%m-%d"),
         "first_recorded_at": datetime.now().isoformat(),
-        "all_dates": [parsed_date] if parsed_date else [],
+        "all_dates": [upload_date_str] if upload_date_str else [],
     }
-    return True
 
 
 def bootstrap_from_existing(force=False):
     """
-    One-time bootstrap: load all existing Verified_FIRST_UPLOAD into history.
-    Won't re-bootstrap if history already exists (unless force=True).
+    Load existing upload_history.json.
+    If force=True, rebuild from old_db project_dates.
+    Returns history dict.
     """
-    history = load_history()
-    
-    if history and not force:
-        log(f"History already has {len(history)} entries - skipping bootstrap")
+    if not force and HISTORY_FILE.exists():
+        history = load_history()
+        log(f"Loaded existing history: {len(history)} emails")
         return history
-    
-    log("BOOTSTRAPPING upload history from existing data...")
-    
+
+    # Rebuild from old_db project_dates
+    log("Bootstrapping upload history from old_db project_dates...")
     try:
-        from sheets_writer import read_tab_data
-        rows = read_tab_data("Verified_FIRST_UPLOAD")
-        log(f"  Loading {len(rows)} existing upload records")
-        
-        added = 0
-        for r in rows:
-            email = ""
-            for k in ("Email", "email"):
-                if k in r and r[k] and "@" in str(r[k]):
-                    email = str(r[k]).strip()
-                    break
-            if not email:
-                continue
-            
-            upload_date = r.get("Upload Date", "")
-            
-            norm = normalize_email(email)
-            if norm and norm not in history:
-                parsed = parse_date(upload_date)
-                history[norm] = {
-                    "first_seen": parsed or "",
-                    "first_recorded_at": "BOOTSTRAP",
-                    "all_dates": [parsed] if parsed else [],
-                    "source": "bootstrap_from_verified_first_upload",
-                }
-                added += 1
-        
-        log(f"  Bootstrap added {added} emails")
-        
-        # Also bootstrap from old DB Stripe customers (they likely uploaded too)
-        # This catches the wolfgang case - he's in Stripe, so he uploaded historically
-        try:
-            from dedup_engine import load_old_database_with_dates
-            old_db = load_old_database_with_dates()
-            log(f"  Cross-referencing {len(old_db)} old DB emails...")
-            
-            old_added = 0
-            for email, entry in old_db.items():
-                if email not in history:
-                    earliest = entry.get("earliest", "")
-                    if earliest:
-                        # If they're in old DB (Stripe customers), assume they uploaded historically
-                        # We don't know exact upload date, so use signup date as proxy
-                        history[email] = {
-                            "first_seen": earliest,
-                            "first_recorded_at": "BOOTSTRAP_FROM_OLD_DB",
-                            "all_dates": [earliest],
-                            "source": "old_db_stripe_customer",
-                            "note": "Estimated - email exists in Stripe historical data, likely uploaded before",
-                        }
-                        old_added += 1
-            
-            log(f"  Added {old_added} from old DB (Stripe customers)")
-        except Exception as e:
-            log(f"  Old DB bootstrap skipped: {e}")
-        
-        save_history(history)
-        log(f"Total history: {len(history)} emails")
-        return history
-    
+        from dedup_engine import load_old_database_with_dates
+        old_db = load_old_database_with_dates()
     except Exception as e:
-        log(f"Bootstrap error: {e}")
-        return history
+        log(f"Cannot load old_db: {e}")
+        return {}
 
+    history = {}
+    for email, entry in old_db.items():
+        project_dates = entry.get("project_dates", [])
+        if project_dates:
+            valid_dates = sorted([d for d in project_dates if d and d != "__no_date__"])
+            if valid_dates:
+                history[email] = {
+                    "first_seen": valid_dates[0],
+                    "first_recorded_at": datetime.now().isoformat(),
+                    "all_dates": valid_dates,
+                    "source": "bootstrapped_from_old_db",
+                }
 
-def is_truly_first_upload(email, upload_date, history):
-    """
-    Returns (is_first, reason).
-    
-    Rules:
-      - Email NEVER seen uploading before -> TRUE FIRST UPLOAD
-      - Email seen before -> NOT FIRST (repeat upload)
-    """
-    norm = normalize_email(email)
-    if not norm:
-        return True, "no_email_to_check"
-    
-    if norm not in history:
-        return True, "first_ever_upload"
-    
-    entry = history[norm]
-    first_seen = entry.get("first_seen", "")
-    source = entry.get("source", "previous_scrape")
-    
-    return False, f"already_uploaded_on_{first_seen}_source:{source}"
+    save_history(history)
+    log(f"Bootstrap complete: {len(history)} emails with project history")
+    return history
 
 
 if __name__ == "__main__":
-    log("Bootstrapping upload history...")
-    history = bootstrap_from_existing(force=True)
-    log(f"\nTotal: {len(history)} emails in history")
-    
+    log("Testing upload history logic...")
+    history = load_history()
+    log(f"Current history size: {len(history)}")
+
     # Test cases
-    print()
-    test_cases = [
-        ("wolfgang.bernecker@tridonic.com", "2026-05-10"),
-        ("brand.new.user@example.com", "2026-05-14"),
+    test = [
+        ("eagledemo@invicara.com",      "2026-05-15", "REPEAT - old account 2024"),
+        ("brand.new.user@test.com",     "2026-05-15", "FIRST - not in any DB"),
+        ("djcm16@gmail.com",            "2026-05-11", "check based on signup date"),
+        ("jara@libelium.com",           "2026-05-11", "check - signed up May 8"),
     ]
-    for email, date in test_cases:
-        is_first, reason = is_truly_first_upload(email, date, history)
-        marker = "FIRST" if is_first else "REPEAT"
-        print(f"  {email}: {marker} ({reason})")
+
+    print("\nTest Results:")
+    for email, upload_date, description in test:
+        is_first, reason = is_truly_first_upload(email, upload_date, history)
+        verdict = "FIRST" if is_first else "REPEAT"
+        print(f"  {verdict}: {email} | {description}")
+        print(f"           Reason: {reason}")
