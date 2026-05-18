@@ -211,10 +211,10 @@ def categorize_upload_row(row, check_dns, old_db, seen_in_batch, upload_history=
         return {"final_status": "REJECTED", "category": "DUPLICATE_IN_BATCH",
                 "reason": "same email in this scrape", "email": email}
 
-    # Use upload history (one-way ratchet). Prefer the passed-in upload_history
-    # registry if provided, otherwise fall back to the old_db registry lookup.
-    history_source = upload_history if upload_history is not None else old_db
-    is_first, reason = is_truly_first_upload(normalized, upload_date, history_source)
+    # Use upload history (one-way ratchet) only to detect already-counted uploads.
+    # Do NOT pass the upload registry as the `old_db` to is_truly_first_upload;
+    # that function expects the historical signups DB for month comparisons.
+    is_first, reason = is_truly_first_upload(normalized, upload_date, old_db)
 
     # If history says this was already counted today, accept it (idempotent).
     if not is_first:
