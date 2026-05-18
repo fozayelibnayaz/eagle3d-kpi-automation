@@ -85,10 +85,16 @@ def get_summary_text() -> str:
             lines.append(f"GOALS & PREDICTIONS ({now_month}):")
             g = goals.get(now_month, {})
             for metric in ('SignUps','FirstUploads','Paid'):
-                cur = pred.get(metric, {}).get('current', 0)
-                best = pred.get(metric, {}).get('best', 0)
-                likely = pred.get(metric, {}).get('likely', 0)
-                worst = pred.get(metric, {}).get('worst', 0)
+                p = pred.get(metric, {})
+                cur = p.get('current', 0)
+                best = p.get('best', 0)
+                likely = p.get('likely', 0)
+                worst = p.get('worst', 0)
+                avg_daily = p.get('avg_daily', 0)
+                mn = p.get('min_daily', 0)
+                mx = p.get('max_daily', 0)
+                used_col = p.get('used_column', '')
+                reason = p.get('reason', '')
                 goal = g.get(metric, None) if g else None
                 goal_str = str(goal) if goal else 'N/A'
                 if goal and goal > 0:
@@ -105,6 +111,7 @@ def get_summary_text() -> str:
                 lines.append(
                     f"  {metric:12s} | current={cur:>3} | likely={likely:>3} | best={best:>3} | worst={worst:>3} | goal={goal_str:>3} | {status}"
                 )
+                lines.append(f"      used_column={used_col} avg_daily={avg_daily} min={mn} max={mx} reason={reason}")
     except Exception as e:
         lines.append(f"(Prediction error: {e})")
 

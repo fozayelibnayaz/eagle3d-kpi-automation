@@ -321,11 +321,11 @@ def predict_monthly_metrics(month: str, lookback_days: int = 30):
     from datetime import datetime, date
 
     daily = read_tab_data('Daily_Counts')
-    # metrics column mapping
+    # metrics column mapping - support both older and newer column names
     metric_cols = {
-        'SignUps': 'SignUps_Accepted',
-        'FirstUploads': 'FirstUploads_Accepted',
-        'Paid': 'PaidSubscribers_Accepted'
+        'SignUps': ['SignUps_Accepted', 'SignUps'],
+        'FirstUploads': ['FirstUploads_Accepted', 'FirstUploads'],
+        'Paid': ['PaidSubscribers_Accepted', 'PaidSubscribers']
     }
 
     # Parse month
@@ -334,9 +334,22 @@ def predict_monthly_metrics(month: str, lookback_days: int = 30):
     except Exception:
         return {}
 
-    # current sum for month
-    month_rows = [r for r in daily if r.get('Date','').startswith(month)]
-    current = {m: sum(int(float(r.get(c,0) or 0)) for r in month_rows) for m,c in metric_cols.items()}
+    # current sum for month (detect available column names)
+    month_rows = [r for r in daily if str(r.get('Date','')).startswith(month)]
+    current = {}
+    used_cols = {}
+    for m, candidates in metric_cols.items():
+        # pick first available column
+        col = None
+        for c in candidates:
+            if any(c in row and str(row.get(c, '')).strip() != '' for row in daily):
+                col = c
+                break
+        used_cols[m] = col
+        if col:
+            current[m] = sum(int(float(r.get(col, 0) or 0)) for r in month_rows)
+        else:
+            current[m] = 0
 
     # build recent daily series (last lookback_days)
     all_dates = sorted({r.get('Date') for r in daily if r.get('Date')})
@@ -348,14 +361,18 @@ def predict_monthly_metrics(month: str, lookback_days: int = 30):
     for metric, col in metric_cols.items():
         # daily values for recent days
         vals = []
+        col = used_cols.get(metric)
         for d in recent:
             rows = [r for r in daily if r.get('Date') == d]
             val = 0
-            if rows:
-                val = int(float(rows[0].get(col,0) or 0))
+            if rows and col:
+                try:
+                    val = int(float(rows[0].get(col, 0) or 0))
+                except Exception:
+                    val = 0
             vals.append(val)
 
-        if not vals:
+        if not vals or sum(vals) == 0:
             avg = 0
             mn = 0
             mx = 0
@@ -388,6 +405,10 @@ def predict_monthly_metrics(month: str, lookback_days: int = 30):
         # best: use max daily
         best_proj = current[metric] + int(mx * remaining)
 
+        reason = ''
+        if avg == 0 and current[metric] == 0:
+            reason = 'Insufficient recent activity or no data in lookback window.'
+
         stats[metric] = {
             'current': current[metric],
             'best': best_proj,
@@ -396,7 +417,66 @@ def predict_monthly_metrics(month: str, lookback_days: int = 30):
             'remaining_days': remaining,
             'avg_daily': round(avg,2),
             'min_daily': mn,
-            'max_daily': mx
+            'max_daily': mx,
+            'used_column': used_cols.get(metric),
+            'reason': reason,
         }
 
     return stats
+
+
+def cohort_conversion_by_month(lookback_months: int = 6):
+    """Return simple cohort conversion table based on Monthly_Counts.
+    For each signup month, compute % who uploaded and % who became paid within the dataset."""
+    from sheets_writer import read_tab_data
+    monthly = read_tab_data('Monthly_Counts')
+    if not monthly:
+        return {}
+    # build lookup by month
+    by_month = {r.get('Month'): r for r in monthly}
+    cohorts = {}
+    months = sorted(by_month.keys())[-lookback_months:]
+    for m in months:
+        row = by_month.get(m, {})
+        s = int(float(row.get('SignUps_Accepted') or row.get('SignUps') or 0))
+        u = int(float(row.get('FirstUploads_Accepted') or row.get('FirstUploads') or 0))
+        p = int(float(row.get('PaidSubscribers_Accepted') or row.get('PaidSubscribers') or 0))
+        cohorts[m] = {
+            'signups': s,
+            'uploads': u,
+            'paid': p,
+            'upload_rate_pct': round((u / s * 100) if s else 0, 1),
+            'paid_rate_pct': round((p / s * 100) if s else 0, 1),
+        }
+    return cohorts
+
+
+def revenue_forecast(month: str, lookback_days: int = 30):
+    """Simple revenue forecast: uses recent average spend per paid customer (from Verified_STRIPE __amount__) and projects revenue for remaining days in month based on paid-count projections."""
+    from sheets_writer import read_tab_data
+    from datetime import datetime, date
+    daily = read_tab_data('Daily_Counts')
+    stripe = read_tab_data('Verified_STRIPE')
+    # compute avg spend per paid customer from stripe (recent)
+    spends = []
+    for r in stripe[-lookback_days:]:
+        try:
+            a = float(r.get('__amount__') or r.get('Total spend') or r.get('amount') or 0)
+            if a > 0:
+                spends.append(a)
+        except Exception:
+            continue
+    avg_spend = sum(spends)/len(spends) if spends else 0.0
+
+    # get paid counts projection using predict_monthly_metrics
+    pm = predict_monthly_metrics(month, lookback_days=lookback_days)
+    paid_best = pm.get('Paid', {}).get('best', 0)
+    paid_likely = pm.get('Paid', {}).get('likely', 0)
+    paid_worst = pm.get('Paid', {}).get('worst', 0)
+
+    return {
+        'avg_spend': round(avg_spend,2),
+        'best_revenue': int(round(paid_best * avg_spend)),
+        'likely_revenue': int(round(paid_likely * avg_spend)),
+        'worst_revenue': int(round(paid_worst * avg_spend)),
+    }
