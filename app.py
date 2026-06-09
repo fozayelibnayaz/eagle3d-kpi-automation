@@ -1466,10 +1466,13 @@ GEMINI_API_KEY = "your-gemini-key-here"
 # MASTER_SHEET_URL = "your-google-sheet-url"
 """, height=200)
         if st.button("💾 Save secrets.toml"):
-            os.makedirs(".streamlit", exist_ok=True)
-            with open(".streamlit/secrets.toml", "w") as f:
-                f.write(secret_text)
-            st.success("✅ Saved! Refresh the page to apply.")
+            try:
+                os.makedirs(".streamlit", exist_ok=True)
+                with open(".streamlit/secrets.toml", "w") as f:
+                    f.write(secret_text)
+                st.success("✅ Saved! Refresh the page to apply.")
+            except OSError:
+                st.warning("⚠️ Cannot write here (Streamlit Cloud is read-only). Add secrets in **share.streamlit.io → Settings → Secrets** instead.")
 
 # ═══════════════════════════════════════════════════════════════
 # FOOTER
