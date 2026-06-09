@@ -1,0 +1,225 @@
+name: Daily KPI Pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      force_historical:
+        description: 'Force full historical re-scrape (true/false)'
+        required: false
+        default: 'false'
+  schedule:
+    # 12:00 UTC daily — Anywhere on Earth (AoE) day-end standard
+    # Guarantees the previous calendar day has ended in EVERY timezone
+    # (Last timezone UTC-12 finishes the day at 12:00 UTC next day)
+    # All data sources (KPI dashboard, Stripe) store timestamps in UTC
+    - cron: '0 12 * * *'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: daily-kpi-pipeline
+  cancel-in-progress: false
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 1
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ hashFiles('requirements-pipeline.txt') }}
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements-pipeline.txt
+
+      - name: Install Playwright browsers
+        run: playwright install --with-deps chromium
+
+      - name: Restore Google credentials
+        env:
+          CREDS: ${{ secrets.GOOGLE_CREDS_JSON }}
+        run: |
+          if [ -z "$CREDS" ]; then
+            echo "❌ GOOGLE_CREDS_JSON empty"
+            exit 1
+          fi
+          echo "$CREDS" > google_creds.json
+
+      - name: Show schedule context
+        run: |
+          NOW_UTC=$(date -u '+%Y-%m-%d %H:%M:%S')
+          echo "=== Pipeline Context ==="
+          echo "Triggered at UTC: $NOW_UTC"
+          echo ""
+          # AoE: day that just ended globally
+          REPORT_DATE=$(date -u -d '12 hours ago' '+%Y-%m-%d')
+          echo "Reporting on day: $REPORT_DATE (ended in last timezone UTC-12 at this moment)"
+          echo ""
+          echo "=== State files ==="
+          if [ -f data_output/.historical_done ]; then
+            echo "✅ .historical_done EXISTS — fast Current Month scrape (~30s)"
+          else
+            echo "⚠️ MISSING — slow historical scrape (~5min first time)"
+          fi
+
+      - name: Login to KPI Dashboard
+        env:
+          KPI_EMAIL: ${{ secrets.KPI_EMAIL }}
+          KPI_PASSWORD: ${{ secrets.KPI_PASSWORD }}
+        run: |
+          echo "=== KPI Login ==="
+          if [ -z "$KPI_EMAIL" ] || [ -z "$KPI_PASSWORD" ]; then
+            echo "❌ KPI_EMAIL or KPI_PASSWORD missing"
+            exit 1
+          fi
+          python3 firebase_login.py || echo "⚠️ Storage state login failed — scrape_kpi.py fallback will handle"
+
+      - name: Restore Stripe cookies
+        env:
+          COOKIES: ${{ secrets.STRIPE_COOKIES_JSON }}
+        run: |
+          if [ -n "$COOKIES" ]; then
+            echo "$COOKIES" > stripe_cookies.json
+            echo "✅ Stripe cookies restored"
+          fi
+
+      - name: Run pipeline
+        env:
+          MASTER_SHEET_URL: ${{ secrets.MASTER_SHEET_URL }}
+          GOOGLE_CREDS_JSON: ${{ secrets.GOOGLE_CREDS_JSON }}
+          KPI_EMAIL: ${{ secrets.KPI_EMAIL }}
+          KPI_PASSWORD: ${{ secrets.KPI_PASSWORD }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          EMAIL_APP_PASSWORD: ${{ secrets.EMAIL_APP_PASSWORD }}
+          HEADLESS_MODE: 'true'
+          FORCE_HISTORICAL: ${{ github.event.inputs.force_historical || 'false' }}
+          ENABLE_SMTP_VERIFY: '1'
+          REPORT_TZ: 'UTC'
+        run: |
+          echo "=== Pipeline Start ==="
+          python3 daily_pipeline.py
+
+      - name: Show state files AFTER run
+        if: always()
+        run: |
+          ls -la data_output/ | head -30
+
+      - name: Verify data freshness
+        if: always()
+        run: |
+          python3 << 'PYEOF'
+          from datetime import datetime, timedelta
+          from pathlib import Path
+          import csv
+
+          utc_now = datetime.utcnow()
+          # AoE day-end logic — the day that just completed globally
+          aoe_completed = (utc_now - timedelta(hours=12)).strftime('%Y-%m-%d')
+          print(f"UTC now: {utc_now.strftime('%Y-%m-%d %H:%M')}")
+          print(f"Reporting on: {aoe_completed} (this date ended in ALL timezones)")
+
+          dc = Path('data_output/Daily_Counts.csv')
+          if dc.exists():
+              with open(dc) as f:
+                  reader = csv.DictReader(f)
+                  dates = [r.get('Date','') for r in reader if r.get('Date','')]
+              if dates:
+                  valid = [d for d in dates if len(d) == 10]
+                  latest = max(valid) if valid else 'none'
+                  print(f"Latest Daily_Counts: {latest}")
+                  print(f"Total rows: {len(valid)}")
+                  if latest >= aoe_completed:
+                      print(f"✅ FRESH — captured {aoe_completed} (last globally-completed day)")
+                  else:
+                      try:
+                          gap = (datetime.strptime(aoe_completed, '%Y-%m-%d').date()
+                                 - datetime.strptime(latest, '%Y-%m-%d').date()).days
+                          print(f"⚠️ Latest is {gap} day(s) behind global day-end")
+                      except Exception:
+                          pass
+          PYEOF
+
+      - name: Commit persistent state
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          mkdir -p data_output
+
+          for f in data_output/.historical_done data_output/.stripe_historical_done; do
+            if [ -f "$f" ]; then
+              git add -f "$f"
+              echo "  ✅ Hidden: $f ($(wc -c < $f) bytes)"
+            fi
+          done
+
+          for f in \
+            data_output/upload_history.json \
+            data_output/first_upload_ledger.json \
+            data_output/upload_registry.json \
+            data_output/historical_accounts.json \
+            data_output/historical_paid.json \
+            data_output/old_db_with_dates.json \
+            data_output/pipeline_health.json \
+            data_output/domain_cache.json \
+            data_output/smtp_cache.json \
+            data_output/manual_overrides.json \
+            kpi_storage_state.json; do
+            if [ -f "$f" ]; then
+              git add -f "$f"
+              echo "  ✅ $f ($(wc -c < $f) bytes)"
+            fi
+          done
+
+          if git diff --cached --quiet; then
+            echo "No state changes"
+          else
+            REPORT_DATE=$(date -u -d '12 hours ago' '+%Y-%m-%d')
+            git commit -m "Pipeline state — reporting day ${REPORT_DATE} (AoE) [skip ci]"
+            for i in 1 2 3; do
+              if git push origin main; then
+                echo "✅ Pushed"
+                break
+              else
+                echo "Push $i failed, retrying..."
+                git pull --rebase origin main || true
+                sleep 3
+              fi
+            done
+          fi
+
+      - name: Upload debug artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: kpi-run-${{ github.run_number }}
+          path: |
+            data_output/*.csv
+            data_output/*.json
+            data_output/*.png
+            data_output/*.log
+            data_output/.historical_done
+            data_output/.stripe_historical_done
+          retention-days: 30
+          include-hidden-files: true

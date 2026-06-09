@@ -1,0 +1,100 @@
+# Local secrets (NEVER commit)
+google_creds.json
+kpi_cookies.json
+kpi_storage_state.json
+kpi_storage_dump.json
+stripe_cookies.json
+stripe_storage_state.json
+browser_session/
+browser_session_fresh/
+browser_session_new/
+stripe_session/
+
+# Local data outputs - don't commit large files
+data_output/*.csv
+data_output/*.png
+data_output/*.log
+data_output/*.txt
+data_output/*.html
+data_output/Skipped_*
+data_output/Rejected_*
+data_output/Duplicates_*
+data_output/Raw_*
+data_output/Verified_*
+data_output/Daily_Counts.*
+data_output/Monthly_Counts.*
+data_output/storage_state_debug.json
+data_output/Raw_FREE_TEST.*
+data_output/Raw_TEST.*
+
+# Markers (regenerated each run)
+data_output/.historical_done
+data_output/.stripe_historical_done
+
+# KEEP these state files committed (force-include):
+!data_output/upload_history.json
+!data_output/upload_registry.json
+!data_output/pipeline_health.json
+!data_output/old_db_with_dates.json
+!data_output/disposable_domains.txt
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+.DS_Store
+
+# GA4 / Traffic Intelligence
+streamlit_secrets_PASTE_THIS.toml
+google_creds.json
+.streamlit/secrets.toml
+
+# GA4 / Traffic Intelligence
+google_creds.json
+streamlit_secrets_PASTE_THIS.toml
+.streamlit/secrets.toml
+dashboard.py.backup_*
+requirements_ga4.txt
+
+# Backup files and safe folder
+*.backup_*
+*.MOVED
+*.emoji_fix_*
+*.full_patch_backup_*
+*.qa_backup_*
+*.responsive_backup_*
+*.tablist_backup_*
+_safe_backup/
+pages/*.backup_*
+pages/*.emoji_fix_*
+pages/*.qa_backup_*
+pages/*.full_patch_backup_*
+pages/*.responsive_backup_*
+pages/*.tablist_backup_*
+
+
+# Backup files (auto-managed)
+*.backup_*
+*.MOVED
+*.emoji_fix_*
+*.full_patch_backup_*
+*.qa_backup_*
+*.responsive_backup_*
+*.tablist_backup_*
+*.fix_*
+_safe_backup/
+_deploy_backup_*
+pages/*.backup_*
+pages/*.emoji_fix_*
+pages/*.qa_backup_*
+pages/*.full_patch_backup_*
+pages/*.responsive_backup_*
+pages/*.tablist_backup_*
+pages/*.fix_*
+deploy_traffic_intelligence.sh
+_build_ti_page.py
