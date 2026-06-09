@@ -686,8 +686,8 @@ if page == "📊 Dashboard":
         st.markdown('<div class="sec-head">📊 Period Comparison</div>', unsafe_allow_html=True)
         _df(pd.DataFrame({
             "Metric": ["Sign-ups", "Uploads", "Paid", "S→U", "U→P", "S→P"],
-            "Current": [cs, cu, cp, f"{s2u:.1f}%", f"{u2p:.1f}%", f"{s2p:.1f}%"],
-            "Previous": [ps, pu, pp, f"{ps2u:.1f}%", f"{pu2p:.1f}%", f"{ps2p:.1f}%"],
+            "Current": [str(cs), str(cu), str(cp), f"{s2u:.1f}%", f"{u2p:.1f}%", f"{s2p:.1f}%"],
+            "Previous": [str(ps), str(pu), str(pp), f"{ps2u:.1f}%", f"{pu2p:.1f}%", f"{ps2p:.1f}%"],
             "Δ %": [
                 f"{((cs - ps) / ps * 100):+.1f}%" if ps > 0 else "—",
                 f"{((cu - pu) / pu * 100):+.1f}%" if pu > 0 else "—",
@@ -1123,39 +1123,142 @@ elif page == "🔬 EDA Lab":
                     _df(co)
 
 # ═══════════════════════════════════════════════════════════════
-# PAGE: 🔍 BROWSE DATA
+# PAGE: 🔍 BROWSE DATA — with per-row manual override
 # ═══════════════════════════════════════════════════════════════
 elif page == "🔍 Browse Data":
     st.markdown('<div class="sec-head">🔍 Browse Customer Data</div>', unsafe_allow_html=True)
     tabs = st.tabs(["📥 Sign-ups", "📦 First Uploads", "💳 Stripe", "📊 KPI Daily"])
     _stripe = load_sheet("Verified_STRIPE")
+
+    # ── Manual Override Engine ──
+    override_engine = MOD.get("manual_override_engine")
+
     for _tab, (_lb, _dfd) in zip(tabs, [("Sign-ups", free_rows), ("First Uploads", upload_rows), ("Stripe", _stripe), ("KPI Daily", kpi)]):
         with _tab:
             if _dfd is None or (hasattr(_dfd, 'empty') and _dfd.empty):
-                st.warning(f"No {_lb} data")
+                st.warning(f"No {_lb} data — connect Google Sheets or add manually")
                 continue
             if _lb == "KPI Daily":
                 _df(_dfd, height=450)
                 st.download_button("⬇️ Download", data=_dfd.to_csv(index=False).encode("utf-8"),
                     file_name="kpi_daily.csv", mime="text/csv", use_container_width=True)
                 continue
+
+            # Find email and status columns
+            email_col = next((c for c in _dfd.columns if "email" in c.lower()), None)
+            status_col = next((c for c in _dfd.columns if "status" in c.lower() or "category" in c.lower()), None)
+
+            # ── Manual Override Section ──
+            if email_col:
+                st.markdown("#### ✏️ Override Record Status")
+                st.caption(f"Change a record's status (e.g., REJECTED → ACCEPTED, REPEAT → ACCEPTED)")
+
+                oc1, oc2, oc3, oc4 = st.columns(4)
+                with oc1:
+                    override_email = st.text_input("Email to override", key=f"oe_{_lb}", placeholder="user@example.com")
+                with oc2:
+                    current_status = "—"
+                    if override_email and email_col:
+                        match = _dfd[_dfd[email_col].astype(str).str.lower().str.strip() == override_email.lower().strip()]
+                        if not match.empty:
+                            current_status = str(match.iloc[0].get(status_col, "UNKNOWN")) if status_col else "FOUND"
+                    st.text_input("Current status", value=str(current_status), key=f"cs_{_lb}", disabled=True)
+                with oc3:
+                    new_action = st.selectbox("Change to", ["accept", "reject", "not_determined", "duplicate", "repeat_upload"], key=f"na_{_lb}")
+                with oc4:
+                    override_reason = st.text_input("Reason", value="Manual override", key=f"or_{_lb}")
+
+                target_tab_map = {"Sign-ups": "Verified_FREE", "First Uploads": "Verified_FIRST_UPLOAD", "Stripe": "Verified_STRIPE"}
+                target_tab = target_tab_map.get(_lb, "ALL")
+
+                if st.button(f"💾 Apply Override — {_lb}", key=f"apply_{_lb}"):
+                    if override_email and override_engine:
+                        ok = override_engine.apply_override(
+                            email=override_email, action=new_action,
+                            target_tab=target_tab, reason=override_reason,
+                            original_category=current_status
+                        )
+                        if ok:
+                            st.success(f"✅ Override saved: {override_email} → {new_action}")
+                            st.info("⚠️ The override will be applied on the next pipeline run. Go to ⚙️ Settings → Run Pipeline to apply now.")
+                        else:
+                            st.error("❌ Failed — check the email address")
+                    elif not override_email:
+                        st.warning("Enter an email address")
+                    else:
+                        st.error("Manual override engine not loaded")
+
+                # Show existing overrides
+                if override_engine:
+                    _ovs = override_engine.load_overrides()
+                    if _ovs:
+                        with st.expander("📋 Active Overrides", expanded=False):
+                            _ov_rows = []
+                            for _em, _ov in _ovs.items():
+                                _ov_rows.append({"Email": _em, "Action": _ov.get("action", ""), "Tab": _ov.get("target_tab", ""), "Reason": _ov.get("reason", ""), "Date": _ov.get("overridden_at", "")[:19]})
+                            _df(pd.DataFrame(_ov_rows), height=200)
+
+                st.markdown("---")
+
+            # ── Bulk Override ──
+            if email_col and override_engine:
+                st.markdown("#### 📦 Bulk Override")
+                bc1, bc2, bc3 = st.columns(3)
+                with bc1:
+                    bulk_status_filter = st.selectbox("Filter by current status", ["All"] + list(_dfd[status_col].astype(str).unique()) if status_col else ["All"], key=f"bsf_{_lb}")
+                with bc2:
+                    bulk_action = st.selectbox("Change all filtered to", ["accept", "reject", "not_determined"], key=f"ba_{_lb}")
+                with bc3:
+                    bulk_reason = st.text_input("Reason", value=f"Bulk override: {bulk_action}", key=f"br_{_lb}")
+
+                bulk_df = _dfd.copy()
+                if bulk_status_filter != "All" and status_col:
+                    bulk_df = bulk_df[bulk_df[status_col].astype(str) == bulk_status_filter]
+                st.caption(f"Will override {len(bulk_df)} records")
+
+                if st.button(f"⚡ Bulk Apply ({len(bulk_df)} records)", key=f"bulk_{_lb}"):
+                    if len(bulk_df) > 0 and email_col:
+                        emails_list = bulk_df[email_col].astype(str).str.lower().str.strip().tolist()
+                        count = override_engine.apply_bulk_overrides(emails_list, bulk_action, target_tab, bulk_reason)
+                        st.success(f"✅ Overridden {count} records → {bulk_action}")
+                    else:
+                        st.warning("No records to override")
+
+                st.markdown("---")
+
+            # ── Data Table ──
             c1, c2, c3 = st.columns(3)
             with c1:
-                sf = st.selectbox("Status:", ["All", "ACCEPTED", "REJECTED", "NOT_DETERMINED"], key=f"s_{_lb}")
+                sf = st.selectbox("Status:", ["All", "ACCEPTED", "REJECTED", "NOT_DETERMINED", "REPEAT_UPLOAD", "DISPOSABLE", "DUPLICATE"], key=f"s_{_lb}")
             with c2:
                 sr = st.text_input("🔍", key=f"q_{_lb}", placeholder="search...")
             with c3:
                 mr = st.number_input("Rows", value=200, min_value=10, max_value=5000, key=f"r_{_lb}")
             fl = _dfd.copy()
-            if sf != "All" and "final_status" in fl.columns:
-                fl = fl[fl["final_status"].astype(str).str.upper() == sf]
+            if sf != "All" and status_col:
+                fl = fl[fl[status_col].astype(str).str.upper().str.contains(sf.upper(), na=False)]
             if sr:
                 msk = pd.Series([False] * len(fl), index=fl.index)
                 for c in fl.columns:
                     msk = msk | fl[c].astype(str).str.contains(sr, case=False, na=False)
                 fl = fl[msk]
-            st.metric("Showing", f"{len(fl)} rows")
-            _df(fl.head(mr), height=450)
+
+            # Summary
+            sc1, sc2, sc3 = st.columns(3)
+            with sc1:
+                st.metric("Total", f"{len(_dfd)}")
+            with sc2:
+                if status_col:
+                    accepted = len(_dfd[_dfd[status_col].astype(str).str.upper() == "ACCEPTED"])
+                    st.metric("Accepted", f"{accepted}")
+            with sc3:
+                st.metric("Showing", f"{len(fl)}")
+
+            # Convert all columns to string to avoid Arrow errors
+            fl_display = fl.head(mr).copy()
+            for c in fl_display.columns:
+                fl_display[c] = fl_display[c].astype(str)
+            _df(fl_display, height=450)
             st.download_button("⬇️ Download", data=fl.to_csv(index=False).encode("utf-8"),
                 file_name=f"{_lb.lower().replace(' ', '_')}.csv", mime="text/csv", use_container_width=True)
 
@@ -1302,6 +1405,54 @@ elif page == "⚙️ Settings":
     for _idx, (_l, _c) in enumerate(_di.items()):
         with _ic[_idx % 3]:
             st.metric(_l, f"{_c:,}")
+
+    st.markdown("---")
+    st.markdown("---")
+    st.markdown("#### 🚀 Run Pipeline")
+    st.caption("Fetch fresh data from all sources (KPI, Stripe, GA4)")
+    if st.button("🚀 Run Pipeline Now", type="primary"):
+        with st.spinner("Triggering pipeline..."):
+            try:
+                import subprocess
+                result = subprocess.run(
+                    ["python3", "daily_pipeline.py"],
+                    capture_output=True, text=True, timeout=120,
+                    cwd=os.path.dirname(os.path.abspath(__file__))
+                )
+                if result.returncode == 0:
+                    st.success("Pipeline completed! Refresh page to see updated data.")
+                    if result.stdout:
+                        st.code(result.stdout[-500:])
+                else:
+                    st.warning("Pipeline finished with warnings")
+                    if result.stderr:
+                        st.code(result.stderr[-500:])
+            except FileNotFoundError:
+                st.info("Run locally in Terminal: python3 daily_pipeline.py")
+            except Exception as e:
+                st.info(f"Run manually: python3 daily_pipeline.py ({e})")
+
+    st.markdown("---")
+    st.markdown("#### ⚡ Trigger Remote Pipeline (GitHub Actions)")
+    gh_token = get_secret("GITHUB_TOKEN", "")
+    if gh_token:
+        if st.button("⚡ Trigger Remote Pipeline"):
+            try:
+                import urllib.request
+                import json as _json
+                repo = "fozayelibnayaz/eagle3d-kpi-automation"
+                url = f"https://api.github.com/repos/{repo}/actions/workflows/daily_pipeline.yml/dispatches"
+                data = _json.dumps({"ref": "main"}).encode()
+                req = urllib.request.Request(url, data=data, method="POST",
+                    headers={"Authorization": f"token {gh_token}", "Accept": "application/vnd.github+json"})
+                with urllib.request.urlopen(req, timeout=15) as r:
+                    if r.status in (200, 204):
+                        st.success("Pipeline triggered! Check GitHub Actions.")
+            except Exception as e:
+                st.error(f"Failed: {e}")
+    else:
+        st.info("Add GITHUB_TOKEN to secrets to enable remote pipeline trigger.")
+        st.markdown("[Go to GitHub Actions → Run manually](https://github.com/fozayelibnayaz/eagle3d-kpi-automation/actions)")
 
     st.markdown("---")
     st.markdown("#### 🔧 Add / Update Secrets")
