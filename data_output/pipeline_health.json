@@ -5,5 +5,11 @@
     "daily_summary_2026-05-16": "2026-05-16T06:24:31.832827",
     "daily_summary_2026-05-17": "2026-05-17T06:47:13.459506",
     "daily_summary_2026-05-18": "2026-05-18T04:42:19.882810"
+  },
+  "stripe": {
+    "consecutive_failures": 1,
+    "last_error": "Page.wait_for_selector: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"table tbody tr\") to be visible\n",
+    "last_failure": "2026-06-10T15:43:43.600612",
+    "status": "failed"
   }
 }

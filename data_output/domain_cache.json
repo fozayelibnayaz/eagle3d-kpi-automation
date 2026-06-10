@@ -1381,6 +1381,24 @@
     ],
     "reputation_score": 0.45
   },
+  "hacettepe.edu.tr": {
+    "checked_at": "2026-06-10T15:48:06.014419",
+    "domain": "hacettepe.edu.tr",
+    "domain_age_days": null,
+    "has_a_record": true,
+    "has_dmarc": true,
+    "has_spf": true,
+    "is_disposable": false,
+    "is_major_provider": false,
+    "mx_ok": true,
+    "mx_records": [
+      [
+        0,
+        "mail.hacettepe.edu.tr"
+      ]
+    ],
+    "reputation_score": 0.45
+  },
   "hafslund.no": {
     "checked_at": "2026-05-18T20:27:18.514805",
     "domain": "hafslund.no",
@@ -2342,6 +2360,32 @@
       ]
     ],
     "reputation_score": 0.45
+  },
+  "my.caslv.org": {
+    "checked_at": "2026-06-10T15:48:09.110469",
+    "domain": "my.caslv.org",
+    "domain_age_days": null,
+    "has_a_record": false,
+    "has_dmarc": false,
+    "has_spf": false,
+    "is_disposable": false,
+    "is_major_provider": false,
+    "mx_ok": true,
+    "mx_records": [
+      [
+        10,
+        "aspmx.l.google.com"
+      ],
+      [
+        20,
+        "alt1.aspmx.l.google.com"
+      ],
+      [
+        30,
+        "alt2.aspmx.l.google.com"
+      ]
+    ],
+    "reputation_score": 0.2
   },
   "naver.com": {
     "checked_at": "2026-05-18T20:27:50.204443",
@@ -3319,6 +3363,24 @@
       ]
     ],
     "reputation_score": 0.45
+  },
+  "snocv.com": {
+    "checked_at": "2026-06-10T15:48:16.226003",
+    "domain": "snocv.com",
+    "domain_age_days": null,
+    "has_a_record": false,
+    "has_dmarc": true,
+    "has_spf": true,
+    "is_disposable": false,
+    "is_major_provider": false,
+    "mx_ok": true,
+    "mx_records": [
+      [
+        10,
+        "mail.snocv.com"
+      ]
+    ],
+    "reputation_score": 0.4
   },
   "soclecollections.com": {
     "checked_at": "2026-05-18T21:00:11.301618",
