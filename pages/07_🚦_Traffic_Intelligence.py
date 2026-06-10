@@ -257,10 +257,7 @@ def normalize_ga4_sources(utm_df):
 # MAIN
 # ══════════════════════════════════════════════════════════════
 
-def main(start_date=None, end_date=None, prev_start=None, prev_end=None):
-    # Determine if we're embedded in app.py (dates provided) or standalone
-    embedded = start_date is not None and end_date is not None
-
+def main():
     st.markdown("""
     <div style="border-bottom:2px solid #1B3054;padding-bottom:10px;margin-bottom:16px;">
         <h2 style="color:#00D4FF;margin:0;">🚦 Traffic Intelligence Hub</h2>
@@ -272,8 +269,18 @@ def main(start_date=None, end_date=None, prev_start=None, prev_end=None):
         st.error(f"GA4 module not available: {MODULE_STATUS.get('ga4_connector_error', 'unknown')}")
         return
 
-    if not embedded:
-        # Standalone mode — show own sidebar controls
+    # Check if dates were passed from parent app.py via session_state
+    _parent_start = st.session_state.get("ti_start")
+    _parent_end = st.session_state.get("ti_end")
+    _use_parent_dates = bool(_parent_start and _parent_end)
+
+    if _use_parent_dates:
+        # Embedded mode: use dates from app.py sidebar
+        s_str, e_str = _parent_start, _parent_end
+        ps_str, pe_str = prev_period(s_str, e_str)
+        dedup_mode = True
+    else:
+        # Standalone mode: show own sidebar controls
         with st.sidebar:
             st.markdown("### 🚦 Controls")
 
@@ -306,14 +313,6 @@ def main(start_date=None, end_date=None, prev_start=None, prev_end=None):
             for key in ["ga4_connector", "kpi_bridge", "source_intel", "smart_qa", "source_normalizer"]:
                 icon = "✅" if MODULE_STATUS.get(key) else "❌"
                 st.caption(f"{icon} {key}")
-    else:
-        # Embedded mode — use dates from app.py
-        s_str, e_str = start_date, end_date
-        if prev_start and prev_end:
-            ps_str, pe_str = prev_start, prev_end
-        else:
-            ps_str, pe_str = prev_period(s_str, e_str)
-        dedup_mode = True
 
     # Load data
     with st.spinner("Loading traffic data..."):
