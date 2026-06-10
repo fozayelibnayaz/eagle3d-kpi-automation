@@ -332,6 +332,7 @@ def main():
 
     # Overview KPIs
     st.markdown("### 📊 Overview")
+    st.caption(f"📅 Data for: **{s_str}** → **{e_str}** | Comparing to: **{ps_str}** → **{pe_str}**")
     sess = _safe(utm, "sessions") or _safe(utm, "totalUsers")
     users = _safe(utm, "totalUsers")
     conv = _safe(utm, "conversions")

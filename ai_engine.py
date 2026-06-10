@@ -16,11 +16,14 @@ from typing import Optional
 
 def _get_provider():
     """Returns 'groq', 'gemini', or 'rule_based'."""
+    # Check environment variables first
     if os.environ.get("GROQ_API_KEY"):
         return "groq"
+    # Check Streamlit secrets
     try:
         import streamlit as st
-        if "GROQ_API_KEY" in st.secrets:
+        _gk = st.secrets.get("GROQ_API_KEY", "")
+        if _gk and len(str(_gk)) > 10:
             return "groq"
     except Exception:
         pass
@@ -28,7 +31,8 @@ def _get_provider():
         return "gemini"
     try:
         import streamlit as st
-        if "GEMINI_API_KEY" in st.secrets:
+        _gmk = st.secrets.get("GEMINI_API_KEY", "")
+        if _gmk and len(str(_gmk)) > 10:
             return "gemini"
     except Exception:
         pass
@@ -147,15 +151,28 @@ def _rule_based_answer(question: str, data_context: str) -> str:
         lines.append("4. **AI search optimization** — ensure docs are indexed by ChatGPT, Gemini, Perplexity")
         lines.append("5. **Referral program** — incentivize word-of-mouth with credits")
         lines.append("\n*Connect Groq or Gemini for data-specific recommendations.*")
-    elif any(w in q for w in ["predict", "forecast", "future", "next week", "next month"]):
+    elif any(w in q for w in ["predict", "forecast", "future", "next week", "next month", "next", "can we get", "how many more", "achieve", "goal"]):
         lines.append("### 🔮 Forecast Note")
         lines.append("Visit the **🔮 Predictions** page for ML-powered forecasts.")
         lines.append("The ensemble model uses Moving Average + Linear Regression + Exponential Smoothing.")
-        lines.append("\n*Connect Groq or Gemini for narrative-driven forecasting.*")
+        
+        # Extract numbers from the question for context
+        import re as _re
+        _days_match = _re.search(r'(\d+)\s*days?', q)
+        _days = int(_days_match.group(1)) if _days_match else 30
+        
+        lines.append(f"\nBased on current trends for the next {_days} days:")
+        lines.append("- Connect Groq or Gemini for AI-powered prediction with real data analysis.")
+        lines.append("\n*Note: The Predictions page uses historical patterns for accurate forecasting.*")
     else:
         lines.append(data_context)
-        lines.append("\n---")
-        lines.append("*Connect Groq or Gemini API for deeper AI analysis.*")
+        lines.append("\n### 💡 Summary")
+        lines.append("The data above shows your current performance metrics.")
+        lines.append("For specific insights and recommendations, try asking:")
+        lines.append("- \"Why did signups change?\" — for root cause analysis")
+        lines.append("- \"How to improve uploads?\" — for growth recommendations")
+        lines.append("- \"Predict next month\" — for forecasts")
+        lines.append("\n*Connect Groq or Gemini API for deeper AI analysis.*")
     
     lines.append("\n---")
     lines.append("*Analysis by Eagle3D Intelligence Engine (rule-based mode)*")

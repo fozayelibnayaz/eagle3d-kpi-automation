@@ -689,7 +689,7 @@ with st.sidebar:
         [
             "📊 Dashboard", "🚦 Traffic Intel", "🤖 Ask AI",
             "🔮 Predictions", "📋 Reports", "🔔 Alerts",
-            "🔬 EDA Lab", "🔍 Browse Data", "⚙️ Settings",
+            "🔬 EDA Lab", "🔍 Browse Data", "✏️ Manual Override", "⚙️ Settings",
         ],
         label_visibility="collapsed",
     )
@@ -751,6 +751,23 @@ with st.sidebar:
         _ic = {"groq": "⚡", "gemini": "💎", "rule_based": "🧠"}
         _nm = {"groq": "Groq", "gemini": "Gemini", "rule_based": "Rules"}
         st.caption(f"{_ic.get(_pr, '🤖')} AI: {_nm.get(_pr, _pr)}")
+        # Debug: show why rule-based if applicable
+        if _pr == "rule_based":
+            _has_groq = False
+            _has_gemini = False
+            try:
+                if "GROQ_API_KEY" in st.secrets and st.secrets["GROQ_API_KEY"]:
+                    _has_groq = True
+                if "GEMINI_API_KEY" in st.secrets and st.secrets["GEMINI_API_KEY"]:
+                    _has_gemini = True
+            except Exception:
+                pass
+            if not _has_groq and not _has_gemini:
+                st.caption("⚠️ No AI keys found in secrets")
+            elif _has_groq:
+                st.caption("⚠️ GROQ_API_KEY found but detection failed")
+            elif _has_gemini:
+                st.caption("⚠️ GEMINI_API_KEY found but detection failed")
     st.caption(f"🦅 v5.1 | {datetime.now().strftime('%H:%M')}")
 
 # ═══════════════════════════════════════════════════════════════
@@ -871,6 +888,13 @@ if page == "📊 Dashboard":
         '<div class="sec-head">📊 Executive Dashboard</div>',
         unsafe_allow_html=True,
     )
+
+    # Data diagnostics
+    _total_all = int(kpi_all["signups"].sum()) if not kpi_all.empty and "signups" in kpi_all.columns else 0
+    if _total_all > 0:
+        st.caption(f"📡 All-time: {_total_all:,} sign-ups, {int(kpi_all['first_uploads'].sum()):,} uploads, {int(kpi_all['paid_customers'].sum()):,} paid")
+    else:
+        st.warning("⚠️ No KPI data loaded — check Google Sheets connection or secrets.")
 
     cs = km(kpi, "signups")
     cu = km(kpi, "first_uploads")
@@ -1648,34 +1672,79 @@ elif page == "🔍 Browse Data":
             if _df_data.empty:
                 st.warning(f"No {_lb} data")
                 continue
-            c1, c2, c3 = st.columns(3)
+
+            # Filters row
+            c1, c2, c3, c4 = st.columns(4)
             with c1:
-                sf = st.selectbox(
-                    "Status:",
-                    ["All", "ACCEPTED", "REJECTED", "NOT_DETERMINED"],
-                    key=f"s_{_lb}",
-                )
+                # Get unique statuses
+                _statuses = ["All"]
+                if "final_status" in _df_data.columns:
+                    _found = sorted(_df_data["final_status"].dropna().astype(str).str.upper().unique().tolist())
+                    _statuses += _found
+                else:
+                    _statuses += ["ACCEPTED", "REJECTED", "NOT_DETERMINED", "DISPOSABLE", "REPEAT"]
+                sf = st.selectbox("Status:", _statuses, key=f"s_{_lb}")
             with c2:
-                sr = st.text_input("🔍", key=f"q_{_lb}",
-                                   placeholder="search...")
+                sr = st.text_input("🔍", key=f"q_{_lb}", placeholder="search...")
             with c3:
-                mr = st.number_input(
-                    "Rows", value=200, min_value=10,
-                    max_value=5000, key=f"r_{_lb}",
-                )
+                # Sort column selector
+                _sort_cols = ["—"] + [c for c in _df_data.columns if c]
+                _sort_sel = st.selectbox("Sort by:", _sort_cols, key=f"sort_{_lb}")
+            with c4:
+                _sort_asc = st.radio("Direction", ["↓ Desc", "↑ Asc"], key=f"sortd_{_lb}", horizontal=True)
+
+            # Rows per page
+            mr = st.number_input("Rows to display", value=500, min_value=10, max_value=10000, key=f"r_{_lb}")
+
+            # Apply filters
             fl = _df_data.copy()
             if sf != "All" and "final_status" in fl.columns:
-                fl = fl[
-                    fl["final_status"].astype(str).str.upper() == sf
-                ]
+                fl = fl[fl["final_status"].astype(str).str.upper() == sf]
             if sr:
                 msk = pd.Series([False] * len(fl), index=fl.index)
                 for c in fl.columns:
-                    msk = msk | fl[c].astype(str).str.contains(
-                        sr, case=False, na=False
-                    )
+                    msk = msk | fl[c].astype(str).str.contains(sr, case=False, na=False)
                 fl = fl[msk]
+
+            # Apply sorting
+            if _sort_sel != "—" and _sort_sel in fl.columns:
+                _ascending = (_sort_asc == "↑ Asc")
+                try:
+                    fl[_sort_sel] = pd.to_numeric(fl[_sort_sel], errors="ignore")
+                except Exception:
+                    pass
+                fl = fl.sort_values(by=_sort_sel, ascending=_ascending, na_position="last")
+
             st.metric("Showing", f"{len(fl)} rows")
+
+            # Manual override: change label for a specific row
+            st.markdown("##### ✏️ Manual Override")
+            _oc1, _oc2, _oc3 = st.columns(3)
+            with _oc1:
+                _override_email = st.text_input("Email to override:", key=f"oe_{_lb}", placeholder="user@email.com")
+            with _oc2:
+                _new_status = st.selectbox("New status:", ["ACCEPTED", "REJECTED", "NOT_DETERMINED", "DISPOSABLE", "REPEAT"], key=f"ns_{_lb}")
+            with _oc3:
+                st.markdown("<br>", unsafe_allow_html=True)
+                if st.button("🔄 Apply Override", key=f"ao_{_lb}"):
+                    if _override_email and "final_status" in fl.columns:
+                        _email_col = None
+                        for _ec in fl.columns:
+                            if "email" in _ec.lower() or "mail" in _ec.lower():
+                                _email_col = _ec
+                                break
+                        if _email_col:
+                            _mask = fl[_email_col].astype(str).str.lower().str.strip() == _override_email.lower().strip()
+                            if _mask.any():
+                                fl.loc[_mask, "final_status"] = _new_status
+                                st.success(f"✅ Changed {_mask.sum()} row(s) to {_new_status}")
+                            else:
+                                st.warning(f"Email '{_override_email}' not found in this view")
+                        else:
+                            st.warning("No email column found")
+                    else:
+                        st.warning("Enter an email and ensure data has final_status column")
+
             _df(fl.head(mr), height=450)
             st.download_button(
                 "⬇️ Download",
@@ -1686,7 +1755,117 @@ elif page == "🔍 Browse Data":
             )
 
 # ═══════════════════════════════════════════════════════════════
-# PAGE: ⚙️ SETTINGS
+# PAGE: ✏️ MANUAL OVERRIDE
+# ═══════════════════════════════════════════════════════════════
+elif page == "✏️ Manual Override":
+    st.markdown(
+        '<div class="sec-head">✏️ Manual Data Entry & Override</div>',
+        unsafe_allow_html=True,
+    )
+    _mo_tab1, _mo_tab2, _mo_tab3 = st.tabs([
+        "📝 Add Daily Entry", "📂 Bulk CSV Import", "📋 Entries Log",
+    ])
+    MANUAL_DATA_FILE = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "data_output", "manual_kpi_data.json",
+    )
+    def _load_manual():
+        if os.path.exists(MANUAL_DATA_FILE):
+            try:
+                with open(MANUAL_DATA_FILE, "r") as _f:
+                    return json.load(_f)
+            except Exception:
+                pass
+        return {"daily": []}
+    def _save_manual(data):
+        os.makedirs(os.path.dirname(MANUAL_DATA_FILE), exist_ok=True)
+        with open(MANUAL_DATA_FILE, "w") as _f:
+            json.dump(data, _f, indent=2)
+
+    with _mo_tab1:
+        st.markdown("#### 📝 Add a Daily KPI Entry")
+        _oc1, _oc2 = st.columns(2)
+        with _oc1:
+            _entry_date = st.date_input("Date", value=datetime.now().date(), key="mo_date")
+        with _oc2:
+            _entry_signups = st.number_input("Sign-ups", min_value=0, value=0, key="mo_s")
+        _oc3, _oc4 = st.columns(2)
+        with _oc3:
+            _entry_uploads = st.number_input("First Uploads", min_value=0, value=0, key="mo_u")
+        with _oc4:
+            _entry_paid = st.number_input("Paid Customers", min_value=0, value=0, key="mo_p")
+        if st.button("💾 Save Entry", type="primary", use_container_width=True):
+            _md = _load_manual()
+            _date_str = _entry_date.strftime("%Y-%m-%d")
+            _found = False
+            for _row in _md["daily"]:
+                if _row.get("date") == _date_str:
+                    _row["signups"] = _entry_signups
+                    _row["first_uploads"] = _entry_uploads
+                    _row["paid_customers"] = _entry_paid
+                    _found = True
+                    break
+            if not _found:
+                _md["daily"].append({
+                    "date": _date_str,
+                    "signups": _entry_signups,
+                    "first_uploads": _entry_uploads,
+                    "paid_customers": _entry_paid,
+                })
+            try:
+                _save_manual(_md)
+                st.success(f"✅ Saved: {_date_str} — {_entry_signups} sign-ups, {_entry_uploads} uploads, {_entry_paid} paid")
+            except OSError:
+                st.warning("⚠️ Cannot write on Streamlit Cloud (read-only). Works locally only.")
+
+    with _mo_tab2:
+        st.markdown("#### 📂 Bulk CSV Import")
+        st.caption("Upload a CSV with columns: date, signups, first_uploads, paid_customers")
+        _csv_file = st.file_uploader("Choose CSV", type=["csv"], key="mo_csv")
+        if _csv_file is not None:
+            try:
+                _csv_df = pd.read_csv(_csv_file)
+                st.dataframe(_csv_df.head(10), use_container_width=True)
+                if st.button("📥 Import All Rows", type="primary"):
+                    _md = _load_manual()
+                    _existing = {r["date"] for r in _md["daily"]}
+                    _added = 0
+                    for _, _row in _csv_df.iterrows():
+                        _d = str(_row.get("date", ""))
+                        if _d and _d not in _existing:
+                            _md["daily"].append({
+                                "date": _d,
+                                "signups": int(pd.to_numeric(_row.get("signups", 0), errors="coerce") or 0),
+                                "first_uploads": int(pd.to_numeric(_row.get("first_uploads", 0), errors="coerce") or 0),
+                                "paid_customers": int(pd.to_numeric(_row.get("paid_customers", 0), errors="coerce") or 0),
+                            })
+                            _added += 1
+                    try:
+                        _save_manual(_md)
+                        st.success(f"✅ Imported {_added} new entries")
+                    except OSError:
+                        st.warning("⚠️ Cannot write on Streamlit Cloud.")
+            except Exception as _e:
+                st.error(f"CSV error: {_e}")
+
+    with _mo_tab3:
+        st.markdown("#### 📋 Current Manual Entries")
+        _md = _load_manual()
+        if _md["daily"]:
+            _log_df = pd.DataFrame(_md["daily"])
+            _df(_log_df, height=400)
+            if st.button("🗑️ Clear All Manual Entries", type="secondary"):
+                try:
+                    _save_manual({"daily": []})
+                    st.success("Cleared!")
+                    st.rerun()
+                except OSError:
+                    st.warning("⚠️ Cannot write on Streamlit Cloud.")
+        else:
+            st.info("No manual entries yet.")
+
+# ═══════════════════════════════════════════════════════════════
+# PAGE: ⚙️ SETTINGS (with Run Pipeline + Secrets Editor + Cache Clear)
 # ═══════════════════════════════════════════════════════════════
 elif page == "⚙️ Settings":
     st.markdown(
@@ -1710,7 +1889,7 @@ elif page == "⚙️ Settings":
     }
     _mc = st.columns(4)
     _act = 0
-    for _i, (_nm, _ky) in enumerate(_mods.items()):
+    for _i, (_mname, _ky) in enumerate(_mods.items()):
         with _mc[_i % 4]:
             _ok = _ky in MOD
             if _ok:
@@ -1720,7 +1899,7 @@ elif page == "⚙️ Settings":
                 if _ok
                 else '<span class="badge badge-err">❌</span>'
             )
-            st.markdown(f"**{_nm}** {_bd}", unsafe_allow_html=True)
+            st.markdown(f"**{_mname}** {_bd}", unsafe_allow_html=True)
     st.metric("Active", f"{_act}/{len(_mods)}")
 
     st.markdown("#### 🤖 AI Provider")
@@ -1735,20 +1914,38 @@ elif page == "⚙️ Settings":
         _n2, _d2 = _pi2.get(_pr, ("?", ""))
         st.info(f"{_n2} — {_d2}")
         if _pr == "rule_based":
-            st.warning(
-                "💡 Get free keys: [Groq](https://console.groq.com) · "
-                "[Gemini](https://aistudio.google.com)"
-            )
+            _has_grok = False
+            _has_gem = False
+            try:
+                if st.secrets.get("GROQ_API_KEY", ""):
+                    _has_grok = True
+                if st.secrets.get("GEMINI_API_KEY", ""):
+                    _has_gem = True
+            except Exception:
+                pass
+            if not _has_grok and not _has_gem:
+                st.warning(
+                    "💡 Add API keys in **Streamlit Cloud → Settings → Secrets**:\n\n"
+                    "```toml\n"
+                    'GROQ_API_KEY = "your-key"\n'
+                    'GEMINI_API_KEY = "your-key"\n'
+                    "```\n\n"
+                    "Get free keys: [Groq](https://console.groq.com) · "
+                    "[Gemini](https://aistudio.google.com)"
+                )
+            else:
+                st.error(f"⚠️ Keys found in secrets but detection failed! Groq={_has_grok}, Gemini={_has_gem}")
     else:
         st.error("AI Engine not loaded")
 
-    st.markdown("#### 🔐 Secrets")
+    st.markdown("#### 🔐 Secrets Status")
     for _ky, _ds in [
-        ("MASTER_SHEET_URL", "Sheets URL"),
-        ("GOOGLE_CREDS", "Service Acct"),
+        ("MASTER_SHEET_URL", "Google Sheets URL"),
+        ("GOOGLE_CREDS", "Google Credentials"),
         ("GROQ_API_KEY", "Groq AI"),
         ("GEMINI_API_KEY", "Gemini AI"),
         ("TELEGRAM_BOT_TOKEN", "Telegram Bot"),
+        ("TELEGRAM_CHAT_ID", "Telegram Chat ID"),
     ]:
         _vl = get_secret(_ky)
         if _vl:
@@ -1756,19 +1953,97 @@ elif page == "⚙️ Settings":
         else:
             st.warning(f"⚠️ {_ds}: Not set")
 
-    st.markdown("#### 📊 Data")
+    st.markdown("---")
+    st.markdown("#### 📊 Data Summary")
+    _total_s = int(kpi_all["signups"].sum()) if not kpi_all.empty and "signups" in kpi_all.columns else 0
+    _total_u = int(kpi_all["first_uploads"].sum()) if not kpi_all.empty and "first_uploads" in kpi_all.columns else 0
+    _total_p = int(kpi_all["paid_customers"].sum()) if not kpi_all.empty and "paid_customers" in kpi_all.columns else 0
+    _data_src = "Google Sheets (live)" if not counts_raw.empty else "Historical JSON (offline)"
     _di = {
-        "KPI": len(kpi_all),
-        "Period": len(kpi),
-        "Sign-ups": len(free_rows),
-        "Uploads": len(upload_rows),
-        "Stripe": len(stripe_raw),
-        "Sources": len(leads_df),
+        "Data Source": _data_src,
+        "KPI Rows": f"{len(kpi_all):,}",
+        "Total Sign-ups": f"{_total_s:,}",
+        "Total Uploads": f"{_total_u:,}",
+        "Total Paid": f"{_total_p:,}",
+        "Period Rows": f"{len(kpi):,}",
+        "Sheet Sign-ups": f"{len(free_rows):,}",
+        "Sheet Uploads": f"{len(upload_rows):,}",
     }
     _ic = st.columns(3)
     for _idx, (_l, _c) in enumerate(_di.items()):
         with _ic[_idx % 3]:
-            st.metric(_l, f"{_c:,}")
+            st.metric(_l, _c)
+
+    st.markdown("---")
+    st.markdown("#### 🚀 Run Pipeline")
+    st.caption("Fetch fresh data from all sources and update the dashboard")
+    if st.button("🚀 Run Pipeline Now", type="primary", use_container_width=True):
+        with st.spinner("Running pipeline..."):
+            try:
+                import subprocess
+                _root_dir = os.path.dirname(os.path.abspath(__file__))
+                _result = subprocess.run(
+                    ["python3", "daily_pipeline.py"],
+                    capture_output=True, text=True, timeout=180,
+                    cwd=_root_dir,
+                )
+                if _result.returncode == 0:
+                    st.success("✅ Pipeline completed! Refresh page to see updated data.")
+                    if _result.stdout:
+                        st.code(_result.stdout[-800:])
+                else:
+                    st.warning("Pipeline finished with warnings")
+                    if _result.stderr:
+                        st.code(_result.stderr[-800:])
+            except FileNotFoundError:
+                st.info("Pipeline scripts not available here. Run locally:\n`python3 daily_pipeline.py`")
+            except Exception as _e:
+                st.info(f"Run manually: `python3 daily_pipeline.py` ({_e})")
+
+    st.markdown("---")
+    st.markdown("#### ⚡ Trigger Remote Pipeline (GitHub Actions)")
+    _gh_token = get_secret("GITHUB_TOKEN", "")
+    if _gh_token:
+        if st.button("⚡ Trigger Remote Pipeline"):
+            try:
+                import urllib.request
+                import json as _json
+                _repo = "fozayelibnayaz/eagle3d-kpi-automation"
+                _url = f"https://api.github.com/repos/{_repo}/actions/workflows/daily_pipeline.yml/dispatches"
+                _data = _json.dumps({"ref": "main"}).encode()
+                _req = urllib.request.Request(_url, data=_data, method="POST",
+                    headers={"Authorization": f"token {_gh_token}", "Accept": "application/vnd.github+json"})
+                with urllib.request.urlopen(_req, timeout=15) as _r:
+                    if _r.status in (200, 204):
+                        st.success("✅ Pipeline triggered! Check GitHub Actions.")
+            except Exception as _e:
+                st.error(f"Failed: {_e}")
+    else:
+        st.info("Add `GITHUB_TOKEN` to secrets to enable remote trigger.")
+        st.markdown("[Go to GitHub Actions → Run manually](https://github.com/fozayelibnayaz/eagle3d-kpi-automation/actions)")
+
+    st.markdown("---")
+    st.markdown("#### 🔧 Add / Update Secrets (Local Only)")
+    st.caption("For Streamlit Cloud, add secrets at **share.streamlit.io → Settings → Secrets**.")
+    with st.expander("📝 Edit local secrets.toml"):
+        _secret_text = st.text_area("secrets.toml content", value="""# API Keys
+GROQ_API_KEY = "your-groq-key"
+GEMINI_API_KEY = "your-gemini-key"
+""", height=180)
+        if st.button("💾 Save secrets.toml"):
+            try:
+                os.makedirs(".streamlit", exist_ok=True)
+                with open(".streamlit/secrets.toml", "w") as _f:
+                    _f.write(_secret_text)
+                st.success("✅ Saved! Refresh page to apply.")
+            except OSError:
+                st.warning("⚠️ Cannot write here (read-only). Add secrets in share.streamlit.io → Settings → Secrets.")
+
+    st.markdown("---")
+    st.markdown("#### 🔄 Clear Cache & Refresh Data")
+    if st.button("🔄 Clear All Cache", use_container_width=True):
+        st.cache_data.clear()
+        st.success("✅ Cache cleared! Refresh page to reload all data.")
 
 # ═══════════════════════════════════════════════════════════════
 # FOOTER
