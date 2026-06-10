@@ -263,6 +263,27 @@ def get_secret(k, d=None):
 CREDS_PATH = get_creds_path()
 MASTER_SHEET_URL = get_secret("MASTER_SHEET_URL")
 
+# Fallback: try config.py for MASTER_SHEET_URL
+if not MASTER_SHEET_URL:
+    try:
+        import config as _cfg
+        MASTER_SHEET_URL = getattr(_cfg, "MASTER_SHEET_URL", "")
+    except Exception:
+        pass
+
+# Also try ga4_service_account for Google Sheets credentials (same SA can access both)
+if not CREDS_PATH:
+    try:
+        _sa = dict(st.secrets["ga4_service_account"])
+        if "private_key" in _sa:
+            _sa["private_key"] = _sa["private_key"].replace("\\n", "\n")
+        _tf = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
+        json.dump(_sa, _tf)
+        _tf.close()
+        CREDS_PATH = _tf.name
+    except Exception:
+        pass
+
 
 @st.cache_data(ttl=120)
 def load_sheet(tab):
@@ -290,6 +311,44 @@ def load_sheet(tab):
                 seen[h] = 0
                 clean.append(h)
         return pd.DataFrame(data[1:], columns=clean)
+    except Exception:
+        return pd.DataFrame()
+
+
+@st.cache_data(ttl=600, show_spinner="Loading historical data...")
+def load_historical_kpi():
+    """Load KPI data from local historical JSON files as fallback when Google Sheets is unavailable."""
+    root = os.path.dirname(os.path.abspath(__file__))
+    hist_path = os.path.join(root, "data_output", "historical_accounts.json")
+    paid_path = os.path.join(root, "data_output", "historical_paid.json")
+
+    if not os.path.exists(hist_path):
+        return pd.DataFrame()
+
+    try:
+        from collections import defaultdict
+        daily = defaultdict(lambda: {"signups": 0, "first_uploads": 0, "paid_customers": 0})
+
+        with open(hist_path, "r") as f:
+            accounts = json.load(f)
+        for email, info in accounts.items():
+            for date, details in info.get("rows_by_date", {}).items():
+                daily[date]["signups"] += 1
+                if details.get("has_upload_yes", False):
+                    daily[date]["first_uploads"] += 1
+
+        if os.path.exists(paid_path):
+            with open(paid_path, "r") as f:
+                paid = json.load(f)
+            for email, info in paid.items():
+                if info.get("has_paid", False):
+                    for d in info.get("all_created_utc", []):
+                        daily[d]["paid_customers"] += 1
+
+        rows = []
+        for date in sorted(daily.keys()):
+            rows.append({"date": date, **daily[date]})
+        return pd.DataFrame(rows) if rows else pd.DataFrame()
     except Exception:
         return pd.DataFrame()
 
@@ -596,6 +655,16 @@ if manual_kpi_data.get("daily"):
         if "date" in manual_df.columns:
             kpi_all = manual_df
 
+# Fallback: use historical JSON data when Google Sheets is unavailable
+if kpi_all.empty:
+    kpi_all = load_historical_kpi()
+    if not kpi_all.empty:
+        pass  # Successfully loaded historical data
+elif not kpi_all.empty and "signups" in kpi_all.columns:
+    total_sheet = int(pd.to_numeric(kpi_all["signups"], errors="coerce").fillna(0).sum())
+    if total_sheet == 0:
+        kpi_all = load_historical_kpi()
+
 kpi = filter_kpi(kpi_all, p_start, p_end)
 prev_kpi = filter_kpi(kpi_all, comp_s, comp_e) if enable_comp and comp_s else pd.DataFrame()
 
@@ -636,6 +705,13 @@ period_label = f"{fd(p_start)} to {fd(p_end)}"
 # ═══════════════════════════════════════════════════════════════
 if page == "📊 Dashboard":
     st.markdown('<div class="sec-head">📊 Executive Dashboard</div>', unsafe_allow_html=True)
+    # Data source indicator
+    if kpi_all.empty:
+        st.warning("⚠️ No data loaded — check Google Sheet connection or secrets configuration.")
+    elif not counts_raw.empty:
+        st.caption("📡 Data source: Google Sheets (live)")
+    else:
+        st.caption("📡 Data source: Historical records (offline fallback)")
     cs = km(kpi, "signups")
     cu = km(kpi, "first_uploads")
     cp = km(kpi, "paid_customers")
@@ -730,7 +806,13 @@ elif page == "🚦 Traffic Intel":
         for f in os.listdir(pd_dir):
             if "Traffic_Intelligence" in f and f.endswith(".py"):
                 ti = __import__(f[:-3])
-                ti.main()
+                # Pass app.py's date range to Traffic Intel so it uses sidebar dates
+                _s_str = p_start.strftime("%Y-%m-%d")
+                _e_str = p_end.strftime("%Y-%m-%d")
+                _ps_str = comp_s.strftime("%Y-%m-%d") if comp_s else None
+                _pe_str = comp_e.strftime("%Y-%m-%d") if comp_e else None
+                ti.main(start_date=_s_str, end_date=_e_str,
+                        prev_start=_ps_str, prev_end=_pe_str)
                 ti_loaded = True
                 break
         if not ti_loaded:
@@ -1399,12 +1481,19 @@ elif page == "⚙️ Settings":
             st.warning(f"⚠️ {_ds}: Not set")
 
     st.markdown("#### 📊 Data Summary")
-    _di = {"KPI Rows": len(kpi_all), "Period Rows": len(kpi), "Sign-ups": len(free_rows),
-        "Uploads": len(upload_rows), "Stripe": len(stripe_raw), "Manual Entries": len(manual_kpi_data.get("daily", []))}
+    _total_signups = int(kpi_all["signups"].sum()) if not kpi_all.empty and "signups" in kpi_all.columns else 0
+    _total_uploads = int(kpi_all["first_uploads"].sum()) if not kpi_all.empty and "first_uploads" in kpi_all.columns else 0
+    _total_paid = int(kpi_all["paid_customers"].sum()) if not kpi_all.empty and "paid_customers" in kpi_all.columns else 0
+    _src = "Google Sheets" if not counts_raw.empty else "Historical JSON (offline)"
+    _di = {"KPI Rows": len(kpi_all), "Period Rows": len(kpi),
+        "Total Sign-ups": f"{_total_signups:,}", "Total Uploads": f"{_total_uploads:,}",
+        "Total Paid": f"{_total_paid:,}", "Sheet Sign-ups": len(free_rows),
+        "Sheet Uploads": len(upload_rows), "Stripe Rows": len(stripe_raw),
+        "Manual Entries": len(manual_kpi_data.get("daily", [])), "Data Source": _src}
     _ic = st.columns(3)
     for _idx, (_l, _c) in enumerate(_di.items()):
         with _ic[_idx % 3]:
-            st.metric(_l, f"{_c:,}")
+            st.metric(_l, f"{_c}")
 
     st.markdown("---")
     st.markdown("---")

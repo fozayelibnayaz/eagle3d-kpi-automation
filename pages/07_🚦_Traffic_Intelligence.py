@@ -19,12 +19,15 @@ from datetime import datetime, timedelta
 import sys, os
 
 # ── Page config ──────────────────────────────────────────────
-st.set_page_config(
-    page_title="Traffic Intelligence | Eagle 3D",
-    page_icon="🚦",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
+try:
+    st.set_page_config(
+        page_title="Traffic Intelligence | Eagle 3D",
+        page_icon="🚦",
+        layout="wide",
+        initial_sidebar_state="expanded",
+    )
+except Exception:
+    pass  # Already set by parent app.py
 
 # ── Module loading with status tracking ──────────────────────
 MODULE_STATUS = {}
@@ -254,7 +257,10 @@ def normalize_ga4_sources(utm_df):
 # MAIN
 # ══════════════════════════════════════════════════════════════
 
-def main():
+def main(start_date=None, end_date=None, prev_start=None, prev_end=None):
+    # Determine if we're embedded in app.py (dates provided) or standalone
+    embedded = start_date is not None and end_date is not None
+
     st.markdown("""
     <div style="border-bottom:2px solid #1B3054;padding-bottom:10px;margin-bottom:16px;">
         <h2 style="color:#00D4FF;margin:0;">🚦 Traffic Intelligence Hub</h2>
@@ -266,38 +272,48 @@ def main():
         st.error(f"GA4 module not available: {MODULE_STATUS.get('ga4_connector_error', 'unknown')}")
         return
 
-    with st.sidebar:
-        st.markdown("### 🚦 Controls")
+    if not embedded:
+        # Standalone mode — show own sidebar controls
+        with st.sidebar:
+            st.markdown("### 🚦 Controls")
 
-        date_opt = st.selectbox(
-            "📅 Date Range",
-            DATE_PRESETS,
-            index=3,
-        )
-        
-        custom_start = None
-        custom_end = None
-        if date_opt == "Custom Range":
-            col_cs1, col_cs2 = st.columns(2)
-            with col_cs1:
-                custom_start = st.date_input("Start", value=datetime.now().date() - timedelta(days=30))
-            with col_cs2:
-                custom_end = st.date_input("End", value=datetime.now().date())
-        
-        s_str, e_str = date_range(date_opt, custom_start, custom_end)
-        ps_str, pe_str = prev_period(s_str, e_str)
+            date_opt = st.selectbox(
+                "📅 Date Range",
+                DATE_PRESETS,
+                index=3,
+            )
+            
+            custom_start = None
+            custom_end = None
+            if date_opt == "Custom Range":
+                col_cs1, col_cs2 = st.columns(2)
+                with col_cs1:
+                    custom_start = st.date_input("Start", value=datetime.now().date() - timedelta(days=30))
+                with col_cs2:
+                    custom_end = st.date_input("End", value=datetime.now().date())
+            
+            s_str, e_str = date_range(date_opt, custom_start, custom_end)
+            ps_str, pe_str = prev_period(s_str, e_str)
 
-        st.caption(f"📊 Current: {s_str} → {e_str}")
-        st.caption(f"🔄 Compare: {ps_str} → {pe_str}")
-        
-        dedup_mode = st.toggle("🔗 Smart Source Dedup", value=True,
-                               help="Merge Google/Google Search/google → 'Google'")
-        st.markdown("---")
-        
-        st.markdown("**Modules:**")
-        for key in ["ga4_connector", "kpi_bridge", "source_intel", "smart_qa", "source_normalizer"]:
-            icon = "✅" if MODULE_STATUS.get(key) else "❌"
-            st.caption(f"{icon} {key}")
+            st.caption(f"📊 Current: {s_str} → {e_str}")
+            st.caption(f"🔄 Compare: {ps_str} → {pe_str}")
+            
+            dedup_mode = st.toggle("🔗 Smart Source Dedup", value=True,
+                                   help="Merge Google/Google Search/google → 'Google'")
+            st.markdown("---")
+            
+            st.markdown("**Modules:**")
+            for key in ["ga4_connector", "kpi_bridge", "source_intel", "smart_qa", "source_normalizer"]:
+                icon = "✅" if MODULE_STATUS.get(key) else "❌"
+                st.caption(f"{icon} {key}")
+    else:
+        # Embedded mode — use dates from app.py
+        s_str, e_str = start_date, end_date
+        if prev_start and prev_end:
+            ps_str, pe_str = prev_start, prev_end
+        else:
+            ps_str, pe_str = prev_period(s_str, e_str)
+        dedup_mode = True
 
     # Load data
     with st.spinner("Loading traffic data..."):

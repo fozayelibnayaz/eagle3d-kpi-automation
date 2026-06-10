@@ -26,11 +26,23 @@ def _get_sheet_client():
             "https://www.googleapis.com/auth/drive.readonly",
         ]
 
-        # Try Streamlit secrets first (Cloud)
+        # Try Streamlit secrets first (Cloud) — check GOOGLE_CREDS
         try:
             import streamlit as st
             if "GOOGLE_CREDS" in st.secrets:
                 d = dict(st.secrets["GOOGLE_CREDS"])
+                if "private_key" in d:
+                    d["private_key"] = d["private_key"].replace("\\n", "\n")
+                creds = service_account.Credentials.from_service_account_info(d, scopes=SCOPES)
+                return gspread.authorize(creds)
+        except Exception:
+            pass
+
+        # Also try ga4_service_account (same SA can access both GA4 and Sheets)
+        try:
+            import streamlit as st
+            if "ga4_service_account" in st.secrets:
+                d = dict(st.secrets["ga4_service_account"])
                 if "private_key" in d:
                     d["private_key"] = d["private_key"].replace("\\n", "\n")
                 creds = service_account.Credentials.from_service_account_info(d, scopes=SCOPES)
