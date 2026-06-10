@@ -454,12 +454,41 @@ if not CREDS_PATH:
 
 @st.cache_data(ttl=120)
 def load_sheet(tab):
-    if not CREDS_PATH or not MASTER_SHEET_URL:
+    if not MASTER_SHEET_URL:
+        return pd.DataFrame()
+    _creds = CREDS_PATH
+    # Try to build credentials if we don't have them yet
+    if not _creds:
+        for _sk in ["GOOGLE_CREDS_JSON", "GOOGLE_CREDS"]:
+            try:
+                _r = st.secrets[_sk]
+                _c = json.loads(_r) if isinstance(_r, str) else dict(_r)
+                if "private_key" in _c:
+                    _c["private_key"] = _c["private_key"].replace("\\n", "\n")
+                _t = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
+                json.dump(_c, _t)
+                _t.close()
+                _creds = _t.name
+                break
+            except Exception:
+                pass
+    if not _creds:
+        try:
+            _sa = dict(st.secrets["ga4_service_account"])
+            if "private_key" in _sa:
+                _sa["private_key"] = _sa["private_key"].replace("\\n", "\n")
+            _t = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
+            json.dump(_sa, _t)
+            _t.close()
+            _creds = _t.name
+        except Exception:
+            pass
+    if not _creds:
         return pd.DataFrame()
     try:
         import gspread
         from google.oauth2.service_account import Credentials
-        creds = Credentials.from_service_account_file(CREDS_PATH, scopes=SCOPES)
+        creds = Credentials.from_service_account_file(_creds, scopes=SCOPES)
         gc = gspread.authorize(creds)
         sh = gc.open_by_url(MASTER_SHEET_URL)
         ws = sh.worksheet(tab)
