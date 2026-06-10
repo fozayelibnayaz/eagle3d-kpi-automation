@@ -371,15 +371,274 @@ def fetch_available_events(start_date, end_date):
     return df
 
 
-def fetch_available_events(start_date, end_date):
-    """Get list of all unique events in the period - for dropdown selector."""
-    df = _run_report({
+
+# ══════════════════════════════════════════════════════════════
+# EXTENDED GA4 QUERIES — Deeper Analysis for Traffic Intelligence
+# ══════════════════════════════════════════════════════════════
+
+def fetch_landing_pages(start_date, end_date):
+    """Landing page performance with source and engagement."""
+    return _run_report({
         "property": f"properties/{GA4_PROPERTY_ID}",
         "date_ranges": [DateRange(start_date=start_date, end_date=end_date)],
-        "dimensions": [Dimension(name="eventName")],
-        "metrics": [Metric(name="eventCount"), Metric(name="totalUsers")],
-        "order_bys": [OrderBy(metric=OrderBy.MetricOrderBy(metric_name="eventCount"), desc=True)],
-        "limit": 200,
+        "dimensions": [
+            Dimension(name="landingPage"),
+            Dimension(name="sessionSource"),
+            Dimension(name="sessionMedium"),
+        ],
+        "metrics": [
+            Metric(name="sessions"),
+            Metric(name="totalUsers"),
+            Metric(name="newUsers"),
+            Metric(name="bounceRate"),
+            Metric(name="averageSessionDuration"),
+            Metric(name="conversions"),
+            Metric(name="engagementRate"),
+        ],
+        "order_bys": [OrderBy(metric=OrderBy.MetricOrderBy(metric_name="sessions"), desc=True)],
+        "limit": 5000,
     })
-    return df
 
+
+def fetch_user_engagement(start_date, end_date):
+    """Daily engagement metrics: engagement rate, session duration, pages per session."""
+    return _run_report({
+        "property": f"properties/{GA4_PROPERTY_ID}",
+        "date_ranges": [DateRange(start_date=start_date, end_date=end_date)],
+        "dimensions": [
+            Dimension(name="date"),
+        ],
+        "metrics": [
+            Metric(name="sessions"),
+            Metric(name="totalUsers"),
+            Metric(name="newUsers"),
+            Metric(name="engagementRate"),
+            Metric(name="averageSessionDuration"),
+            Metric(name="screenPageViewsPerSession"),
+            Metric(name="conversions"),
+            Metric(name="bounceRate"),
+            Metric(name="eventCount"),
+        ],
+        "order_bys": [OrderBy(dimension=OrderBy.DimensionOrderBy(dimension_name="date"))],
+        "limit": 10000,
+    })
+
+
+def fetch_content_analysis(start_date, end_date):
+    """Page-level content analysis with engagement and conversions."""
+    return _run_report({
+        "property": f"properties/{GA4_PROPERTY_ID}",
+        "date_ranges": [DateRange(start_date=start_date, end_date=end_date)],
+        "dimensions": [
+            Dimension(name="pagePath"),
+            Dimension(name="pageTitle"),
+        ],
+        "metrics": [
+            Metric(name="screenPageViews"),
+            Metric(name="uniqueScreenPageViews"),
+            Metric(name="totalUsers"),
+            Metric(name="averageSessionDuration"),
+            Metric(name="engagementRate"),
+            Metric(name="bounceRate"),
+            Metric(name="conversions"),
+            Metric(name="eventCount"),
+        ],
+        "order_bys": [OrderBy(metric=OrderBy.MetricOrderBy(metric_name="screenPageViews"), desc=True)],
+        "limit": 5000,
+    })
+
+
+def fetch_source_medium_deep(start_date, end_date):
+    """Source + Medium + Campaign breakdown with engagement."""
+    return _run_report({
+        "property": f"properties/{GA4_PROPERTY_ID}",
+        "date_ranges": [DateRange(start_date=start_date, end_date=end_date)],
+        "dimensions": [
+            Dimension(name="sessionSource"),
+            Dimension(name="sessionMedium"),
+            Dimension(name="sessionCampaignName"),
+            Dimension(name="sessionDefaultChannelGroup"),
+        ],
+        "metrics": [
+            Metric(name="sessions"),
+            Metric(name="totalUsers"),
+            Metric(name="newUsers"),
+            Metric(name="conversions"),
+            Metric(name="engagementRate"),
+            Metric(name="averageSessionDuration"),
+            Metric(name="bounceRate"),
+        ],
+        "order_bys": [OrderBy(metric=OrderBy.MetricOrderBy(metric_name="sessions"), desc=True)],
+        "limit": 5000,
+    })
+
+
+def fetch_geo_deep(start_date, end_date):
+    """Geo + city + language for localization decisions."""
+    return _run_report({
+        "property": f"properties/{GA4_PROPERTY_ID}",
+        "date_ranges": [DateRange(start_date=start_date, end_date=end_date)],
+        "dimensions": [
+            Dimension(name="country"),
+            Dimension(name="city"),
+            Dimension(name="language"),
+        ],
+        "metrics": [
+            Metric(name="sessions"),
+            Metric(name="totalUsers"),
+            Metric(name="newUsers"),
+            Metric(name="conversions"),
+            Metric(name="engagementRate"),
+            Metric(name="averageSessionDuration"),
+        ],
+        "order_bys": [OrderBy(metric=OrderBy.MetricOrderBy(metric_name="sessions"), desc=True)],
+        "limit": 5000,
+    })
+
+
+def fetch_device_deep(start_date, end_date):
+    """Device + OS + browser for UX decisions."""
+    return _run_report({
+        "property": f"properties/{GA4_PROPERTY_ID}",
+        "date_ranges": [DateRange(start_date=start_date, end_date=end_date)],
+        "dimensions": [
+            Dimension(name="deviceCategory"),
+            Dimension(name="operatingSystem"),
+            Dimension(name="browser"),
+        ],
+        "metrics": [
+            Metric(name="sessions"),
+            Metric(name="totalUsers"),
+            Metric(name="conversions"),
+            Metric(name="engagementRate"),
+            Metric(name="averageSessionDuration"),
+        ],
+        "order_bys": [OrderBy(metric=OrderBy.MetricOrderBy(metric_name="sessions"), desc=True)],
+        "limit": 2000,
+    })
+
+
+def fetch_first_user_source(start_date, end_date):
+    """First-touch attribution: how users originally found the site."""
+    return _run_report({
+        "property": f"properties/{GA4_PROPERTY_ID}",
+        "date_ranges": [DateRange(start_date=start_date, end_date=end_date)],
+        "dimensions": [
+            Dimension(name="firstUserSource"),
+            Dimension(name="firstUserMedium"),
+            Dimension(name="firstUserCampaignName"),
+            Dimension(name="firstUserDefaultChannelGroup"),
+        ],
+        "metrics": [
+            Metric(name="newUsers"),
+            Metric(name="totalUsers"),
+            Metric(name="sessions"),
+            Metric(name="conversions"),
+        ],
+        "order_bys": [OrderBy(metric=OrderBy.MetricOrderBy(metric_name="newUsers"), desc=True)],
+        "limit": 5000,
+    })
+
+
+def fetch_conversion_paths(start_date, end_date):
+    """Conversion events with source attribution."""
+    return _run_report({
+        "property": f"properties/{GA4_PROPERTY_ID}",
+        "date_ranges": [DateRange(start_date=start_date, end_date=end_date)],
+        "dimensions": [
+            Dimension(name="eventName"),
+            Dimension(name="sessionSource"),
+            Dimension(name="sessionMedium"),
+            Dimension(name="pagePath"),
+        ],
+        "metrics": [
+            Metric(name="eventCount"),
+            Metric(name="totalUsers"),
+            Metric(name="conversions"),
+        ],
+        "order_bys": [OrderBy(metric=OrderBy.MetricOrderBy(metric_name="conversions"), desc=True)],
+        "limit": 5000,
+    })
+
+
+def fetch_hourly_pattern(start_date, end_date):
+    """Hour-of-day traffic pattern for scheduling."""
+    return _run_report({
+        "property": f"properties/{GA4_PROPERTY_ID}",
+        "date_ranges": [DateRange(start_date=start_date, end_date=end_date)],
+        "dimensions": [
+            Dimension(name="hour"),
+            Dimension(name="dayOfWeek"),
+        ],
+        "metrics": [
+            Metric(name="sessions"),
+            Metric(name="totalUsers"),
+            Metric(name="conversions"),
+            Metric(name="engagementRate"),
+        ],
+        "order_bys": [OrderBy(dimension=OrderBy.DimensionOrderBy(dimension_name="hour"))],
+        "limit": 1000,
+    })
+
+
+def fetch_retention_cohort(start_date, end_date):
+    """User retention: new vs returning users by day."""
+    return _run_report({
+        "property": f"properties/{GA4_PROPERTY_ID}",
+        "date_ranges": [DateRange(start_date=start_date, end_date=end_date)],
+        "dimensions": [
+            Dimension(name="date"),
+            Dimension(name="newVsReturning"),
+        ],
+        "metrics": [
+            Metric(name="sessions"),
+            Metric(name="totalUsers"),
+            Metric(name="conversions"),
+            Metric(name="engagementRate"),
+        ],
+        "order_bys": [OrderBy(dimension=OrderBy.DimensionOrderBy(dimension_name="date"))],
+        "limit": 10000,
+    })
+
+
+def fetch_browser_tech(start_date, end_date):
+    """Browser + OS for technical compatibility decisions."""
+    return _run_report({
+        "property": f"properties/{GA4_PROPERTY_ID}",
+        "date_ranges": [DateRange(start_date=start_date, end_date=end_date)],
+        "dimensions": [
+            Dimension(name="browser"),
+            Dimension(name="operatingSystem"),
+            Dimension(name="deviceCategory"),
+        ],
+        "metrics": [
+            Metric(name="sessions"),
+            Metric(name="totalUsers"),
+            Metric(name="conversions"),
+            Metric(name="averageSessionDuration"),
+        ],
+        "order_bys": [OrderBy(metric=OrderBy.MetricOrderBy(metric_name="sessions"), desc=True)],
+        "limit": 1000,
+    })
+
+
+def fetch_referral_paths(start_date, end_date):
+    """Referral traffic with full page path for backlink analysis."""
+    return _run_report({
+        "property": f"properties/{GA4_PROPERTY_ID}",
+        "date_ranges": [DateRange(start_date=start_date, end_date=end_date)],
+        "dimensions": [
+            Dimension(name="sessionSource"),
+            Dimension(name="sessionMedium"),
+            Dimension(name="landingPage"),
+        ],
+        "metrics": [
+            Metric(name="sessions"),
+            Metric(name="totalUsers"),
+            Metric(name="conversions"),
+            Metric(name="engagementRate"),
+            Metric(name="averageSessionDuration"),
+        ],
+        "order_bys": [OrderBy(metric=OrderBy.MetricOrderBy(metric_name="sessions"), desc=True)],
+        "limit": 5000,
+    })

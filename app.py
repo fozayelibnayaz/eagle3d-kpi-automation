@@ -1126,10 +1126,14 @@ elif page == "🚦 Traffic Intel":
         ti_loaded = False
         for f in os.listdir(pd_dir):
             if "Traffic_Intelligence" in f and f.endswith(".py"):
+                # Force reimport to pick up latest code changes
+                import importlib
                 ti = __import__(f[:-3])
-                # Pass current date range via session_state so Traffic Intel uses sidebar dates
+                importlib.reload(ti)
+                # Pass current date range via session_state + cache buster
                 st.session_state["ti_start"] = p_start.strftime("%Y-%m-%d")
                 st.session_state["ti_end"] = p_end.strftime("%Y-%m-%d")
+                st.session_state["ti_cache_key"] = f"{p_start.strftime('%Y-%m-%d')}_{p_end.strftime('%Y-%m-%d')}"
                 ti.main()
                 ti_loaded = True
                 break
