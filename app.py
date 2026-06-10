@@ -809,33 +809,83 @@ with st.spinner("Loading data..."):
     stripe_raw = load_sheet("Verified_STRIPE")
 
 kpi_all = pd.DataFrame()
+
+# ── METHOD 1: Read pre-aggregated Daily_Counts ──
 if not counts_raw.empty:
     df = counts_raw.copy()
+    # Find date column
     dc = next((c for c in df.columns if "date" in c.lower()), None)
     if dc:
         df = df.rename(columns={dc: "date"})
+        # Robust column matching: prefer exact matches, avoid detail columns
+        _col_map = {}
+        for c in df.columns:
+            cl = c.lower()
+            if cl in ("signups_accepted", "signup_accepted"):
+                _col_map[c] = "signups"
+            elif cl in ("firstuploads_accepted", "first_upload_accepted"):
+                _col_map[c] = "first_uploads"
+            elif cl in ("paidsubscribers_accepted", "paid_accepted"):
+                _col_map[c] = "paid_customers"
+        # Fallback fuzzy matching only for unmatched target columns
         for col, pats in [
-            ("signups", ["signup", "free", "sign_up"]),
-            ("first_uploads", ["first_upload", "upload"]),
-            ("paid_customers", ["paid", "stripe", "customer"]),
+            ("signups", ["signups_accepted", "signup", "free", "sign_up"]),
+            ("first_uploads", ["firstuploads_accepted", "first_upload", "upload_accepted"]),
+            ("paid_customers", ["paidsubscribers_accepted", "paid", "stripe", "customer"]),
         ]:
-            m = next(
-                (c for c in df.columns if any(p in c.lower() for p in pats)),
-                None,
-            )
-            if m:
-                df = df.rename(columns={m: col})
-        nc = [c for c in ["signups", "first_uploads", "paid_customers"]
-              if c in df.columns]
+            if col not in _col_map.values():
+                for c in df.columns:
+                    if c in _col_map:
+                        continue
+                    if any(p in c.lower() for p in pats):
+                        # Skip detail/text columns
+                        if "detail" in c.lower() or "email" in c.lower():
+                            continue
+                        _col_map[c] = col
+                        break
+        for old, new in _col_map.items():
+            df = df.rename(columns={old: new})
+        nc = [c for c in ["signups", "first_uploads", "paid_customers"] if c in df.columns]
         for c in nc:
             df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0).astype(int)
         if all(c in df.columns for c in ["date", "signups"]):
-            kpi_all = df
+            kpi_all = df[["date"] + nc].copy()
 
-# Historical fallback: only if Google Sheets didn't load
+# ── METHOD 2: Compute directly from Verified tabs (most reliable) ──
+if kpi_all.empty and not free_raw.empty:
+    from collections import defaultdict as _dd
+    _daily = _dd(lambda: {"signups": 0, "first_uploads": 0, "paid_customers": 0})
+    # Count ACCEPTED signups by date
+    for _, _row in free_raw.iterrows():
+        _st = str(_row.get("final_status", "")).upper()
+        if _st == "ACCEPTED":
+            _d = parse_to_date(_row.get("Account Created On", ""))
+            if _d:
+                _daily[_d.strftime("%Y-%m-%d")]["signups"] += 1
+    # Count ACCEPTED uploads by date
+    if not upload_raw.empty:
+        for _, _row in upload_raw.iterrows():
+            _st = str(_row.get("final_status", "")).upper()
+            if _st == "ACCEPTED":
+                _d = parse_to_date(_row.get("Upload Date", ""))
+                if _d:
+                    _daily[_d.strftime("%Y-%m-%d")]["first_uploads"] += 1
+    # Count ACCEPTED paid by date
+    if not stripe_raw.empty:
+        for _, _row in stripe_raw.iterrows():
+            _st = str(_row.get("final_status", "")).upper()
+            if _st == "ACCEPTED":
+                _d = parse_to_date(_row.get("Created", _row.get("First payment", "")))
+                if _d:
+                    _daily[_d.strftime("%Y-%m-%d")]["paid_customers"] += 1
+    _rows = [{"date": _d, **_daily[_d]} for _d in sorted(_daily.keys())]
+    if _rows:
+        kpi_all = pd.DataFrame(_rows)
+
+# ── METHOD 3: Historical JSON fallback ──
 if kpi_all.empty:
     _hist_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data_output", "historical_accounts.json")
-    _paid_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data_output", "historical_paid.json")
+    _paid_path = os.path.join(os.path.join(os.path.dirname(os.path.abspath(__file__)), "data_output", "historical_paid.json"))
     if os.path.exists(_hist_path):
         try:
             from collections import defaultdict as _dd
@@ -920,10 +970,13 @@ if page == "📊 Dashboard":
 
     # Data diagnostics
     _total_all = int(kpi_all["signups"].sum()) if not kpi_all.empty and "signups" in kpi_all.columns else 0
-    if _total_all > 0:
-        st.caption(f"📡 All-time: {_total_all:,} sign-ups, {int(kpi_all['first_uploads'].sum()):,} uploads, {int(kpi_all['paid_customers'].sum()):,} paid")
+    _total_u_all = int(kpi_all["first_uploads"].sum()) if not kpi_all.empty and "first_uploads" in kpi_all.columns else 0
+    _total_p_all = int(kpi_all["paid_customers"].sum()) if not kpi_all.empty and "paid_customers" in kpi_all.columns else 0
+    if _total_all > 0 or _total_u_all > 0 or _total_p_all > 0:
+        _src = "Daily_Counts" if not counts_raw.empty else "Verified tabs" if not free_raw.empty else "Historical JSON"
+        st.caption(f"📡 Source: {_src} | All-time: {_total_all:,} sign-ups, {_total_u_all:,} uploads, {_total_p_all:,} paid")
     else:
-        st.warning("⚠️ No KPI data loaded — check Google Sheets connection or secrets.")
+        st.warning("⚠️ No KPI data loaded. Check Settings → Secrets Status.")
 
     cs = km(kpi, "signups")
     cu = km(kpi, "first_uploads")
@@ -1687,6 +1740,61 @@ elif page == "🔍 Browse Data":
         '<div class="sec-head">🔍 Browse Customer Data</div>',
         unsafe_allow_html=True,
     )
+
+    # Global date filter for Browse Data
+    _bd_c1, _bd_c2, _bd_c3 = st.columns(3)
+    with _bd_c1:
+        _bd_preset = st.selectbox("📅 Date filter:", [
+            "All Time", "Today", "Yesterday", "This Week", "Last Week",
+            "This Month", "Last Month", "Last 3 Months", "Last 6 Months", "This Year",
+        ], key="bd_preset")
+    with _bd_c2:
+        _bd_status = st.selectbox("Status:", ["All", "ACCEPTED", "REJECTED", "REPEAT", "REPEAT_UPLOAD", "NOT_DETERMINED", "DISPOSABLE", "INTERNAL", "SMTP_REJECTED", "NO_MX", "ZERO_SPEND"], key="bd_status")
+    with _bd_c3:
+        _bd_search = st.text_input("🔍 Search", placeholder="email, name...", key="bd_search")
+
+    # Compute date range from preset
+    _bd_today = datetime.now().date()
+    _bd_date_map = {
+        "All Time": (datetime(2020, 1, 1).date(), _bd_today),
+        "Today": (_bd_today, _bd_today),
+        "Yesterday": (_bd_today - timedelta(days=1), _bd_today - timedelta(days=1)),
+        "This Week": (_bd_today - timedelta(days=_bd_today.weekday()), _bd_today),
+        "Last Week": (_bd_today - timedelta(days=_bd_today.weekday() + 7), _bd_today - timedelta(days=_bd_today.weekday() + 1)),
+        "This Month": (_bd_today.replace(day=1), _bd_today),
+        "Last Month": (( _bd_today.replace(day=1) - timedelta(days=1)).replace(day=1), _bd_today.replace(day=1) - timedelta(days=1)),
+        "Last 3 Months": (_bd_today - timedelta(days=90), _bd_today),
+        "Last 6 Months": (_bd_today - timedelta(days=180), _bd_today),
+        "This Year": (_bd_today.replace(month=1, day=1), _bd_today),
+    }
+    _bd_ds, _bd_de = _bd_date_map.get(_bd_preset, (datetime(2020, 1, 1).date(), _bd_today))
+
+    def _apply_browse_filters(df, label):
+        """Apply date, status, and search filters to a dataframe."""
+        fl = df.copy()
+        # Date filter: find the date column
+        _date_col = None
+        for _cand in fl.columns:
+            _cl = _cand.lower()
+            if any(k in _cl for k in ["created", "upload date", "date"]):
+                if "detail" not in _cl and "last" not in _cl:
+                    _date_col = _cand
+                    break
+        if _date_col and _bd_preset != "All Time":
+            fl["_parsed_date"] = fl[_date_col].apply(parse_to_date)
+            fl = fl[fl["_parsed_date"].between(_bd_ds, _bd_de)]
+            fl = fl.drop(columns=["_parsed_date"])
+        # Status filter
+        if _bd_status != "All" and "final_status" in fl.columns:
+            fl = fl[fl["final_status"].astype(str).str.upper() == _bd_status]
+        # Search
+        if _bd_search:
+            msk = pd.Series([False] * len(fl), index=fl.index)
+            for c in fl.columns:
+                msk = msk | fl[c].astype(str).str.contains(_bd_search, case=False, na=False)
+            fl = fl[msk]
+        return fl
+
     tabs = st.tabs(["📥 Sign-ups", "📦 First Uploads", "💳 Stripe"])
     _stripe = load_sheet("Verified_STRIPE")
     for _tab, (_lb, _df_data) in zip(
@@ -1702,38 +1810,18 @@ elif page == "🔍 Browse Data":
                 st.warning(f"No {_lb} data")
                 continue
 
-            # Filters row
-            c1, c2, c3, c4 = st.columns(4)
+            # Apply all filters
+            fl = _apply_browse_filters(_df_data, _lb)
+
+            # Sort + display controls
+            c1, c2, c3 = st.columns(3)
             with c1:
-                # Get unique statuses
-                _statuses = ["All"]
-                if "final_status" in _df_data.columns:
-                    _found = sorted(_df_data["final_status"].dropna().astype(str).str.upper().unique().tolist())
-                    _statuses += _found
-                else:
-                    _statuses += ["ACCEPTED", "REJECTED", "NOT_DETERMINED", "DISPOSABLE", "REPEAT"]
-                sf = st.selectbox("Status:", _statuses, key=f"s_{_lb}")
-            with c2:
-                sr = st.text_input("🔍", key=f"q_{_lb}", placeholder="search...")
-            with c3:
-                # Sort column selector
-                _sort_cols = ["—"] + [c for c in _df_data.columns if c]
+                _sort_cols = ["—"] + [c for c in fl.columns if c]
                 _sort_sel = st.selectbox("Sort by:", _sort_cols, key=f"sort_{_lb}")
-            with c4:
+            with c2:
                 _sort_asc = st.radio("Direction", ["↓ Desc", "↑ Asc"], key=f"sortd_{_lb}", horizontal=True)
-
-            # Rows per page
-            mr = st.number_input("Rows to display", value=500, min_value=10, max_value=10000, key=f"r_{_lb}")
-
-            # Apply filters
-            fl = _df_data.copy()
-            if sf != "All" and "final_status" in fl.columns:
-                fl = fl[fl["final_status"].astype(str).str.upper() == sf]
-            if sr:
-                msk = pd.Series([False] * len(fl), index=fl.index)
-                for c in fl.columns:
-                    msk = msk | fl[c].astype(str).str.contains(sr, case=False, na=False)
-                fl = fl[msk]
+            with c3:
+                mr = st.number_input("Rows", value=500, min_value=10, max_value=10000, key=f"r_{_lb}")
 
             # Apply sorting
             if _sort_sel != "—" and _sort_sel in fl.columns:
@@ -1745,35 +1833,6 @@ elif page == "🔍 Browse Data":
                 fl = fl.sort_values(by=_sort_sel, ascending=_ascending, na_position="last")
 
             st.metric("Showing", f"{len(fl)} rows")
-
-            # Manual override: change label for a specific row
-            st.markdown("##### ✏️ Manual Override")
-            _oc1, _oc2, _oc3 = st.columns(3)
-            with _oc1:
-                _override_email = st.text_input("Email to override:", key=f"oe_{_lb}", placeholder="user@email.com")
-            with _oc2:
-                _new_status = st.selectbox("New status:", ["ACCEPTED", "REJECTED", "NOT_DETERMINED", "DISPOSABLE", "REPEAT"], key=f"ns_{_lb}")
-            with _oc3:
-                st.markdown("<br>", unsafe_allow_html=True)
-                if st.button("🔄 Apply Override", key=f"ao_{_lb}"):
-                    if _override_email and "final_status" in fl.columns:
-                        _email_col = None
-                        for _ec in fl.columns:
-                            if "email" in _ec.lower() or "mail" in _ec.lower():
-                                _email_col = _ec
-                                break
-                        if _email_col:
-                            _mask = fl[_email_col].astype(str).str.lower().str.strip() == _override_email.lower().strip()
-                            if _mask.any():
-                                fl.loc[_mask, "final_status"] = _new_status
-                                st.success(f"✅ Changed {_mask.sum()} row(s) to {_new_status}")
-                            else:
-                                st.warning(f"Email '{_override_email}' not found in this view")
-                        else:
-                            st.warning("No email column found")
-                    else:
-                        st.warning("Enter an email and ensure data has final_status column")
-
             _df(fl.head(mr), height=450)
             st.download_button(
                 "⬇️ Download",
