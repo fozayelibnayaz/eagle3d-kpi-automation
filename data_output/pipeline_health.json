@@ -7,9 +7,9 @@
     "daily_summary_2026-05-18": "2026-05-18T04:42:19.882810"
   },
   "stripe": {
-    "consecutive_failures": 3,
+    "consecutive_failures": 4,
     "last_error": "Page.wait_for_selector: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"table tbody tr\") to be visible\n",
-    "last_failure": "2026-06-10T08:34:17.126015",
+    "last_failure": "2026-06-10T08:50:22.421178",
     "status": "failed"
   }
 }
