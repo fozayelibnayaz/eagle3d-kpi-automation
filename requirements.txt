@@ -1,5 +1,6 @@
 google-analytics-data>=0.18.0
 google-auth>=2.22.0
+google-api-python-client>=2.100.0
 gspread>=5.10
 matplotlib>=3.7.0
 numpy>=1.24.0

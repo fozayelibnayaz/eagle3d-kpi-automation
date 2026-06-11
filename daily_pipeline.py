@@ -1,6 +1,6 @@
 """
 daily_pipeline.py — MASTER ORCHESTRATOR
-All 7 layers. reporting_engine now handles ALL notifications.
+All 7 layers + YouTube + LinkedIn. reporting_engine handles ALL notifications.
 """
 import sys
 import traceback
@@ -62,17 +62,67 @@ def main():
     ok4, e4 = run_stage(4, "Build Daily/Monthly Counts (Layer 6)", s4)
     results["stage4_counts"] = "ok" if ok4 else f"failed: {e4}"
 
+    # ── YouTube Data Fetch (Stage 5) ──
     def s5():
+        from youtube_connector import get_channel_info, get_channel_videos, get_daily_analytics, is_configured
+        if not is_configured():
+            log("YouTube: Not configured — skipping")
+            return
+        log("YouTube: Fetching channel info...")
+        ch = get_channel_info()
+        log(f"YouTube: Channel = {ch.get('title', 'N/A')}, Subscribers = {ch.get('subscribers', 0):,}")
+        log("YouTube: Fetching video list...")
+        videos = get_channel_videos(max_videos=200)
+        log(f"YouTube: Got {len(videos)} videos")
+        # Analytics (if OAuth token available)
+        try:
+            from youtube_connector import has_analytics_access, get_daily_analytics
+            if has_analytics_access():
+                from datetime import timedelta
+                start_d = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+                end_d = datetime.now().strftime("%Y-%m-%d")
+                daily = get_daily_analytics(start_d, end_d)
+                log(f"YouTube Analytics: Got {len(daily)} days of data")
+        except Exception as e:
+            log(f"YouTube Analytics: Skipped ({e})")
+    ok5, e5 = run_stage(5, "YouTube Data Fetch", s5)
+    results["stage5_youtube"] = "ok" if ok5 else f"failed: {e5}"
+
+    # ── LinkedIn Scrape (Stage 6) ──
+    def s6():
+        from linkedin_connector import (
+            scrape_public_metrics, scrape_with_playwright,
+            has_cookies, is_configured, get_status,
+        )
+        if not is_configured():
+            log("LinkedIn: Not configured — skipping")
+            return
+        log("LinkedIn: Starting scrape...")
+        if has_cookies():
+            log("LinkedIn: Using authenticated scrape...")
+            result = scrape_with_playwright(historical=False)
+        else:
+            log("LinkedIn: Using public page scrape...")
+            result = scrape_public_metrics()
+        if result.get("error"):
+            log(f"LinkedIn: Scrape issue — {result['error']}")
+        else:
+            log(f"LinkedIn: Scrape OK — {list(result.keys())}")
+    ok6, e6 = run_stage(6, "LinkedIn Scrape", s6)
+    results["stage6_linkedin"] = "ok" if ok6 else f"failed: {e6}"
+
+    # ── Reporting (Stage 7) ──
+    def s7():
         from reporting_engine import main as run
         run()
-    ok5, e5 = run_stage(5, "Reporting + Notifications (Layer 6)", s5)
-    results["stage5_report"] = "ok" if ok5 else f"failed: {e5}"
+    ok7, e7 = run_stage(7, "Reporting + Notifications (Layer 6)", s7)
+    results["stage7_report"] = "ok" if ok7 else f"failed: {e7}"
 
     duration = (datetime.now() - start).total_seconds()
-    passed   = sum([ok1, ok2, ok3, ok4, ok5])
+    passed   = sum([ok1, ok2, ok3, ok4, ok5, ok6, ok7])
 
     log(f"\n{'='*70}")
-    log(f"PIPELINE DONE: {passed}/5 stages passed | {duration:.1f}s")
+    log(f"PIPELINE DONE: {passed}/7 stages passed | {duration:.1f}s")
     log(f"{'='*70}")
     for k, v in results.items():
         icon = "OK" if v == "ok" else "FAIL"

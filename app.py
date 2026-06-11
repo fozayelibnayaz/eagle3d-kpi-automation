@@ -1,8 +1,9 @@
 """
-Eagle 3D Streaming — KPI Analytics Dashboard v4
+Eagle 3D Streaming — KPI Analytics Dashboard v7
 =================================================
-Complete rewrite — error-free, responsive, dark/light mode.
-All 9 pages: Dashboard, Traffic Intel, Ask AI, Predictions,
+All-in-one: KPI, GA4, YouTube, LinkedIn, Cross-Platform Correlation
+Dark/light mode, AI-powered analytics, Telegram alerts.
+Pages: Dashboard, Traffic Intel, Ask AI, Predictions,
 Reports, Alerts, EDA Lab, Browse Data, Settings.
 """
 
@@ -695,7 +696,7 @@ with st.sidebar:
         '<div style="font-size:0.9rem;font-weight:800;color:var(--accent);'
         'letter-spacing:0.5px;">Eagle 3D Streaming</div>'
         '<div style="font-size:0.58rem;color:var(--muted);'
-        'text-transform:uppercase;letter-spacing:2px;">KPI Analytics v4</div>'
+        'text-transform:uppercase;letter-spacing:2px;">KPI Analytics v7</div>'
         "</div>",
         unsafe_allow_html=True,
     )
@@ -718,7 +719,9 @@ with st.sidebar:
         [
             "📊 Dashboard", "🚦 Traffic Intel", "🤖 Ask AI",
             "🔮 Predictions", "📋 Reports", "🔔 Alerts",
-            "🔬 EDA Lab", "🔍 Browse Data", "✏️ Manual Override", "⚙️ Settings",
+            "🔬 EDA Lab", "🔍 Browse Data", "✏️ Manual Override",
+            "📺 YouTube", "💼 LinkedIn", "🔗 Cross-Platform",
+            "⚙️ Settings",
         ],
         label_visibility="collapsed",
     )
@@ -790,7 +793,7 @@ with st.sidebar:
                 lines.append("⚠️ No AI keys in secrets — using rule-based")
             for l in lines:
                 st.caption(l)
-    st.caption(f"🦅 v5.1 | {datetime.now().strftime('%H:%M')}")
+    st.caption(f"🦅 v7.0 | {datetime.now().strftime('%H:%M')}")
 
 # ═══════════════════════════════════════════════════════════════
 # LOAD DATA
@@ -2208,6 +2211,767 @@ elif page == "✏️ Manual Override":
             st.info("No manual entries yet.")
 
 # ═══════════════════════════════════════════════════════════════
+# PAGE: 📺 YOUTUBE ANALYTICS
+# ═══════════════════════════════════════════════════════════════
+elif page == "📺 YouTube":
+    st.markdown(
+        '<div class="sec-head">📺 YouTube Analytics Center</div>',
+        unsafe_allow_html=True,
+    )
+    try:
+        from youtube_connector import (
+            get_channel_info, get_channel_videos, get_daily_analytics,
+            get_subscriber_growth, get_traffic_sources, get_demographics,
+            get_revenue, get_revenue_daily, get_top_videos, get_search_terms,
+            is_configured, has_analytics_access, get_status,
+        )
+    except Exception as e:
+        st.error(f"YouTube connector not loaded: {e}")
+        st.stop()
+
+    _yt_status = get_status()
+    if not _yt_status["configured"]:
+        st.warning("⚠️ YouTube not configured. Add `YOUTUBE_API_KEY` and `YOUTUBE_CHANNEL_ID` to secrets.")
+        with st.expander("📖 Setup Guide"):
+            st.markdown("""
+            **To connect YouTube:**
+            1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+            2. Enable **YouTube Data API v3**
+            3. Create credentials → API Key
+            4. Find your Channel ID from [youtube.com/account](https://www.youtube.com/account)
+            5. Add to **Streamlit Cloud Secrets**:
+            ```toml
+            YOUTUBE_API_KEY = "AIza..."
+            YOUTUBE_CHANNEL_ID = "UC..."
+            ```
+            **Optional (for Analytics API - CTR, watch time, revenue):**
+            6. Enable **YouTube Analytics API**
+            7. Set up OAuth2 → get access token
+            8. Add `YOUTUBE_OAUTH_TOKEN = "ya29..."` to secrets
+            """)
+        st.stop()
+
+    # Status indicators
+    _sc1, _sc2, _sc3 = st.columns(3)
+    with _sc1:
+        st.metric("Data API", "✅ Connected" if _yt_status["data_api"] else "❌ No Key")
+    with _sc2:
+        st.metric("Channel", "✅ Set" if _yt_status["channel_id"] else "❌ Missing")
+    with _sc3:
+        st.metric("Analytics API", "✅ Full Access" if _yt_status["analytics_api"] else "⚠️ Basic Only")
+
+    st.markdown("---")
+
+    # Tabs for YouTube sections
+    _yt_tabs = st.tabs([
+        "📊 Overview", "🎬 Videos", "📈 Growth", "🔍 Traffic",
+        "👥 Audience", "💰 Revenue", "🔎 Search Terms",
+    ])
+
+    with _yt_tabs[0]:  # Overview
+        st.markdown("#### 📊 Channel Overview")
+        _ch = get_channel_info()
+        if _ch.get("error"):
+            st.error(f"Channel error: {_ch['error']}")
+        else:
+            _c1, _c2, _c3, _c4 = st.columns(4)
+            with _c1:
+                st.metric("Subscribers", f"{_ch.get('subscribers', 0):,}")
+            with _c2:
+                st.metric("Total Views", f"{_ch.get('total_views', 0):,}")
+            with _c3:
+                st.metric("Video Count", _ch.get('video_count', 0))
+            with _c4:
+                st.metric("Channel", _ch.get('title', 'N/A'))
+
+            if _ch.get('thumbnail'):
+                st.markdown(
+                    f'<div style="text-align:center;"><img src="{_ch["thumbnail"]}" '
+                    f'style="border-radius:12px;max-width:300px;"></div>',
+                    unsafe_allow_html=True,
+                )
+
+            if _ch.get('description'):
+                st.caption(_ch['description'][:300])
+
+        # Daily analytics chart (if available)
+        if has_analytics_access():
+            st.markdown("#### 📈 Daily Performance")
+            _yt_start = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+            _yt_end = datetime.now().strftime("%Y-%m-%d")
+            _daily = get_daily_analytics(_yt_start, _yt_end)
+            if not _daily.empty:
+                fig = go.Figure()
+                if "views" in _daily.columns:
+                    fig.add_trace(go.Scatter(
+                        x=_daily["day"], y=_daily["views"],
+                        name="Views", line=dict(color=T["accent"], width=2),
+                    ))
+                if "subscribersGained" in _daily.columns:
+                    fig.add_trace(go.Scatter(
+                        x=_daily["day"], y=_daily["subscribersGained"],
+                        name="Subscribers Gained", line=dict(color=T["green"], width=2),
+                        yaxis="y2",
+                    ))
+                fig.update_layout(
+                    height=400, **CT(),
+                    yaxis2=dict(overlaying="y", side="right", title="Subscribers"),
+                    margin=dict(l=50, r=50, t=30, b=30),
+                )
+                _pc(fig)
+            else:
+                st.info("No daily analytics data available for this period.")
+        else:
+            st.info("💡 Connect YouTube Analytics API for daily performance charts, CTR, and watch time data.")
+
+    with _yt_tabs[1]:  # Videos
+        st.markdown("#### 🎬 Video Library")
+        _vid_limit = st.slider("Videos to load", 10, 500, 100)
+        if st.button("🔄 Load Videos", use_container_width=True):
+            with st.spinner("Loading videos..."):
+                st.session_state["yt_videos"] = get_channel_videos(max_videos=_vid_limit)
+
+        _vids = st.session_state.get("yt_videos", [])
+        if _vids:
+            st.caption(f"Showing {len(_vids)} videos")
+            _vid_df = pd.DataFrame(_vids)
+            # Display options
+            _show_cols = ["title", "published_at", "views", "likes", "comments", "engagement_rate", "duration_label"]
+            _avail = [c for c in _show_cols if c in _vid_df.columns]
+            if _avail:
+                _df(_vid_df[_avail].head(50))
+
+            # Top videos chart
+            if "views" in _vid_df.columns and "title" in _vid_df.columns:
+                _top = _vid_df.nlargest(15, "views")
+                fig = px.bar(
+                    _top, x="views", y="title", orientation="h",
+                    color="views", color_continuous_scale=[T["accent"], T["accent2"]],
+                )
+                fig.update_layout(
+                    height=500, **CT(),
+                    margin=dict(l=0, r=0, t=30, b=0),
+                    yaxis=dict(tickfont=dict(size=11)),
+                )
+                _pc(fig)
+        else:
+            st.info("Click 'Load Videos' to fetch your video library.")
+
+    with _yt_tabs[2]:  # Growth
+        st.markdown("#### 📈 Subscriber Growth")
+        if has_analytics_access():
+            _g_start = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
+            _g_end = datetime.now().strftime("%Y-%m-%d")
+            _sub_growth = get_subscriber_growth(_g_start, _g_end)
+            if not _sub_growth.empty:
+                fig = go.Figure()
+                if "subscribersGained" in _sub_growth.columns:
+                    fig.add_trace(go.Bar(
+                        x=_sub_growth["day"], y=_sub_growth["subscribersGained"],
+                        name="Gained", marker_color=T["green"],
+                    ))
+                if "subscribersLost" in _sub_growth.columns:
+                    fig.add_trace(go.Bar(
+                        x=_sub_growth["day"], y=_sub_growth["subscribersLost"],
+                        name="Lost", marker_color=T["red"],
+                    ))
+                fig.update_layout(
+                    height=400, **CT(), barmode="group",
+                    margin=dict(l=50, r=20, t=30, b=30),
+                )
+                _pc(fig)
+                _df(_sub_growth)
+            else:
+                st.info("No subscriber growth data available.")
+        else:
+            st.info("💡 Requires YouTube Analytics API for growth data.")
+
+    with _yt_tabs[3]:  # Traffic
+        st.markdown("#### 🔍 Traffic Sources")
+        if has_analytics_access():
+            _t_start = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+            _t_end = datetime.now().strftime("%Y-%m-%d")
+            _traffic = get_traffic_sources(_t_start, _t_end)
+            if not _traffic.empty:
+                fig = px.pie(
+                    _traffic, values="views", names="insightTrafficSourceType",
+                    color_discrete_sequence=px.colors.qualitative.Set3,
+                )
+                fig.update_layout(height=400, **CT())
+                _pc(fig)
+                _df(_traffic)
+            else:
+                st.info("No traffic source data available.")
+        else:
+            st.info("💡 Requires YouTube Analytics API for traffic source data.")
+
+    with _yt_tabs[4]:  # Audience
+        st.markdown("#### 👥 Audience Demographics")
+        if has_analytics_access():
+            _d_start = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
+            _d_end = datetime.now().strftime("%Y-%m-%d")
+            _demo = get_demographics(_d_start, _d_end)
+            _d_tabs2 = st.tabs(["Age/Gender", "Geography", "Devices", "Subscriber Status"])
+            with _d_tabs2[0]:
+                _ag = _demo.get("age_gender", pd.DataFrame())
+                if not _ag.empty:
+                    _df(_ag)
+                else:
+                    st.info("No age/gender data.")
+            with _d_tabs2[1]:
+                _geo = _demo.get("geography", pd.DataFrame())
+                if not _geo.empty:
+                    fig = px.bar(_geo, x="views", y="country", orientation="h",
+                                 color_discrete_sequence=[T["accent"]])
+                    fig.update_layout(height=500, **CT(), margin=dict(l=0, r=0, t=20, b=0))
+                    _pc(fig)
+                else:
+                    st.info("No geography data.")
+            with _d_tabs2[2]:
+                _dev = _demo.get("devices", pd.DataFrame())
+                if not _dev.empty:
+                    fig = px.pie(_dev, values="views", names="deviceType",
+                                 color_discrete_sequence=px.colors.qualitative.Pastel)
+                    fig.update_layout(height=350, **CT())
+                    _pc(fig)
+                else:
+                    st.info("No device data.")
+            with _d_tabs2[3]:
+                _sub = _demo.get("subscribed_status", pd.DataFrame())
+                if not _sub.empty:
+                    _df(_sub)
+                else:
+                    st.info("No subscriber status data.")
+        else:
+            st.info("💡 Requires YouTube Analytics API for audience demographics.")
+
+    with _yt_tabs[5]:  # Revenue
+        st.markdown("#### 💰 Revenue")
+        if has_analytics_access():
+            _r_start = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+            _r_end = datetime.now().strftime("%Y-%m-%d")
+            _rev = get_revenue(_r_start, _r_end)
+            if _rev:
+                _rc1, _rc2, _rc3 = st.columns(3)
+                with _rc1:
+                    st.metric("Estimated Revenue", f"${float(_rev.get('estimatedRevenue', 0)):,.2f}")
+                with _rc2:
+                    st.metric("CPM", f"${float(_rev.get('cpm', 0)):,.2f}")
+                with _rc3:
+                    st.metric("Ad Impressions", f"{int(float(_rev.get('adImpressions', 0))):,}")
+            else:
+                st.info("No revenue data for this period.")
+
+            _rev_daily = get_revenue_daily(_r_start, _r_end)
+            if not _rev_daily.empty:
+                fig = go.Figure()
+                if "estimatedRevenue" in _rev_daily.columns:
+                    fig.add_trace(go.Scatter(
+                        x=_rev_daily["day"], y=_rev_daily["estimatedRevenue"],
+                        fill="tozeroy", line=dict(color=T["green"], width=2),
+                        fillcolor="rgba(0,230,118,0.1)",
+                    ))
+                fig.update_layout(height=350, **CT(), margin=dict(l=50, r=20, t=30, b=30))
+                _pc(fig)
+        else:
+            st.info("💡 Requires YouTube Analytics API for revenue data.")
+
+    with _yt_tabs[6]:  # Search Terms
+        st.markdown("#### 🔎 YouTube Search Terms")
+        if has_analytics_access():
+            _s_start = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+            _s_end = datetime.now().strftime("%Y-%m-%d")
+            _search = get_search_terms(_s_start, _s_end)
+            if not _search.empty:
+                fig = px.treemap(
+                    _search, path=["insightTrafficSourceDetail"], values="views",
+                    color="views", color_continuous_scale="Blues",
+                )
+                fig.update_layout(height=500, **CT())
+                _pc(fig)
+                _df(_search.head(30))
+            else:
+                st.info("No search term data available.")
+        else:
+            st.info("💡 Requires YouTube Analytics API for search term data.")
+
+
+# ═══════════════════════════════════════════════════════════════
+# PAGE: 💼 LINKEDIN ANALYTICS
+# ═══════════════════════════════════════════════════════════════
+elif page == "💼 LinkedIn":
+    st.markdown(
+        '<div class="sec-head">💼 LinkedIn Analytics Center</div>',
+        unsafe_allow_html=True,
+    )
+    try:
+        from linkedin_connector import (
+            scrape_public_metrics, get_cached_metrics, get_manual_history,
+            save_manual_entry, import_csv_data, get_status,
+            scrape_with_playwright,
+        )
+    except Exception as e:
+        st.error(f"LinkedIn connector not loaded: {e}")
+        st.stop()
+
+    _li_status = get_status()
+
+    # Status indicators
+    _ls1, _ls2, _ls3 = st.columns(3)
+    with _ls1:
+        st.metric("Company Page", "✅" if _li_status["company_page"] else "❌ Not Set")
+    with _ls2:
+        st.metric("Auth Cookies", "✅ Deep Scrape" if _li_status["cookies"] else "⚠️ Public Only")
+    with _ls3:
+        st.metric("Cached Data", "✅" if _li_status["cached_data"] else "—")
+
+    if not _li_status["configured"]:
+        st.warning("⚠️ LinkedIn not configured. Add `LINKEDIN_COMPANY_PAGE` to secrets.")
+        with st.expander("📖 Setup Guide"):
+            st.markdown("""
+            **LinkedIn Integration — 3 Methods:**
+
+            **Method 1: Public Page Scrape (Free, No Auth)**
+            - Just provide your company page URL
+            - Gets: follower count, company name, industry
+            - Add to secrets: `LINKEDIN_COMPANY_PAGE = "https://www.linkedin.com/company/eagle3d/"`
+
+            **Method 2: Authenticated Scrape (Recommended)**
+            - Export cookies from your logged-in LinkedIn session
+            - Gets: analytics, post engagement, follower demographics
+            - Add to secrets: `LINKEDIN_COOKIES_JSON = '[{"name":"li_at","value":"...","domain":".linkedin.com"}]'`
+            - **How to get cookies:** Use browser extension "EditThisCookie" or "Cookie-Editor"
+
+            **Method 3: Manual Entry**
+            - Enter metrics directly in the dashboard
+            - Good for filling gaps or historical data
+            """)
+        st.stop()
+
+    st.markdown("---")
+
+    _li_tabs = st.tabs([
+        "📊 Overview", "📝 Manual Entry", "📥 Import CSV", "🔧 Scrape Settings",
+    ])
+
+    with _li_tabs[0]:  # Overview
+        st.markdown("#### 📊 LinkedIn Metrics")
+
+        # Try cached data first
+        _li_cached = get_cached_metrics()
+        if _li_cached and not _li_cached.get("error"):
+            _lc1, _lc2, _lc3, _lc4 = st.columns(4)
+            with _lc1:
+                st.metric("Followers", f"{_li_cached.get('followers', 0):,}")
+            with _lc2:
+                st.metric("Company", _li_cached.get('company_name', 'N/A'))
+            with _lc3:
+                st.metric("Industry", _li_cached.get('industry', 'N/A'))
+            with _lc4:
+                st.metric("Scraped", _li_cached.get('scraped_at', 'N/A')[:16])
+
+            if _li_cached.get('employees'):
+                st.metric("Employees", _li_cached['employees'])
+            if _li_cached.get('description'):
+                st.caption(_li_cached['description'][:300])
+        else:
+            st.info("No cached data. Click 'Scrape Now' or enter data manually.")
+
+        # Scrape buttons
+        _sbc1, _sbc2 = st.columns(2)
+        with _sbc1:
+            if st.button("🌐 Scrape Public Page", use_container_width=True):
+                with st.spinner("Scraping LinkedIn public page..."):
+                    _result = scrape_public_metrics()
+                    if _result.get("error"):
+                        st.error(f"Scrape failed: {_result['error']}")
+                    else:
+                        st.success("✅ Public metrics scraped!")
+                        st.rerun()
+
+        with _sbc2:
+            if _li_status["cookies"]:
+                if st.button("🔐 Deep Scrape (Authenticated)", use_container_width=True):
+                    with st.spinner("Running authenticated scrape..."):
+                        _result = scrape_with_playwright()
+                        if _result.get("error"):
+                            st.error(f"Scrape failed: {_result['error']}")
+                        else:
+                            st.success("✅ Deep metrics scraped!")
+                            st.rerun()
+            else:
+                st.info("💡 Add `LINKEDIN_COOKIES_JSON` to secrets for deep scraping.")
+
+        # Manual history chart
+        _li_hist = get_manual_history()
+        if not _li_hist.empty:
+            st.markdown("#### 📈 Historical Data")
+            _df(_li_hist.tail(30))
+
+    with _li_tabs[1]:  # Manual Entry
+        st.markdown("#### 📝 Enter LinkedIn Metrics Manually")
+        st.caption("Enter current metric values. Each entry is timestamped and saved to history.")
+
+        _me1, _me2, _me3, _me4 = st.columns(4)
+        with _me1:
+            _m_followers = st.number_input("Followers", min_value=0, value=0, step=1)
+        with _me2:
+            _m_impressions = st.number_input("Impressions (period)", min_value=0, value=0, step=1)
+        with _me3:
+            _m_engagement = st.number_input("Engagement Rate (%)", min_value=0.0, value=0.0, step=0.1)
+        with _me4:
+            _m_posts = st.number_input("Posts (period)", min_value=0, value=0, step=1)
+
+        _me5, _me6, _me7 = st.columns(3)
+        with _me5:
+            _m_visitors = st.number_input("Unique Visitors", min_value=0, value=0, step=1)
+        with _me6:
+            _m_likes = st.number_input("Total Likes", min_value=0, value=0, step=1)
+        with _me7:
+            _m_comments = st.number_input("Total Comments", min_value=0, value=0, step=1)
+
+        if st.button("💾 Save Manual Entry", use_container_width=True):
+            _entry = {
+                "followers": _m_followers,
+                "impressions": _m_impressions,
+                "engagement_rate": _m_engagement,
+                "posts": _m_posts,
+                "unique_visitors": _m_visitors,
+                "likes": _m_likes,
+                "comments": _m_comments,
+            }
+            if save_manual_entry(_entry):
+                st.success("✅ Entry saved!")
+                st.rerun()
+            else:
+                st.error("Failed to save entry.")
+
+    with _li_tabs[2]:  # Import CSV
+        st.markdown("#### 📥 Import LinkedIn Data from CSV")
+        st.caption("Paste CSV content exported from LinkedIn Analytics or enter manually.")
+
+        _csv_text = st.text_area(
+            "CSV Content",
+            value="date,followers,impressions,engagement_rate,unique_visitors,posts,likes,comments\n",
+            height=200,
+        )
+
+        if st.button("📥 Import CSV", use_container_width=True):
+            if import_csv_data(_csv_text):
+                st.success("✅ CSV data imported!")
+            else:
+                st.error("Failed to import CSV. Check format.")
+
+        with st.expander("📋 Expected CSV Format"):
+            st.code("""date,followers,impressions,engagement_rate,unique_visitors,posts,likes,comments
+2026-06-01,450,12000,3.5,800,5,350,42
+2026-06-02,452,11500,3.2,750,3,280,35""")
+
+    with _li_tabs[3]:  # Scrape Settings
+        st.markdown("#### 🔧 LinkedIn Scraping Configuration")
+        st.caption("Configure automated daily scraping via GitHub Actions pipeline.")
+
+        _co_url = st.text_input(
+            "Company Page URL",
+            value=os.environ.get("LINKEDIN_COMPANY_PAGE", ""),
+            help="e.g., https://www.linkedin.com/company/eagle3d/",
+        )
+
+        with st.expander("🍪 Cookie Instructions"):
+            st.markdown("""
+            **How to export LinkedIn cookies:**
+            1. Install [Cookie-Editor](https://cookie-editor.cgagnier.ca/) browser extension
+            2. Log in to LinkedIn in your browser
+            3. Click the Cookie-Editor extension icon
+            4. Click "Export" → "Export as JSON"
+            5. Copy the JSON and paste it in your secrets
+
+            **Required cookies:** `li_at`, `JSESSIONID`
+
+            **Add to GitHub Secrets:**
+            - `LINKEDIN_COOKIES_JSON` — the full JSON array
+            - `LINKEDIN_COMPANY_PAGE` — your company page URL
+
+            **Add to Streamlit Cloud Secrets:**
+            ```toml
+            LINKEDIN_COMPANY_PAGE = "https://www.linkedin.com/company/eagle3d/"
+            LINKEDIN_COOKIES_JSON = '[{"name":"li_at","value":"...","domain":".linkedin.com"}]'
+            ```
+
+            ⚠️ **Important:** LinkedIn cookies expire every ~90 days. You'll need to re-export periodically.
+            """)
+
+
+# ═══════════════════════════════════════════════════════════════
+# PAGE: 🔗 CROSS-PLATFORM CORRELATION
+# ═══════════════════════════════════════════════════════════════
+elif page == "🔗 Cross-Platform":
+    st.markdown(
+        '<div class="sec-head">🔗 Cross-Platform Intelligence Hub</div>',
+        unsafe_allow_html=True,
+    )
+    st.caption("Correlate data across KPI, GA4, YouTube, LinkedIn & Stripe — measure what matters.")
+
+    try:
+        from cross_platform_engine import (
+            build_unified_timeline, compute_correlations,
+            compute_attribution, compute_cross_platform_funnel,
+            compute_platform_comparison, compute_growth_analysis,
+            generate_cross_insights,
+        )
+        from youtube_connector import get_channel_info, get_daily_analytics, is_configured as yt_ok, get_status as yt_st
+        from linkedin_connector import get_cached_metrics, get_manual_history, is_configured as li_ok, get_status as li_st
+    except Exception as e:
+        st.error(f"Cross-platform engine not loaded: {e}")
+        st.stop()
+
+    # ── Platform Status ──
+    _yt_s = yt_st()
+    _li_s = li_st()
+    _ga4_ok = bool(os.environ.get("GA4_PROPERTY_ID") or True)  # GA4 is already configured
+
+    _ps1, _ps2, _ps3, _ps4 = st.columns(4)
+    with _ps1:
+        _kpi_status = "✅" if not kpi_all.empty else "⚠️"
+        st.metric("KPI Data", f"{_kpi_status} ({len(kpi_all)} days)")
+    with _ps2:
+        st.metric("GA4 Traffic", "✅" if _ga4_ok else "❌")
+    with _ps3:
+        st.metric("YouTube", "✅" if _yt_s["configured"] else "❌")
+    with _ps4:
+        st.metric("LinkedIn", "✅" if _li_s["configured"] else "❌")
+
+    st.markdown("---")
+
+    # Period selection
+    _cp_start = p_start.strftime("%Y-%m-%d")
+    _cp_end = p_end.strftime("%Y-%m-%d")
+
+    # ── Build unified timeline ──
+    _yt_daily = pd.DataFrame()
+    _li_daily = pd.DataFrame()
+    _ga4_daily = pd.DataFrame()
+
+    # Get GA4 data
+    try:
+        _ga4_mod = MOD.get("ga4_connector")
+        if _ga4_mod and hasattr(_ga4_mod, "fetch_utm_traffic"):
+            _ga4_daily = _ga4_mod.fetch_utm_traffic(_cp_start, _cp_end)
+    except Exception:
+        pass
+
+    # Get YouTube data
+    if _yt_s["configured"]:
+        try:
+            _yt_daily = get_daily_analytics(_cp_start, _cp_end)
+        except Exception:
+            pass
+
+    # Get LinkedIn data
+    _li_hist = get_manual_history()
+    if not _li_hist.empty:
+        _li_daily = _li_hist
+
+    # Build unified
+    _unified = build_unified_timeline(
+        kpi_df=kpi_all,
+        ga4_df=_ga4_daily,
+        youtube_daily=_yt_daily,
+        linkedin_daily=_li_daily,
+        start_date=_cp_start,
+        end_date=_cp_end,
+    )
+
+    _cp_tabs = st.tabs([
+        "🔄 Unified Timeline", "🔗 Correlations", "🎯 Attribution",
+        "📊 Funnel", "📈 Growth", "💡 Insights",
+    ])
+
+    with _cp_tabs[0]:  # Unified Timeline
+        st.markdown("#### 🔄 Unified Cross-Platform Timeline")
+        if not _unified.empty:
+            _avail_cols = [c for c in _unified.columns if c != "date" and _unified[c].sum() > 0]
+            if _avail_cols:
+                # Let user pick metrics to chart
+                _sel_metrics = st.multiselect(
+                    "Select metrics to chart",
+                    _avail_cols,
+                    default=_avail_cols[:5] if len(_avail_cols) >= 5 else _avail_cols,
+                )
+                if _sel_metrics:
+                    fig = go.Figure()
+                    colors = [T["accent"], T["accent2"], T["green"], T["yellow"], T["red"], "#FF6B6B", "#4ECDC4"]
+                    for i, m in enumerate(_sel_metrics):
+                        fig.add_trace(go.Scatter(
+                            x=_unified["date"], y=_unified[m],
+                            name=m.replace("_", " ").title(),
+                            line=dict(color=colors[i % len(colors)], width=2),
+                        ))
+                    fig.update_layout(
+                        height=500, **CT(),
+                        legend=dict(orientation="h", yanchor="bottom", y=1.02),
+                        margin=dict(l=50, r=20, t=50, b=30),
+                    )
+                    _pc(fig)
+
+                _df(_unified.tail(30))
+            else:
+                st.info("No data with non-zero values found in the selected period.")
+        else:
+            st.warning("⚠️ No data available from any platform for the selected period.")
+
+    with _cp_tabs[1]:  # Correlations
+        st.markdown("#### 🔗 Cross-Platform Correlations")
+        if not _unified.empty and len(_unified) >= 3:
+            _corr = compute_correlations(_unified)
+            if _corr.get("error"):
+                st.info(_corr["error"])
+            else:
+                _strong = _corr.get("strong_correlations", [])
+                if _strong:
+                    st.markdown("##### Strongest Correlations")
+                    for c in _strong[:10]:
+                        _dir = "📈" if c["direction"] == "positive" else "📉"
+                        _str = "🔥" if c["strength"] == "strong" else "🔸"
+                        st.markdown(
+                            f"{_str} {_dir} <code>{c['metric_a']}</code> ↔ <code>{c['metric_b']}</code> "
+                            f"— r = <b>{c['correlation']}</b> ({c['strength']})",
+                            unsafe_allow_html=True,
+                        )
+
+                    # Correlation heatmap
+                    _mat = _corr.get("matrix", {})
+                    if _mat:
+                        _mat_df = pd.DataFrame(_mat)
+                        fig = go.Figure(data=go.Heatmap(
+                            z=_mat_df.values,
+                            x=_mat_df.columns,
+                            y=_mat_df.index,
+                            colorscale="RdBu",
+                            zmin=-1, zmax=1,
+                        ))
+                        fig.update_layout(
+                            height=max(400, len(_mat_df) * 30),
+                            **CT(),
+                            margin=dict(l=150, r=20, t=30, b=100),
+                            xaxis=dict(tickangle=45),
+                        )
+                        _pc(fig)
+                else:
+                    st.info("No significant correlations found (r > 0.3). Need more data or different metrics.")
+
+                st.caption(f"Analyzed {_corr.get('metric_count', 0)} metrics over {_corr.get('day_count', 0)} days")
+        else:
+            st.info("Need at least 3 days of data from multiple platforms for correlation analysis.")
+
+    with _cp_tabs[2]:  # Attribution
+        st.markdown("#### 🎯 Channel Attribution")
+        st.caption("Which platform metrics best predict your KPI conversions?")
+        if not _unified.empty and len(_unified) >= 7:
+            _attr = compute_attribution(_unified)
+            if isinstance(_attr, dict) and not _attr.get("error"):
+                for _kpi_name, _predictors in _attr.items():
+                    if _predictors:
+                        st.markdown(f"##### {_kpi_name.replace('_', ' ').title()}")
+                        for p in _predictors[:5]:
+                            _lag = f" (leads by {p['lag_days']}d)" if p["lag_days"] > 0 else " (same-day)"
+                            st.markdown(
+                                f"- 🎯 <code>{p['metric']}</code> ({p['platform']}) — "
+                                f"r={p['correlation']}{_lag}",
+                                unsafe_allow_html=True,
+                            )
+            else:
+                st.info(_attr.get("error", "Not enough data for attribution analysis."))
+        else:
+            st.info("Need at least 7 days of data for attribution analysis.")
+
+    with _cp_tabs[3]:  # Funnel
+        st.markdown("#### 📊 Cross-Platform Funnel")
+        _yt_info = get_channel_info() if _yt_s["configured"] else {}
+        _li_metrics = get_cached_metrics()
+
+        _yt_views = int(_unified.filter(like="yt_views").sum().sum()) if not _unified.empty else 0
+        _li_impressions = int(_unified.filter(like="li_impressions").sum().sum()) if not _unified.empty else 0
+        _ga4_sessions = int(_unified.filter(like="ga4_sessions").sum().sum()) if not _unified.empty else 0
+
+        _funnel = compute_cross_platform_funnel(
+            kpi_df=kpi_all if not kpi_all.empty else pd.DataFrame({"signups": [0], "first_uploads": [0], "paid_customers": [0]}),
+            ga4_sessions=_ga4_sessions,
+            yt_views=_yt_views,
+            li_impressions=_li_impressions,
+            period_label=f"{_cp_start} to {_cp_end}",
+        )
+
+        # Draw funnel
+        _stages = _funnel.get("stages", [])
+        if _stages:
+            fig = go.Figure(go.Funnel(
+                y=[s["stage"] for s in _stages],
+                x=[max(s["value"], 1) for s in _stages],
+                textinfo="value+percent initial+percent previous",
+                marker={"color": [T["accent"], T["accent2"], T["green"], T["yellow"], T["red"]]},
+            ))
+            fig.update_layout(height=450, **CT())
+            _pc(fig)
+
+            # Conversion rates
+            _conv = _funnel.get("conversion_rates", {})
+            if _conv:
+                st.markdown("##### Conversion Rates")
+                for k, v in _conv.items():
+                    if v > 0:
+                        st.markdown(f"- <code>{k.replace('_', ' ').title()}</code>: <b>{v}%</b>", unsafe_allow_html=True)
+
+    with _cp_tabs[4]:  # Growth
+        st.markdown("#### 📈 Cross-Platform Growth")
+        if not _unified.empty and len(_unified) >= 6:
+            _growth = compute_growth_analysis(_unified)
+            if _growth.get("error"):
+                st.info(_growth["error"])
+            else:
+                _g_metrics = _growth.get("metrics", {})
+                _g_rows = []
+                for m, d in _g_metrics.items():
+                    _g_rows.append({
+                        "Metric": m.replace("_", " ").title(),
+                        "Current": d["current_period"],
+                        "Previous": d["previous_period"],
+                        "Change": d["change"],
+                        "% Change": f"{d['pct_change']}%",
+                        "Trend": {"growing": "📈", "declining": "📉", "stable": "➡️"}[d["trend"]],
+                    })
+                if _g_rows:
+                    _df(pd.DataFrame(_g_rows))
+        else:
+            st.info("Need more data for growth analysis.")
+
+    with _cp_tabs[5]:  # Insights
+        st.markdown("#### 💡 Cross-Platform Insights")
+        _corr_data = {}
+        _attr_data = {}
+        _growth_data = {}
+        _funnel_data = {}
+
+        if not _unified.empty and len(_unified) >= 3:
+            _corr_data = compute_correlations(_unified)
+        if not _unified.empty and len(_unified) >= 7:
+            _attr_data = compute_attribution(_unified)
+        if not _unified.empty and len(_unified) >= 6:
+            _growth_data = compute_growth_analysis(_unified)
+        _funnel_data = compute_cross_platform_funnel(
+            kpi_df=kpi_all if not kpi_all.empty else pd.DataFrame({"signups": [0]}),
+            ga4_sessions=0, yt_views=0, li_impressions=0,
+        )
+
+        _insights = generate_cross_insights(_corr_data, _attr_data, _growth_data, _funnel_data)
+        for insight in _insights:
+            st.markdown(f"<div style='padding:8px 12px;margin:4px 0;background:{T['card']};border-radius:8px;border-left:3px solid {T['accent']};'>{insight}</div>", unsafe_allow_html=True)
+
+        if not _insights:
+            st.info("Connect more platforms (YouTube, LinkedIn) for richer cross-platform insights.")
+
+
+# ═══════════════════════════════════════════════════════════════
 # PAGE: ⚙️ SETTINGS (with Run Pipeline + Secrets Editor + Cache Clear)
 # ═══════════════════════════════════════════════════════════════
 elif page == "⚙️ Settings":
@@ -2289,6 +3053,11 @@ elif page == "⚙️ Settings":
         ("GEMINI_API_KEY", "Gemini AI"),
         ("TELEGRAM_BOT_TOKEN", "Telegram Bot"),
         ("TELEGRAM_CHAT_ID", "Telegram Chat ID"),
+        ("YOUTUBE_API_KEY", "YouTube Data API"),
+        ("YOUTUBE_CHANNEL_ID", "YouTube Channel ID"),
+        ("YOUTUBE_OAUTH_TOKEN", "YouTube Analytics (OAuth)"),
+        ("LINKEDIN_COMPANY_PAGE", "LinkedIn Company Page"),
+        ("LINKEDIN_COOKIES_JSON", "LinkedIn Cookies"),
     ]:
         _vl = get_secret(_ky)
         if _vl:
@@ -2395,7 +3164,7 @@ st.divider()
 _fc1, _fc2, _fc3 = st.columns(3)
 with _fc1:
     st.caption(
-        f"🦅 Eagle 3D Streaming KPI v5.6 | "
+        f"🦅 Eagle 3D Streaming KPI v7.0 | "
         f"{datetime.now().strftime('%Y-%m-%d %H:%M')}"
     )
 with _fc2:
