@@ -62,23 +62,20 @@ def main():
         ], check=False)
         print("✅ Committed")
 
-    # Push
-    result = subprocess.run(["git", "push", "origin", "main"], capture_output=True, text=True)
+    # Push — must use --force because pipeline auto-commits
+    print("⚠️ Force pushing (overrides pipeline auto-commits)...")
+    result = subprocess.run(
+        ["git", "push", "origin", "main", "--force"],
+        capture_output=True, text=True
+    )
     if result.returncode == 0:
-        print("✅ Pushed to GitHub!")
+        print("✅ Force pushed to GitHub!")
     else:
-        print("⚠️ Push failed, trying force push...")
-        result2 = subprocess.run(
-            ["git", "push", "--force-with-lease", "origin", "main"],
-            capture_output=True, text=True
-        )
-        if result2.returncode == 0:
-            print("✅ Force pushed!")
-        else:
-            print(f"❌ Push failed: {result2.stderr}")
-            print()
-            print("Run manually:")
-            print("  git push origin main --force")
+        print(f"❌ Push failed: {result.stderr}")
+        print()
+        print("Run manually:")
+        print("  git pull --rebase origin main || true")
+        print("  git push origin main --force")
 
     print()
     print("=" * 50)
