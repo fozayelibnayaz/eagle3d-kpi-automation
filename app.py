@@ -2210,12 +2210,13 @@ elif page == "✏️ Manual Override":
         else:
             st.info("No manual entries yet.")
 
+
 # ═══════════════════════════════════════════════════════════════
-# PAGE: 📺 YOUTUBE ANALYTICS
+# PAGE: 📺 YOUTUBE ANALYTICS (Full Command Center)
 # ═══════════════════════════════════════════════════════════════
 elif page == "📺 YouTube":
     st.markdown(
-        '<div class="sec-head">📺 YouTube Analytics Center</div>',
+        '<div class="sec-head">📺 YouTube Command Center</div>',
         unsafe_allow_html=True,
     )
     try:
@@ -2223,13 +2224,32 @@ elif page == "📺 YouTube":
             get_channel_info, get_channel_videos, get_daily_analytics,
             get_subscriber_growth, get_traffic_sources, get_demographics,
             get_revenue, get_revenue_daily, get_top_videos, get_search_terms,
-            is_configured, has_analytics_access, get_status,
+            get_views_by_playback, get_sharing_services, get_playlist_analytics,
+            get_video_analytics_batch, get_retention_curve,
+            calculate_performance_score, get_engagement_rating, get_retention_rating,
+            diagnose_video, get_score_label, format_number,
+            is_configured, has_analytics_access, get_status, _parse_duration, _format_duration,
         )
     except Exception as e:
         st.error(f"YouTube connector not loaded: {e}")
         st.stop()
 
     _yt_status = get_status()
+    _ch_info = get_channel_info()
+    _has_oauth = has_analytics_access()
+
+    # ── Status bar ──
+    _s1, _s2, _s3, _s4 = st.columns(4)
+    with _s1:
+        st.metric("Subscribers", f"{_ch_info.get('subscribers', 0):,}")
+    with _s2:
+        st.metric("Total Views", f"{_ch_info.get('total_views', 0):,}")
+    with _s3:
+        st.metric("Videos", _ch_info.get('video_count', 0))
+    with _s4:
+        _data_src = "✅ REAL" if _has_oauth else "📋 Public"
+        st.metric("Data", _data_src)
+
     if not _yt_status["configured"]:
         st.warning("⚠️ YouTube not configured. Add `YOUTUBE_API_KEY` and `YOUTUBE_CHANNEL_ID` to secrets.")
         with st.expander("📖 Setup Guide"):
@@ -2244,256 +2264,602 @@ elif page == "📺 YouTube":
             YOUTUBE_API_KEY = "AIza..."
             YOUTUBE_CHANNEL_ID = "UC..."
             ```
-            **Optional (for Analytics API - CTR, watch time, revenue):**
-            6. Enable **YouTube Analytics API**
-            7. Set up OAuth2 → get access token
-            8. Add `YOUTUBE_OAUTH_TOKEN = "ya29..."` to secrets
+
+            **For full Analytics (CTR, retention, watch time, revenue):**
+            6. Enable **YouTube Analytics API** in Google Cloud Console
+            7. Create **OAuth 2.0 Client ID** credentials (Desktop app)
+            8. Run the OAuth helper script (see YouTube tab in Settings)
+            9. Add `YOUTUBE_OAUTH_TOKEN` and optionally `YOUTUBE_REFRESH_TOKEN`, `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET` to secrets
             """)
         st.stop()
 
-    # Status indicators
-    _sc1, _sc2, _sc3 = st.columns(3)
-    with _sc1:
-        st.metric("Data API", "✅ Connected" if _yt_status["data_api"] else "❌ No Key")
-    with _sc2:
-        st.metric("Channel", "✅ Set" if _yt_status["channel_id"] else "❌ Missing")
-    with _sc3:
-        st.metric("Analytics API", "✅ Full Access" if _yt_status["analytics_api"] else "⚠️ Basic Only")
-
     st.markdown("---")
 
-    # Tabs for YouTube sections
+    # ── Date range for analytics ──
+    _yt_period = st.selectbox("📅 Period", ["Last 7 Days", "Last 14 Days", "Last 28 Days", "Last 30 Days", "Last 90 Days", "Last 180 Days", "Last 365 Days", "All Time"], index=2, key="yt_period")
+    _yt_days_map = {"Last 7 Days": 7, "Last 14 Days": 14, "Last 28 Days": 28, "Last 30 Days": 30, "Last 90 Days": 90, "Last 180 Days": 180, "Last 365 Days": 365, "All Time": 3650}
+    _yt_days = _yt_days_map.get(_yt_period, 28)
+    _yt_start = (datetime.now() - timedelta(days=_yt_days)).strftime("%Y-%m-%d")
+    _yt_end = datetime.now().strftime("%Y-%m-%d")
+
+    # ── Tabs matching Command Center ──
     _yt_tabs = st.tabs([
-        "📊 Overview", "🎬 Videos", "📈 Growth", "🔍 Traffic",
-        "👥 Audience", "💰 Revenue", "🔎 Search Terms",
+        "📊 Dashboard", "🎬 All Videos", "📈 Analytics", "👥 Audience",
+        "💰 Revenue", "🔍 Traffic", "🎵 Playlists", "💡 Ask AI",
     ])
 
-    with _yt_tabs[0]:  # Overview
-        st.markdown("#### 📊 Channel Overview")
-        _ch = get_channel_info()
-        if _ch.get("error"):
-            st.error(f"Channel error: {_ch['error']}")
-        else:
-            _c1, _c2, _c3, _c4 = st.columns(4)
-            with _c1:
-                st.metric("Subscribers", f"{_ch.get('subscribers', 0):,}")
-            with _c2:
-                st.metric("Total Views", f"{_ch.get('total_views', 0):,}")
-            with _c3:
-                st.metric("Video Count", _ch.get('video_count', 0))
-            with _c4:
-                st.metric("Channel", _ch.get('title', 'N/A'))
+    # ════════════════════════════════════════════════════════════
+    # TAB 0: DASHBOARD (Overview + Best/Worst + Scored Videos)
+    # ════════════════════════════════════════════════════════════
+    with _yt_tabs[0]:
+        st.markdown("#### 📊 Channel Dashboard")
 
-            if _ch.get('thumbnail'):
-                st.markdown(
-                    f'<div style="text-align:center;"><img src="{_ch["thumbnail"]}" '
-                    f'style="border-radius:12px;max-width:300px;"></div>',
-                    unsafe_allow_html=True,
-                )
-
-            if _ch.get('description'):
-                st.caption(_ch['description'][:300])
-
-        # Daily analytics chart (if available)
-        if has_analytics_access():
-            st.markdown("#### 📈 Daily Performance")
-            _yt_start = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
-            _yt_end = datetime.now().strftime("%Y-%m-%d")
-            _daily = get_daily_analytics(_yt_start, _yt_end)
-            if not _daily.empty:
-                fig = go.Figure()
-                if "views" in _daily.columns:
-                    fig.add_trace(go.Scatter(
-                        x=_daily["day"], y=_daily["views"],
-                        name="Views", line=dict(color=T["accent"], width=2),
-                    ))
-                if "subscribersGained" in _daily.columns:
-                    fig.add_trace(go.Scatter(
-                        x=_daily["day"], y=_daily["subscribersGained"],
-                        name="Subscribers Gained", line=dict(color=T["green"], width=2),
-                        yaxis="y2",
-                    ))
-                fig.update_layout(
-                    height=400, **CT(),
-                    yaxis2=dict(overlaying="y", side="right", title="Subscribers"),
-                    margin=dict(l=50, r=50, t=30, b=30),
-                )
-                _pc(fig)
-            else:
-                st.info("No daily analytics data available for this period.")
-        else:
-            st.info("💡 Connect YouTube Analytics API for daily performance charts, CTR, and watch time data.")
-
-    with _yt_tabs[1]:  # Videos
-        st.markdown("#### 🎬 Video Library")
-        _vid_limit = st.slider("Videos to load", 10, 500, 100)
-        if st.button("🔄 Load Videos", use_container_width=True):
-            with st.spinner("Loading videos..."):
-                st.session_state["yt_videos"] = get_channel_videos(max_videos=_vid_limit)
+        # Load videos
+        if "yt_videos" not in st.session_state:
+            with st.spinner("Loading video library..."):
+                st.session_state["yt_videos"] = get_channel_videos(max_videos=300)
 
         _vids = st.session_state.get("yt_videos", [])
-        if _vids:
-            st.caption(f"Showing {len(_vids)} videos")
-            _vid_df = pd.DataFrame(_vids)
-            # Display options
-            _show_cols = ["title", "published_at", "views", "likes", "comments", "engagement_rate", "duration_label"]
-            _avail = [c for c in _show_cols if c in _vid_df.columns]
-            if _avail:
-                _df(_vid_df[_avail].head(50))
+        _subs = _ch_info.get("subscribers", 1000)
 
-            # Top videos chart
-            if "views" in _vid_df.columns and "title" in _vid_df.columns:
-                _top = _vid_df.nlargest(15, "views")
-                fig = px.bar(
-                    _top, x="views", y="title", orientation="h",
-                    color="views", color_continuous_scale=[T["accent"], T["accent2"]],
-                )
-                fig.update_layout(
-                    height=500, **CT(),
-                    margin=dict(l=0, r=0, t=30, b=0),
-                    yaxis=dict(tickfont=dict(size=11)),
-                )
-                _pc(fig)
-        else:
-            st.info("Click 'Load Videos' to fetch your video library.")
+        # Aggregate stats
+        _total_views = sum(v["views"] for v in _vids)
+        _total_likes = sum(v["likes"] for v in _vids)
+        _total_comments = sum(v["comments"] for v in _vids)
+        _avg_eng = np.mean([v["engagement_rate"] for v in _vids if v["views"] > 0]) if _vids else 0
 
-    with _yt_tabs[2]:  # Growth
-        st.markdown("#### 📈 Subscriber Growth")
-        if has_analytics_access():
-            _g_start = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
-            _g_end = datetime.now().strftime("%Y-%m-%d")
-            _sub_growth = get_subscriber_growth(_g_start, _g_end)
-            if not _sub_growth.empty:
-                fig = go.Figure()
-                if "subscribersGained" in _sub_growth.columns:
-                    fig.add_trace(go.Bar(
-                        x=_sub_growth["day"], y=_sub_growth["subscribersGained"],
-                        name="Gained", marker_color=T["green"],
-                    ))
-                if "subscribersLost" in _sub_growth.columns:
-                    fig.add_trace(go.Bar(
-                        x=_sub_growth["day"], y=_sub_growth["subscribersLost"],
-                        name="Lost", marker_color=T["red"],
-                    ))
-                fig.update_layout(
-                    height=400, **CT(), barmode="group",
-                    margin=dict(l=50, r=20, t=30, b=30),
-                )
-                _pc(fig)
-                _df(_sub_growth)
+        # OAuth analytics for the period
+        _daily_data = pd.DataFrame()
+        _period_views = 0
+        _period_watch_min = 0
+        _period_avg_dur = 0
+        _period_subs_gained = 0
+        _period_subs_lost = 0
+
+        if _has_oauth:
+            _daily_data = get_daily_analytics(_yt_start, _yt_end)
+            if not _daily_data.empty:
+                _period_views = int(_daily_data["views"].sum())
+                _period_watch_min = float(_daily_data.get("estimatedMinutesWatched", pd.Series([0])).sum())
+                _period_avg_dur = float(_daily_data.get("averageViewDuration", pd.Series([0])).mean())
+                _period_subs_gained = int(_daily_data.get("subscribersGained", pd.Series([0])).sum())
+                _period_subs_lost = int(_daily_data.get("subscribersLost", pd.Series([0])).sum())
+
+        # KPI row
+        _k1, _k2, _k3, _k4, _k5, _k6 = st.columns(6)
+        with _k1:
+            _views_display = _period_views if _has_oauth and _period_views > 0 else _total_views
+            st.metric("Total Views", format_number(_views_display))
+        with _k2:
+            st.metric("Subscribers", f"{_ch_info.get('subscribers', 0):,}")
+        with _k3:
+            st.metric("Total Likes", format_number(_total_likes))
+        with _k4:
+            st.metric("Comments", format_number(_total_comments))
+        with _k5:
+            st.metric("Avg Engagement", f"{_avg_eng:.1f}%")
+        with _k6:
+            if _has_oauth and _period_watch_min > 0:
+                st.metric("Watch Hours", f"{_period_watch_min/60:.0f}")
             else:
-                st.info("No subscriber growth data available.")
-        else:
-            st.info("💡 Requires YouTube Analytics API for growth data.")
+                st.metric("Videos", f"{len(_vids)}")
 
-    with _yt_tabs[3]:  # Traffic
-        st.markdown("#### 🔍 Traffic Sources")
-        if has_analytics_access():
-            _t_start = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
-            _t_end = datetime.now().strftime("%Y-%m-%d")
-            _traffic = get_traffic_sources(_t_start, _t_end)
-            if not _traffic.empty:
-                fig = px.pie(
-                    _traffic, values="views", names="insightTrafficSourceType",
-                    color_discrete_sequence=px.colors.qualitative.Set3,
+        # Daily views chart
+        if _has_oauth and not _daily_data.empty:
+            st.markdown("##### 📈 Daily Views Trend")
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(
+                x=_daily_data["day"], y=_daily_data["views"],
+                fill="tozeroy", line=dict(color=T["accent"], width=2),
+                fillcolor="rgba(0,212,255,0.08)",
+            ))
+            fig.update_layout(height=300, **CT(), margin=dict(l=40, r=20, t=20, b=20))
+            _pc(fig)
+        elif not _has_oauth:
+            st.info("💡 Connect YouTube Analytics API (OAuth) for daily trends, CTR, watch time & revenue data.")
+
+        st.markdown("---")
+
+        # ── Scored videos ──
+        if _vids:
+            _scored = []
+            for v in _vids:
+                score = calculate_performance_score(
+                    views=v["views"], likes=v["likes"], comments=v["comments"],
+                    published_at=v.get("published_at", ""), subscribers=_subs,
                 )
+                _scored.append({**v, "score": score})
+
+            _scored.sort(key=lambda x: x["score"], reverse=True)
+
+            # Best performing
+            if _scored:
+                _best = _scored[0]
+                _worst = _scored[-1]
+
+                _bc, _wc = st.columns(2)
+                with _bc:
+                    st.markdown("##### 🏆 Best Performing")
+                    _b_eng = get_engagement_rating(_best["engagement_rate"])
+                    st.markdown(f"**{_best['title'][:80]}**")
+                    st.caption(f"Views: {format_number(_best['views'])} | Eng: {_best['engagement_rate']:.1f}% | Likes: {_best['likes']} | Score: {_best['score']}/100 {_b_eng['color']}")
+                    if st.button("🔍 Analyze Best", key="analyze_best"):
+                        st.session_state["yt_analyze_vid"] = _best["video_id"]
+
+                with _wc:
+                    st.markdown("##### 💀 Worst Performing")
+                    _w_eng = get_engagement_rating(_worst["engagement_rate"])
+                    st.markdown(f"**{_worst['title'][:80]}**")
+                    st.caption(f"Views: {format_number(_worst['views'])} | Eng: {_worst['engagement_rate']:.1f}% | Likes: {_worst['likes']} | Score: {_worst['score']}/100 {_w_eng['color']}")
+                    if st.button("🔍 Analyze Worst", key="analyze_worst"):
+                        st.session_state["yt_analyze_vid"] = _worst["video_id"]
+
+            st.markdown("---")
+
+            # ── All videos ranked ──
+            st.markdown(f"##### 📋 All Videos ({len(_scored)} videos, ranked by score)")
+            _rank_data = []
+            for i, v in enumerate(_scored[:50]):
+                _eng_r = get_engagement_rating(v["engagement_rate"])
+                days_pub = ""
+                if v.get("published_at"):
+                    try:
+                        pub = datetime.fromisoformat(v["published_at"].replace("Z", "+00:00"))
+                        days_pub = f"{(datetime.now(pub.tzinfo) - pub).days}d ago"
+                    except Exception:
+                        pass
+                _rank_data.append({
+                    "#": i + 1,
+                    "Title": v["title"][:50],
+                    "Score": f"{v['score']}/100",
+                    "Views": v["views"],
+                    "Likes": v["likes"],
+                    "Eng%": f"{v['engagement_rate']:.1f}%",
+                    "Rating": f"{_eng_r['color']} {_eng_r['label']}",
+                    "Duration": v["duration_label"],
+                    "Age": days_pub,
+                })
+            _df(pd.DataFrame(_rank_data))
+
+    # ════════════════════════════════════════════════════════════
+    # TAB 1: ALL VIDEOS (Detailed video cards)
+    # ════════════════════════════════════════════════════════════
+    with _yt_tabs[1]:
+        st.markdown("#### 🎬 Video Library")
+
+        _vids = st.session_state.get("yt_videos", [])
+        if not _vids:
+            if st.button("🔄 Load All Videos", use_container_width=True):
+                with st.spinner("Loading..."):
+                    st.session_state["yt_videos"] = get_channel_videos(max_videos=300)
+                    st.rerun()
+        else:
+            # Filters
+            _fc1, _fc2, _fc3 = st.columns(3)
+            with _fc1:
+                _sort_by = st.selectbox("Sort by", ["Score", "Views", "Engagement", "Date", "Duration"], index=0)
+            with _fc2:
+                _vid_search = st.text_input("🔍 Search videos", "")
+            with _fc3:
+                if st.button("🔄 Reload"):
+                    st.session_state.pop("yt_videos", None)
+                    st.rerun()
+
+            _subs = _ch_info.get("subscribers", 1000)
+
+            # Score and sort
+            _scored = []
+            for v in _vids:
+                score = calculate_performance_score(
+                    views=v["views"], likes=v["likes"], comments=v["comments"],
+                    published_at=v.get("published_at", ""), subscribers=_subs,
+                )
+                _scored.append({**v, "score": score})
+
+            # Filter
+            if _vid_search:
+                _scored = [v for v in _scored if _vid_search.lower() in v["title"].lower()]
+
+            # Sort
+            if _sort_by == "Views":
+                _scored.sort(key=lambda x: x["views"], reverse=True)
+            elif _sort_by == "Engagement":
+                _scored.sort(key=lambda x: x["engagement_rate"], reverse=True)
+            elif _sort_by == "Date":
+                _scored.sort(key=lambda x: x.get("published_at", ""), reverse=True)
+            elif _sort_by == "Duration":
+                _scored.sort(key=lambda x: x["duration_seconds"], reverse=True)
+            else:
+                _scored.sort(key=lambda x: x["score"], reverse=True)
+
+            st.caption(f"Showing {len(_scored)} videos")
+
+            # Display as table with expandable details
+            for i, v in enumerate(_scored[:30]):
+                _eng_r = get_engagement_rating(v["engagement_rate"])
+                _score_lbl = get_score_label(v["score"])
+
+                with st.expander(f"{'🔥' if v['score'] >= 50 else '⚠️' if v['score'] >= 30 else '❌'} {i+1}. {v['title'][:70]} — {v['score']}/100 | {v['views']:,} views | {_eng_r['color']} {_eng_r['label']}"):
+                    _vc1, _vc2, _vc3, _vc4 = st.columns(4)
+                    with _vc1:
+                        st.metric("Views", f"{v['views']:,}")
+                    with _vc2:
+                        st.metric("Likes", f"{v['likes']:,}")
+                    with _vc3:
+                        st.metric("Comments", f"{v['comments']:,}")
+                    with _vc4:
+                        st.metric("Score", f"{v['score']}/100")
+
+                    _vc5, _vc6, _vc7 = st.columns(3)
+                    with _vc5:
+                        st.metric("Engagement", f"{v['engagement_rate']:.1f}%")
+                    with _vc6:
+                        st.metric("Duration", v["duration_label"])
+                    with _vc7:
+                        st.metric("Published", v.get("published_at", "")[:10])
+
+                    # Diagnose
+                    _diagnosis = diagnose_video(
+                        views=v["views"], likes=v["likes"], comments=v["comments"],
+                        published_at=v.get("published_at", ""), subscribers=_subs,
+                    )
+                    st.markdown("**Diagnosis:**")
+                    for d in _diagnosis:
+                        _icon = {"critical": "🔴", "warning": "🟡", "minor": "🔵", "good": "🟢"}.get(d["severity"], "⚪")
+                        st.markdown(f"{_icon} **{d['issue']}** — {d['fix']}")
+
+                    # Links
+                    st.markdown(f"[▶ Watch](https://youtube.com/watch?v={v['video_id']}) | [📊 Studio](https://studio.youtube.com/video/{v['video_id']}/analytics)")
+
+    # ════════════════════════════════════════════════════════════
+    # TAB 2: ANALYTICS (Daily trends, subscriber growth)
+    # ════════════════════════════════════════════════════════════
+    with _yt_tabs[2]:
+        st.markdown("#### 📈 Channel Analytics")
+        if not _has_oauth:
+            st.warning("⚠️ YouTube Analytics API requires OAuth token. See Settings → YouTube OAuth Setup.")
+            st.stop()
+
+        _daily = get_daily_analytics(_yt_start, _yt_end)
+        if _daily.empty:
+            st.info("No analytics data for this period.")
+            st.stop()
+
+        # Summary metrics
+        _a1, _a2, _a3, _a4, _a5, _a6 = st.columns(6)
+        with _a1:
+            st.metric("Views", format_number(int(_daily["views"].sum())))
+        with _a2:
+            _wh = float(_daily.get("estimatedMinutesWatched", pd.Series([0])).sum()) / 60
+            st.metric("Watch Hours", f"{_wh:.0f}")
+        with _a3:
+            _ad = float(_daily.get("averageViewDuration", pd.Series([0])).mean())
+            st.metric("Avg Duration", _format_duration(int(_ad)))
+        with _a4:
+            st.metric("Likes", format_number(int(_daily.get("likes", pd.Series([0])).sum())))
+        with _a5:
+            st.metric("Comments", format_number(int(_daily.get("comments", pd.Series([0])).sum())))
+        with _a6:
+            _sg = int(_daily.get("subscribersGained", pd.Series([0])).sum())
+            _sl = int(_daily.get("subscribersLost", pd.Series([0])).sum())
+            st.metric("Net Subs", f"+{_sg}/-{_sl}")
+
+        # Engagement rate
+        _total_v = int(_daily["views"].sum())
+        _total_l = int(_daily.get("likes", pd.Series([0])).sum())
+        _total_c = int(_daily.get("comments", pd.Series([0])).sum())
+        _total_s = int(_daily.get("shares", pd.Series([0])).sum())
+        _eng_rate = ((_total_l + _total_c) / _total_v * 100) if _total_v > 0 else 0
+        st.metric("Engagement Rate", f"{_eng_rate:.2f}%")
+
+        # Daily views chart
+        st.markdown("##### 📊 Daily Views")
+        fig = go.Figure()
+        fig.add_trace(go.Bar(x=_daily["day"], y=_daily["views"], name="Views", marker_color=T["accent"]))
+        fig.update_layout(height=350, **CT(), margin=dict(l=40, r=20, t=20, b=20))
+        _pc(fig)
+
+        # Watch time chart
+        if "estimatedMinutesWatched" in _daily.columns:
+            st.markdown("##### ⏱️ Watch Time (minutes)")
+            fig2 = go.Figure()
+            fig2.add_trace(go.Scatter(
+                x=_daily["day"], y=_daily["estimatedMinutesWatched"],
+                fill="tozeroy", line=dict(color=T["green"], width=2),
+                fillcolor="rgba(0,230,118,0.08)",
+            ))
+            fig2.update_layout(height=300, **CT(), margin=dict(l=40, r=20, t=20, b=20))
+            _pc(fig2)
+
+        # Subscriber activity
+        if "subscribersGained" in _daily.columns:
+            st.markdown("##### 👥 Subscriber Activity")
+            fig3 = go.Figure()
+            fig3.add_trace(go.Bar(x=_daily["day"], y=_daily["subscribersGained"], name="Gained", marker_color=T["green"]))
+            fig3.add_trace(go.Bar(x=_daily["day"], y=_daily["subscribersLost"], name="Lost", marker_color=T["red"]))
+            fig3.update_layout(height=300, **CT(), barmode="group", margin=dict(l=40, r=20, t=20, b=20))
+            _pc(fig3)
+
+        # CTR chart
+        if "ctr" in _daily.columns and _daily["ctr"].sum() > 0:
+            st.markdown("##### 📌 Click-Through Rate (CTR)")
+            fig4 = go.Figure()
+            fig4.add_trace(go.Scatter(x=_daily["day"], y=_daily["ctr"], line=dict(color=T["accent2"], width=2)))
+            fig4.update_layout(height=250, **CT(), margin=dict(l=40, r=20, t=20, b=20), yaxis=dict(ticksuffix="%"))
+            _pc(fig4)
+
+        # Top videos by views and watch time
+        _t1, _t2 = st.columns(2)
+        with _t1:
+            st.markdown("##### 🏆 Top by Views")
+            _top_v = get_top_videos("views", _yt_start, _yt_end, 5)
+            if not _top_v.empty:
+                _df(_top_v)
+            else:
+                st.info("No data")
+
+        with _t2:
+            st.markdown("##### ⏱️ Top by Watch Time")
+            _top_w = get_top_videos("estimatedMinutesWatched", _yt_start, _yt_end, 5)
+            if not _top_w.empty:
+                _df(_top_w)
+            else:
+                st.info("No data")
+
+        # Raw data
+        with st.expander("📋 Raw Daily Data"):
+            _df(_daily)
+
+    # ════════════════════════════════════════════════════════════
+    # TAB 3: AUDIENCE (Demographics)
+    # ════════════════════════════════════════════════════════════
+    with _yt_tabs[3]:
+        st.markdown("#### 👥 Audience Demographics")
+        if not _has_oauth:
+            st.warning("⚠️ Requires YouTube Analytics API (OAuth).")
+            st.stop()
+
+        _demo = get_demographics(_yt_start, _yt_end)
+        _dt1, _dt2 = st.columns(2)
+
+        with _dt1:
+            st.markdown("##### 🌍 Top Countries")
+            _geo = _demo.get("geography", pd.DataFrame())
+            if not _geo.empty:
+                fig = px.bar(_geo, x="views", y="country", orientation="h", color_discrete_sequence=[T["accent"]])
+                fig.update_layout(height=400, **CT(), margin=dict(l=0, r=0, t=20, b=0))
+                _pc(fig)
+            else:
+                st.info("No country data.")
+
+        with _dt2:
+            st.markdown("##### 📱 Devices")
+            _dev = _demo.get("devices", pd.DataFrame())
+            if not _dev.empty:
+                fig = px.pie(_dev, values="views", names="deviceType", color_discrete_sequence=px.colors.qualitative.Pastel)
+                fig.update_layout(height=400, **CT())
+                _pc(fig)
+            else:
+                st.info("No device data.")
+
+        _dt3, _dt4 = st.columns(2)
+        with _dt3:
+            st.markdown("##### 🖥️ Operating Systems")
+            _os = _demo.get("os", pd.DataFrame())
+            if not _os.empty:
+                fig = px.bar(_os, x="views", y="operatingSystem", orientation="h", color_discrete_sequence=[T["accent2"]])
+                fig.update_layout(height=350, **CT(), margin=dict(l=0, r=0, t=20, b=0))
+                _pc(fig)
+            else:
+                st.info("No OS data.")
+
+        with _dt4:
+            st.markdown("##### 👤 Age & Gender")
+            _ag = _demo.get("age_gender", pd.DataFrame())
+            if not _ag.empty:
+                _df(_ag)
+            else:
+                st.info("No age/gender data.")
+
+        _sub_status = _demo.get("subscribed_status", pd.DataFrame())
+        if not _sub_status.empty:
+            st.markdown("##### 🔔 Subscriber vs Non-Subscriber Views")
+            fig = px.pie(_sub_status, values="views", names="subscribedStatus", color_discrete_sequence=[T["green"], T["accent"]])
+            fig.update_layout(height=300, **CT())
+            _pc(fig)
+
+    # ════════════════════════════════════════════════════════════
+    # TAB 4: REVENUE
+    # ════════════════════════════════════════════════════════════
+    with _yt_tabs[4]:
+        st.markdown("#### 💰 Revenue")
+        if not _has_oauth:
+            st.warning("⚠️ Requires YouTube Analytics API (OAuth).")
+            st.stop()
+
+        _rev = get_revenue(_yt_start, _yt_end)
+        if _rev:
+            _r1, _r2, _r3, _r4 = st.columns(4)
+            with _r1:
+                st.metric("Est. Revenue", f"${float(_rev.get('estimatedRevenue', 0)):,.2f}")
+            with _r2:
+                st.metric("CPM", f"${float(_rev.get('cpm', 0)):,.2f}")
+            with _r3:
+                st.metric("Ad Impressions", f"{int(float(_rev.get('adImpressions', 0))):,}")
+            with _r4:
+                st.metric("Monetized Playbacks", f"{int(float(_rev.get('monetizedPlaybacks', 0))):,}")
+        else:
+            st.info("No revenue data for this period. (Monetization may not be enabled)")
+
+        _rev_daily = get_revenue_daily(_yt_start, _yt_end)
+        if not _rev_daily.empty:
+            st.markdown("##### 📊 Daily Revenue")
+            fig = go.Figure()
+            if "estimatedRevenue" in _rev_daily.columns:
+                fig.add_trace(go.Scatter(
+                    x=_rev_daily["day"], y=_rev_daily["estimatedRevenue"],
+                    fill="tozeroy", line=dict(color=T["green"], width=2),
+                    fillcolor="rgba(0,230,118,0.08)",
+                ))
+            fig.update_layout(height=350, **CT(), margin=dict(l=50, r=20, t=20, b=20))
+            _pc(fig)
+            with st.expander("📋 Revenue Data"):
+                _df(_rev_daily)
+
+    # ════════════════════════════════════════════════════════════
+    # TAB 5: TRAFFIC SOURCES
+    # ════════════════════════════════════════════════════════════
+    with _yt_tabs[5]:
+        st.markdown("#### 🔍 Traffic & Discovery")
+        if not _has_oauth:
+            st.warning("⚠️ Requires YouTube Analytics API (OAuth).")
+            st.stop()
+
+        _tc1, _tc2 = st.columns(2)
+        with _tc1:
+            st.markdown("##### 📊 Traffic Sources")
+            _traffic = get_traffic_sources(_yt_start, _yt_end)
+            if not _traffic.empty:
+                fig = px.pie(_traffic, values="views", names="insightTrafficSourceType", color_discrete_sequence=px.colors.qualitative.Set3)
                 fig.update_layout(height=400, **CT())
                 _pc(fig)
                 _df(_traffic)
             else:
-                st.info("No traffic source data available.")
-        else:
-            st.info("💡 Requires YouTube Analytics API for traffic source data.")
+                st.info("No traffic source data.")
 
-    with _yt_tabs[4]:  # Audience
-        st.markdown("#### 👥 Audience Demographics")
-        if has_analytics_access():
-            _d_start = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
-            _d_end = datetime.now().strftime("%Y-%m-%d")
-            _demo = get_demographics(_d_start, _d_end)
-            _d_tabs2 = st.tabs(["Age/Gender", "Geography", "Devices", "Subscriber Status"])
-            with _d_tabs2[0]:
-                _ag = _demo.get("age_gender", pd.DataFrame())
-                if not _ag.empty:
-                    _df(_ag)
-                else:
-                    st.info("No age/gender data.")
-            with _d_tabs2[1]:
-                _geo = _demo.get("geography", pd.DataFrame())
-                if not _geo.empty:
-                    fig = px.bar(_geo, x="views", y="country", orientation="h",
-                                 color_discrete_sequence=[T["accent"]])
-                    fig.update_layout(height=500, **CT(), margin=dict(l=0, r=0, t=20, b=0))
-                    _pc(fig)
-                else:
-                    st.info("No geography data.")
-            with _d_tabs2[2]:
-                _dev = _demo.get("devices", pd.DataFrame())
-                if not _dev.empty:
-                    fig = px.pie(_dev, values="views", names="deviceType",
-                                 color_discrete_sequence=px.colors.qualitative.Pastel)
-                    fig.update_layout(height=350, **CT())
-                    _pc(fig)
-                else:
-                    st.info("No device data.")
-            with _d_tabs2[3]:
-                _sub = _demo.get("subscribed_status", pd.DataFrame())
-                if not _sub.empty:
-                    _df(_sub)
-                else:
-                    st.info("No subscriber status data.")
-        else:
-            st.info("💡 Requires YouTube Analytics API for audience demographics.")
-
-    with _yt_tabs[5]:  # Revenue
-        st.markdown("#### 💰 Revenue")
-        if has_analytics_access():
-            _r_start = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
-            _r_end = datetime.now().strftime("%Y-%m-%d")
-            _rev = get_revenue(_r_start, _r_end)
-            if _rev:
-                _rc1, _rc2, _rc3 = st.columns(3)
-                with _rc1:
-                    st.metric("Estimated Revenue", f"${float(_rev.get('estimatedRevenue', 0)):,.2f}")
-                with _rc2:
-                    st.metric("CPM", f"${float(_rev.get('cpm', 0)):,.2f}")
-                with _rc3:
-                    st.metric("Ad Impressions", f"{int(float(_rev.get('adImpressions', 0))):,}")
-            else:
-                st.info("No revenue data for this period.")
-
-            _rev_daily = get_revenue_daily(_r_start, _r_end)
-            if not _rev_daily.empty:
-                fig = go.Figure()
-                if "estimatedRevenue" in _rev_daily.columns:
-                    fig.add_trace(go.Scatter(
-                        x=_rev_daily["day"], y=_rev_daily["estimatedRevenue"],
-                        fill="tozeroy", line=dict(color=T["green"], width=2),
-                        fillcolor="rgba(0,230,118,0.1)",
-                    ))
-                fig.update_layout(height=350, **CT(), margin=dict(l=50, r=20, t=30, b=30))
+        with _tc2:
+            st.markdown("##### 📍 Where Videos Are Watched")
+            _playback = get_views_by_playback(_yt_start, _yt_end)
+            if not _playback.empty:
+                fig = px.pie(_playback, values="views", names="insightPlaybackLocationType", color_discrete_sequence=px.colors.qualitative.Pastel)
+                fig.update_layout(height=400, **CT())
                 _pc(fig)
-        else:
-            st.info("💡 Requires YouTube Analytics API for revenue data.")
+            else:
+                st.info("No playback location data.")
 
-    with _yt_tabs[6]:  # Search Terms
-        st.markdown("#### 🔎 YouTube Search Terms")
-        if has_analytics_access():
-            _s_start = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
-            _s_end = datetime.now().strftime("%Y-%m-%d")
-            _search = get_search_terms(_s_start, _s_end)
+        _sc1, _sc2 = st.columns(2)
+        with _sc1:
+            st.markdown("##### 🔎 Search Terms")
+            _search = get_search_terms(_yt_start, _yt_end)
             if not _search.empty:
-                fig = px.treemap(
-                    _search, path=["insightTrafficSourceDetail"], values="views",
-                    color="views", color_continuous_scale="Blues",
-                )
-                fig.update_layout(height=500, **CT())
+                fig = px.treemap(_search, path=["insightTrafficSourceDetail"], values="views", color="views", color_continuous_scale="Blues")
+                fig.update_layout(height=450, **CT())
                 _pc(fig)
-                _df(_search.head(30))
+                with st.expander("📋 Search Term Data"):
+                    _df(_search.head(30))
             else:
-                st.info("No search term data available.")
+                st.info("No search term data.")
+
+        with _sc2:
+            st.markdown("##### 🔗 Shared To")
+            _sharing = get_sharing_services(_yt_start, _yt_end)
+            if not _sharing.empty:
+                fig = px.bar(_sharing, x="shares", y="sharingService", orientation="h", color_discrete_sequence=[T["accent2"]])
+                fig.update_layout(height=400, **CT(), margin=dict(l=0, r=0, t=20, b=0))
+                _pc(fig)
+            else:
+                st.info("No sharing data.")
+
+    # ════════════════════════════════════════════════════════════
+    # TAB 6: PLAYLISTS
+    # ════════════════════════════════════════════════════════════
+    with _yt_tabs[6]:
+        st.markdown("#### 🎵 Playlist Performance")
+        if not _has_oauth:
+            st.warning("⚠️ Requires YouTube Analytics API (OAuth).")
+            st.stop()
+
+        _pl = get_playlist_analytics(_yt_start, _yt_end)
+        if not _pl.empty:
+            # Format for display
+            _pl_display = _pl.copy()
+            for col in _pl_display.columns:
+                if col not in ("playlist", "playlist_title"):
+                    _pl_display[col] = pd.to_numeric(_pl_display[col], errors="coerce").fillna(0)
+            if "estimatedMinutesWatched" in _pl_display.columns:
+                _pl_display["Watch Hours"] = (_pl_display["estimatedMinutesWatched"] / 60).round(1)
+            if "averageViewDuration" in _pl_display.columns:
+                _pl_display["Avg Time"] = _pl_display["averageViewDuration"].apply(lambda x: _format_duration(int(x)))
+
+            _df(_pl_display)
+
+            if "views" in _pl.columns:
+                fig = px.bar(
+                    _pl_display, x="views",
+                    y=_pl_display.get("playlist_title", _pl_display["playlist"]),
+                    orientation="h", color_discrete_sequence=[T["accent"]],
+                )
+                fig.update_layout(height=max(300, len(_pl_display) * 40), **CT(), margin=dict(l=0, r=0, t=20, b=0))
+                _pc(fig)
         else:
-            st.info("💡 Requires YouTube Analytics API for search term data.")
+            st.info("No playlist data for this period.")
+
+    # ════════════════════════════════════════════════════════════
+    # TAB 7: ASK AI (YouTube-specific AI chat)
+    # ════════════════════════════════════════════════════════════
+    with _yt_tabs[7]:
+        st.markdown("#### 💡 Ask AI About Your Channel")
+        _ai_mod = MOD.get("ai_engine")
+        if not _ai_mod:
+            st.warning("AI Engine not loaded.")
+            st.stop()
+
+        # Pre-built questions
+        _yt_questions = [
+            "How is my channel doing overall?",
+            "What's my best performing video and why?",
+            "Which videos have the worst retention?",
+            "What content should I create next based on my data?",
+            "Show me engagement breakdown",
+            "What's my average watch time?",
+            "Compare my top 5 vs bottom 5 videos",
+            "What patterns do you see in my viral videos?",
+            "Why are some videos getting 0 views?",
+            "Give me a 30-day action plan",
+            "What times should I upload?",
+            "Which videos should I make Part 2 of?",
+        ]
+
+        _sel_q = st.selectbox("Quick questions", ["Custom question..."] + _yt_questions, key="yt_ai_q")
+
+        if _sel_q != "Custom question...":
+            _yt_prompt = _sel_q
+        else:
+            _yt_prompt = st.text_input("Ask anything about your YouTube channel:", key="yt_custom_q")
+
+        if st.button("🤖 Ask AI", type="primary", use_container_width=True) and _yt_prompt:
+            # Build context from video data
+            _vids = st.session_state.get("yt_videos", [])
+            _context_parts = [
+                f"Channel: {_ch_info.get('title', 'Unknown')}",
+                f"Subscribers: {_ch_info.get('subscribers', 0):,}",
+                f"Total Views: {_ch_info.get('total_views', 0):,}",
+                f"Video Count: {len(_vids)}",
+            ]
+            if _vids:
+                _top5 = sorted(_vids, key=lambda x: x["views"], reverse=True)[:5]
+                _bot5 = sorted(_vids, key=lambda x: x["views"])[:5]
+                _context_parts.append("\nTop 5 Videos:")
+                for v in _top5:
+                    _context_parts.append(f"  - {v['title'][:60]}: {v['views']:,} views, {v['likes']} likes, {v['engagement_rate']:.1f}% eng, {v['duration_label']}")
+                _context_parts.append("\nBottom 5 Videos:")
+                for v in _bot5:
+                    _context_parts.append(f"  - {v['title'][:60]}: {v['views']:,} views, {v['likes']} likes, {v['engagement_rate']:.1f}% eng")
+            _context = "\n".join(_context_parts)
+
+            _full_prompt = f"""You are a YouTube analytics expert analyzing the Eagle 3D Streaming YouTube channel data.
+
+Channel Data:
+{_context}
+
+User Question: {_yt_prompt}
+
+Provide specific, actionable advice based on the data. Include numbers and specific video titles when relevant."""
+
+            with st.spinner("Thinking..."):
+                _resp = _ai_mod.ask(_full_prompt)
+                st.markdown(_resp)
+
 
 
 # ═══════════════════════════════════════════════════════════════

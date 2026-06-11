@@ -7,7 +7,22 @@ import os
 import json
 import time
 import tempfile
+import subprocess
+import sys
 from pathlib import Path
+
+# Self-heal: auto-install gspread if missing
+try:
+    import gspread
+except ImportError:
+    print("[Sheets] gspread not found — auto-installing...")
+    try:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "gspread>=5.10", "-q"])
+        import gspread
+        print("[Sheets] ✅ gspread installed successfully")
+    except Exception as _e:
+        print(f"[Sheets] Auto-install failed: {_e}")
+        gspread = None
 from datetime import datetime
 
 DATA_DIR = Path("data_output")
