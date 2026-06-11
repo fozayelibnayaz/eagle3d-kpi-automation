@@ -1439,7 +1439,7 @@ elif page == "🔮 Predictions":
                 fig.add_trace(go.Scatter(
                     x=_ds, y=[v * 0.8 for v in _vs],
                     fill="tonexty", mode="lines", line=dict(width=0),
-                    fillcolor=f"{T['accent']}18", showlegend=False,
+                    fillcolor="rgba(0,212,255,0.09)", showlegend=False,
                 ))
                 fig.add_trace(go.Scatter(
                     x=_ds, y=_vs, mode="lines+markers",

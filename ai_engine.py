@@ -72,7 +72,7 @@ def _get_api_key(provider):
 # ── Groq API (OpenAI-compatible) ────────────────────────────
 
 def _call_groq(system_prompt: str, user_message: str, api_key: str) -> str:
-    """Call Groq API (fast LLM inference)."""
+    """Call Groq API (fast LLM inference). NO fallback to Gemini here — handled by ask_ai."""
     import urllib.request
     import json as _json
 
@@ -101,16 +101,7 @@ def _call_groq(system_prompt: str, user_message: str, api_key: str) -> str:
             result = _json.loads(resp.read())
             return result["choices"][0]["message"]["content"]
     except Exception as e:
-        # Try Gemini as fallback — with actual data, not rule-based
-        gemini_key = _get_api_key("gemini")
-        if gemini_key and len(str(gemini_key).strip()) > 10:
-            try:
-                gemini_answer = _call_gemini(system_prompt, user_message, gemini_key)
-                return f"*(Groq rate-limited, used Gemini)*\n\n{gemini_answer}"
-            except Exception:
-                pass
-        # Final fallback: rule-based with the actual data context
-        return _rule_based_answer(user_message, system_prompt + "\n\n" + user_message)
+        raise RuntimeError(f"Groq API error: {e}")
 
 
 # ── Gemini API ──────────────────────────────────────────────
@@ -138,16 +129,7 @@ def _call_gemini(system_prompt: str, user_message: str, api_key: str) -> str:
             result = _json.loads(resp.read())
             return result["candidates"][0]["content"]["parts"][0]["text"]
     except Exception as e:
-        # Try Groq as fallback
-        groq_key = _get_api_key("groq")
-        if groq_key and len(str(groq_key).strip()) > 10:
-            try:
-                groq_answer = _call_groq(system_prompt, user_message, groq_key)
-                return f"*(Gemini rate-limited, used Groq)*\n\n{groq_answer}"
-            except Exception:
-                pass
-        # Final fallback: rule-based with actual data context
-        return _rule_based_answer(user_message, system_prompt + "\n\n" + user_message)
+        raise RuntimeError(f"Gemini API error: {e}")
 
 
 # ── Rule-based fallback ─────────────────────────────────────
@@ -343,10 +325,34 @@ Please analyze the data above and answer the question thoroughly. Include specif
 
     if provider == "groq":
         api_key = _get_api_key("groq")
-        answer = _call_groq(SYSTEM_PROMPT, user_message, api_key)
+        try:
+            answer = _call_groq(SYSTEM_PROMPT, user_message, api_key)
+        except Exception as e:
+            # Try Gemini once, no recursion
+            gemini_key = _get_api_key("gemini")
+            if gemini_key and len(str(gemini_key).strip()) > 10:
+                try:
+                    answer = _call_gemini(SYSTEM_PROMPT, user_message, gemini_key)
+                    answer = f"*(Groq unavailable, used Gemini)*\n\n{answer}"
+                except Exception:
+                    answer = _rule_based_answer(question, data_context)
+            else:
+                answer = _rule_based_answer(question, data_context)
     elif provider == "gemini":
         api_key = _get_api_key("gemini")
-        answer = _call_gemini(SYSTEM_PROMPT, user_message, api_key)
+        try:
+            answer = _call_gemini(SYSTEM_PROMPT, user_message, api_key)
+        except Exception as e:
+            # Try Groq once, no recursion
+            groq_key = _get_api_key("groq")
+            if groq_key and len(str(groq_key).strip()) > 10:
+                try:
+                    answer = _call_groq(SYSTEM_PROMPT, user_message, groq_key)
+                    answer = f"*(Gemini unavailable, used Groq)*\n\n{answer}"
+                except Exception:
+                    answer = _rule_based_answer(question, data_context)
+            else:
+                answer = _rule_based_answer(question, data_context)
     else:
         answer = _rule_based_answer(question, data_context)
 
