@@ -25,14 +25,21 @@ def _esc(t):
 
 
 def _send(message: str, parse_mode="MarkdownV2") -> dict:
-    """Send to Telegram. Returns {ok, error}."""
+    """Send to Telegram. Checks st.secrets first, then env vars."""
+    bot_token = ""
+    chat_id = ""
+    # Try Streamlit secrets first (for cloud dashboard)
     try:
         import streamlit as st
-        bot_token = st.secrets.get("TELEGRAM_BOT_TOKEN", "")
-        chat_id = st.secrets.get("TELEGRAM_CHAT_ID", "")
+        bot_token = st.secrets.get("TELEGRAM_BOT_TOKEN", "").strip()
+        chat_id = st.secrets.get("TELEGRAM_CHAT_ID", "").strip()
     except Exception:
-        bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-        chat_id = os.environ.get("TELEGRAM_CHAT_ID", "")
+        pass
+    # Fallback to env vars (for GitHub Actions / local)
+    if not bot_token:
+        bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+    if not chat_id:
+        chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
 
     if not bot_token or not chat_id:
         return {"ok": False, "error": "TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not set in secrets"}

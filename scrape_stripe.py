@@ -275,7 +275,22 @@ def main():
             except Exception:
                 pass
             
-            page.wait_for_selector("table tbody tr", timeout=30000)
+            # Wait for table — try multiple selectors for resilience
+            table_found = False
+            for selector in ["table tbody tr", "table tr", "[data-testid='table'] tr", ".Table tbody tr", "tbody tr"]:
+                try:
+                    page.wait_for_selector(selector, timeout=10000)
+                    table_found = True
+                    log(f"Table found with selector: {selector}")
+                    break
+                except Exception:
+                    continue
+            
+            if not table_found:
+                log("⚠️ No table found on Stripe page — taking screenshot and using existing data")
+                page.screenshot(path=str(DATA_DIR / "debug_stripe_no_table.png"))
+                # Don't crash — just return empty so pipeline continues with existing Stripe data
+                return
             time.sleep(5)
             
             log(f"\n=== Pagination ({mode} mode) ===")

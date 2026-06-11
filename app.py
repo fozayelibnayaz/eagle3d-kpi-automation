@@ -776,27 +776,20 @@ with st.sidebar:
     st.markdown("---")
     _ai_mod = MOD.get("ai_engine")
     if _ai_mod:
-        _pr = _ai_mod._get_provider()
+        _pr, _dbg = _ai_mod._get_provider_debug()
         _ic = {"groq": "⚡", "gemini": "💎", "rule_based": "🧠"}
         _nm = {"groq": "Groq", "gemini": "Gemini", "rule_based": "Rules"}
         st.caption(f"{_ic.get(_pr, '🤖')} AI: {_nm.get(_pr, _pr)}")
-        # Debug: show why rule-based if applicable
         if _pr == "rule_based":
-            _has_groq = False
-            _has_gemini = False
-            try:
-                if "GROQ_API_KEY" in st.secrets and st.secrets["GROQ_API_KEY"]:
-                    _has_groq = True
-                if "GEMINI_API_KEY" in st.secrets and st.secrets["GEMINI_API_KEY"]:
-                    _has_gemini = True
-            except Exception:
-                pass
-            if not _has_groq and not _has_gemini:
-                st.caption("⚠️ No AI keys found in secrets")
-            elif _has_groq:
-                st.caption("⚠️ GROQ_API_KEY found but detection failed")
-            elif _has_gemini:
-                st.caption("⚠️ GEMINI_API_KEY found but detection failed")
+            lines = []
+            if _dbg["secret_groq"]:
+                lines.append(f"⚠️ GROQ key found ({_dbg['groq_len']} chars) but invalid")
+            if _dbg["secret_gemini"]:
+                lines.append(f"⚠️ GEMINI key found ({_dbg['gemini_len']} chars) but invalid")
+            if not lines:
+                lines.append("⚠️ No AI keys in secrets — using rule-based")
+            for l in lines:
+                st.caption(l)
     st.caption(f"🦅 v5.1 | {datetime.now().strftime('%H:%M')}")
 
 # ═══════════════════════════════════════════════════════════════
@@ -1094,6 +1087,79 @@ if page == "📊 Dashboard":
                     showlegend=False,
                 )
                 _pc(fig)
+
+    # ── COMBINED SOURCES: GA4 + CRM ──
+    if not utm_df.empty or not leads_df.empty:
+        st.markdown(
+            '<div class="sec-head">🌐📋 Combined Sources — GA4 Traffic + CRM Sign-ups</div>',
+            unsafe_allow_html=True,
+        )
+        combined_rows = []
+
+        # GA4 traffic sources
+        if not utm_df.empty:
+            src_col = "source_normalized" if "source_normalized" in utm_df.columns else "sessionSource"
+            sess_col = "sessions" if "sessions" in utm_df.columns else src_col
+            by_src = utm_df.groupby(src_col).agg(
+                Sessions=(sess_col, "sum"),
+            ).reset_index()
+            if "conversions" in utm_df.columns:
+                conv_agg = utm_df.groupby(src_col)["conversions"].sum().reset_index()
+                by_src = by_src.merge(conv_agg, on=src_col, how="left")
+            by_src = by_src.rename(columns={src_col: "Source"})
+            for _, row in by_src.iterrows():
+                combined_rows.append({
+                    "Source": str(row["Source"]),
+                    "GA4 Sessions": int(row.get("Sessions", 0)),
+                    "GA4 Conversions": int(row.get("conversions", 0)),
+                    "CRM Signups": 0,
+                    "Type": "traffic",
+                })
+
+        # CRM lead sources
+        if not leads_df.empty:
+            ls_col = "Lead Source" if "Lead Source" in leads_df.columns else None
+            su_col = "Signups" if "Signups" in leads_df.columns else None
+            if ls_col and su_col:
+                for _, row in leads_df.iterrows():
+                    src = str(row[ls_col])
+                    su = int(row.get(su_col, 0)) if pd.notna(row.get(su_col)) else 0
+                    # Try to merge with existing traffic source
+                    found = False
+                    for cr in combined_rows:
+                        if cr["Source"].lower() == src.lower():
+                            cr["CRM Signups"] = su
+                            cr["Type"] = "both"
+                            found = True
+                            break
+                    if not found:
+                        combined_rows.append({
+                            "Source": src,
+                            "GA4 Sessions": 0,
+                            "GA4 Conversions": 0,
+                            "CRM Signups": su,
+                            "Type": "signup",
+                        })
+
+        if combined_rows:
+            combined_df = pd.DataFrame(combined_rows)
+            # Aggregate duplicates
+            combined_df = combined_df.groupby("Source").agg({
+                "GA4 Sessions": "sum", "GA4 Conversions": "sum",
+                "CRM Signups": "sum", "Type": "first",
+            }).reset_index()
+            combined_df["Total Interactions"] = combined_df["GA4 Sessions"] + combined_df["CRM Signups"]
+            combined_df = combined_df.sort_values("Total Interactions", ascending=False)
+            combined_df["Conv %"] = (combined_df["GA4 Conversions"] / combined_df["GA4 Sessions"].replace(0, 1) * 100).round(1)
+            # Reorder columns
+            show_cols = [c for c in ["Source", "GA4 Sessions", "GA4 Conversions", "Conv %", "CRM Signups", "Total Interactions", "Type"] if c in combined_df.columns]
+            _df(combined_df[show_cols].head(30), height=400)
+
+            # Pie chart of combined
+            fig = px.pie(combined_df.head(10), values="Total Interactions", names="Source", hole=0.5,
+                         color_discrete_sequence=CC)
+            fig.update_layout(height=350, **CT(), margin=dict(l=0, r=0, t=0, b=0), showlegend=False)
+            _pc(fig)
 
     _ai_mod = MOD.get("ai_engine")
     if _ai_mod:
@@ -1409,7 +1475,7 @@ elif page == "📋 Reports":
             "business", "marketing", "data_analysis", "executive",
         ],
     )
-    _rc1, _rc2 = st.columns(2)
+    _rc1, _rc2, _rc3 = st.columns(3)
     with _rc1:
         if st.button("📝 Generate Report", type="primary",
                      use_container_width=True):
@@ -1430,6 +1496,20 @@ elif page == "📋 Reports":
                 _rep.generate_telegram_report(st.session_state["report"]),
                 language="markdown",
             )
+    with _rc3:
+        if (st.button("📤 Send to Telegram", type="primary", use_container_width=True)
+                and st.session_state.get("report")):
+            with st.spinner("Sending..."):
+                try:
+                    from telegram_alerts import _send
+                    _tg_msg = _rep.generate_telegram_report(st.session_state["report"])
+                    _result = _send(_tg_msg)
+                    if _result["ok"]:
+                        st.success("✅ Sent to Telegram!")
+                    else:
+                        st.error(f"❌ Failed: {_result.get('error', 'unknown')}")
+                except Exception as _e:
+                    st.error(f"❌ Error: {_e}")
 
     if st.session_state.get("report"):
         st.markdown(st.session_state["report"]["markdown"])
@@ -1440,6 +1520,69 @@ elif page == "📋 Reports":
             "text/markdown",
             use_container_width=True,
         )
+
+    # ── SMART TELEGRAM ALERTS ──
+    st.markdown("---")
+    st.markdown("### 📨 Smart Telegram Alerts")
+
+    try:
+        from telegram_alerts import (
+            daily_kpi_report, period_report, anomaly_alerts,
+            marketing_performance, top_performer_alert, send,
+        )
+        _tg_ok = True
+    except ImportError:
+        _tg_ok = False
+        st.warning("telegram_alerts module not found")
+
+    if _tg_ok:
+        _tg_c1, _tg_c2 = st.columns(2)
+        with _tg_c1:
+            st.markdown("#### 📊 Reports")
+            if st.button("📤 Send Daily Report", use_container_width=True, key="tg_daily"):
+                with st.spinner("Sending daily report..."):
+                    _msg = daily_kpi_report(kpi, prev_kpi if enable_comp else None, utm_df, leads_df)
+                    _r = send(_msg)
+                    st.success("✅ Sent!") if _r["ok"] else st.error(f"❌ {_r.get('error')}")
+
+            if st.button("📤 Send Period Report", use_container_width=True, key="tg_period"):
+                with st.spinner("Sending period report..."):
+                    _msg = period_report(kpi, prev_kpi if enable_comp else None, utm_df, leads_df, period_type=rep_type)
+                    _r = send(_msg)
+                    st.success("✅ Sent!") if _r["ok"] else st.error(f"❌ {_r.get('error')}")
+
+            if st.button("📤 Marketing Scorecard", use_container_width=True, key="tg_marketing"):
+                with st.spinner("Sending marketing scorecard..."):
+                    _msg = marketing_performance(kpi, prev_kpi if enable_comp else None, utm_df, leads_df)
+                    _r = send(_msg)
+                    st.success("✅ Sent!") if _r["ok"] else st.error(f"❌ {_r.get('error')}")
+
+            if st.button("📤 Top Performer Alert", use_container_width=True, key="tg_top"):
+                with st.spinner("Sending..."):
+                    _msg = top_performer_alert(kpi, utm_df)
+                    _r = send(_msg)
+                    st.success("✅ Sent!") if _r["ok"] else st.error(f"❌ {_r.get('error')}")
+
+        with _tg_c2:
+            st.markdown("#### 🚨 Anomaly Alerts")
+            if st.button("📤 Send Anomaly Scan", use_container_width=True, key="tg_anomaly"):
+                with st.spinner("Scanning anomalies..."):
+                    _alerts = anomaly_alerts(kpi, prev_kpi if enable_comp else None)
+                    for _a in _alerts[:3]:
+                        _r = send(_a["msg"])
+                        if not _r["ok"]:
+                            st.error(f"❌ {_r.get('error')}")
+                            break
+                    else:
+                        st.success(f"✅ Sent {len(_alerts[:3])} alert(s)!")
+
+            # Show current anomalies
+            st.markdown("#### Current Anomalies")
+            _cur_alerts = anomaly_alerts(kpi, prev_kpi if enable_comp else None)
+            for _a in _cur_alerts:
+                _colors = {"critical": "#FF5252", "warning": "#FFD600", "positive": "#00E676", "info": "#00D4FF"}
+                _c = _colors.get(_a["type"], "#94A3B1")
+                st.markdown(f'<div style="border-left:3px solid {_c};padding:8px 12px;margin:4px 0;background:#111D32;border-radius:6px;">{_a["msg"][:200]}</div>', unsafe_allow_html=True)
 
     st.markdown("---")
     st.markdown("#### 📁 Archive")
@@ -1534,6 +1677,40 @@ elif page == "🔔 Alerts":
                 f'💡 {a["a"]}</div></div>',
                 unsafe_allow_html=True,
             )
+
+    # ── TELEGRAM ALERTS ──
+    st.markdown("---")
+    st.markdown("### 📨 Send Alerts to Telegram")
+
+    try:
+        from telegram_alerts import anomaly_alerts, send, daily_kpi_report, marketing_performance
+        _tg_ok = True
+    except ImportError:
+        _tg_ok = False
+        st.warning("telegram_alerts module not found")
+
+    if _tg_ok:
+        _ac1, _ac2, _ac3 = st.columns(3)
+        with _ac1:
+            if st.button("📤 Send All Alerts", type="primary", use_container_width=True, key="alert_tg_all"):
+                with st.spinner("Sending alerts..."):
+                    _all_a = anomaly_alerts(kpi, prev_kpi if enable_comp else None)
+                    _sent = 0
+                    for _a in _all_a[:5]:
+                        _r = send(_a["msg"])
+                        if _r["ok"]:
+                            _sent += 1
+                    st.success(f"✅ Sent {_sent}/{len(_all_a[:5])} alerts")
+        with _ac2:
+            if st.button("📊 Send Daily Summary", use_container_width=True, key="alert_tg_daily"):
+                with st.spinner("Sending..."):
+                    _r = send(daily_kpi_report(kpi, prev_kpi if enable_comp else None, utm_df, leads_df))
+                    st.success("✅ Sent!") if _r["ok"] else st.error(f"❌ {_r.get('error')}")
+        with _ac3:
+            if st.button("📊 Marketing Score", use_container_width=True, key="alert_tg_mkt"):
+                with st.spinner("Sending..."):
+                    _r = send(marketing_performance(kpi, prev_kpi if enable_comp else None, utm_df, leads_df))
+                    st.success("✅ Sent!") if _r["ok"] else st.error(f"❌ {_r.get('error')}")
 
 # ═══════════════════════════════════════════════════════════════
 # PAGE: 🔬 EDA LAB
@@ -1746,15 +1923,23 @@ elif page == "🔍 Browse Data":
     )
 
     # Global date filter for Browse Data
-    _bd_c1, _bd_c2, _bd_c3 = st.columns(3)
+    _bd_c1, _bd_c2, _bd_c3, _bd_c4 = st.columns(4)
     with _bd_c1:
         _bd_preset = st.selectbox("📅 Date filter:", [
             "All Time", "Today", "Yesterday", "This Week", "Last Week",
             "This Month", "Last Month", "Last 3 Months", "Last 6 Months", "This Year",
+            "Custom Month",
         ], key="bd_preset")
     with _bd_c2:
-        _bd_status = st.selectbox("Status:", ["All", "ACCEPTED", "REJECTED", "REPEAT", "REPEAT_UPLOAD", "NOT_DETERMINED", "DISPOSABLE", "INTERNAL", "SMTP_REJECTED", "NO_MX", "ZERO_SPEND"], key="bd_status")
+        if _bd_preset == "Custom Month":
+            _bd_month = st.selectbox("Month:", [
+                f"{y}-{m:02d}" for y in range(2026, 2023, -1) for m in range(12, 0, -1)
+            ], index=0, key="bd_month_sel")
+        else:
+            _bd_month = None
     with _bd_c3:
+        _bd_status = st.selectbox("Status:", ["All", "ACCEPTED", "REJECTED", "REPEAT", "REPEAT_UPLOAD", "NOT_DETERMINED", "DISPOSABLE", "INTERNAL", "SMTP_REJECTED", "NO_MX", "ZERO_SPEND"], key="bd_status")
+    with _bd_c4:
         _bd_search = st.text_input("🔍 Search", placeholder="email, name...", key="bd_search")
 
     # Compute date range from preset
@@ -1766,12 +1951,24 @@ elif page == "🔍 Browse Data":
         "This Week": (_bd_today - timedelta(days=_bd_today.weekday()), _bd_today),
         "Last Week": (_bd_today - timedelta(days=_bd_today.weekday() + 7), _bd_today - timedelta(days=_bd_today.weekday() + 1)),
         "This Month": (_bd_today.replace(day=1), _bd_today),
-        "Last Month": (( _bd_today.replace(day=1) - timedelta(days=1)).replace(day=1), _bd_today.replace(day=1) - timedelta(days=1)),
+        "Last Month": ((_bd_today.replace(day=1) - timedelta(days=1)).replace(day=1), _bd_today.replace(day=1) - timedelta(days=1)),
         "Last 3 Months": (_bd_today - timedelta(days=90), _bd_today),
         "Last 6 Months": (_bd_today - timedelta(days=180), _bd_today),
         "This Year": (_bd_today.replace(month=1, day=1), _bd_today),
     }
-    _bd_ds, _bd_de = _bd_date_map.get(_bd_preset, (datetime(2020, 1, 1).date(), _bd_today))
+    if _bd_preset == "Custom Month" and _bd_month:
+        _m_parts = _bd_month.split("-")
+        _m_y, _m_m = int(_m_parts[0]), int(_m_parts[1])
+        _m_start = datetime(_m_y, _m_m, 1).date()
+        if _m_m == 12:
+            _m_end = datetime(_m_y + 1, 1, 1).date() - timedelta(days=1)
+        else:
+            _m_end = datetime(_m_y, _m_m + 1, 1).date() - timedelta(days=1)
+        _bd_ds, _bd_de = _m_start, _m_end
+    else:
+        _bd_ds, _bd_de = _bd_date_map.get(_bd_preset, (datetime(2020, 1, 1).date(), _bd_today))
+
+    st.caption(f"📅 Showing: **{_bd_ds}** → **{_bd_de}**")
 
     def _apply_browse_filters(df, label):
         """Apply date, status, and search filters to a dataframe."""
@@ -1799,6 +1996,9 @@ elif page == "🔍 Browse Data":
             fl = fl[msk]
         return fl
 
+    # ── INLINE OVERRIDE ENGINE ──
+    _mo_engine = MOD.get("manual_override_engine")
+
     tabs = st.tabs(["📥 Sign-ups", "📦 First Uploads", "💳 Stripe"])
     _stripe = load_sheet("Verified_STRIPE")
     for _tab, (_lb, _df_data) in zip(
@@ -1811,7 +2011,7 @@ elif page == "🔍 Browse Data":
     ):
         with _tab:
             if _df_data.empty:
-                st.warning(f"No {_lb} data")
+                st.warning(f"No {_lb} data — check Google Sheets connection")
                 continue
 
             # Apply all filters
@@ -1837,6 +2037,53 @@ elif page == "🔍 Browse Data":
                 fl = fl.sort_values(by=_sort_sel, ascending=_ascending, na_position="last")
 
             st.metric("Showing", f"{len(fl)} rows")
+
+            # ── INLINE OVERRIDE SECTION ──
+            if _mo_engine and "final_status" in fl.columns:
+                with st.expander("✏️ Override Labels", expanded=False):
+                    st.caption("Select emails to change their status. Changes apply to the override system.")
+                    _email_col = None
+                    for _ec in fl.columns:
+                        if "email" in _ec.lower():
+                            _email_col = _ec
+                            break
+                    if _email_col:
+                        _avail_emails = fl[_email_col].unique().tolist()
+                        _sel_emails = st.multiselect(
+                            f"Select emails from {_lb}:",
+                            _avail_emails[:200],
+                            key=f"ov_sel_{_lb}",
+                        )
+                        _ov_action = st.selectbox(
+                            "Change to:",
+                            ["ACCEPTED", "REJECTED", "REPEAT_UPLOAD", "DISPOSABLE", "NOT_DETERMINED"],
+                            key=f"ov_act_{_lb}",
+                        )
+                        _ov_reason = st.text_input("Reason (optional):", key=f"ov_reason_{_lb}")
+                        if _sel_emails and st.button(f"✅ Apply Override ({len(_sel_emails)} emails)", type="primary", key=f"ov_btn_{_lb}", use_container_width=True):
+                            _ov_count = 0
+                            for _se in _sel_emails:
+                                _orig = fl.loc[fl[_email_col] == _se, "final_status"].values
+                                _orig_status = str(_orig[0]) if len(_orig) > 0 else "UNKNOWN"
+                                _action_map = {
+                                    "ACCEPTED": "accept", "REJECTED": "reject",
+                                    "REPEAT_UPLOAD": "repeat_upload", "DISPOSABLE": "disposable",
+                                    "NOT_DETERMINED": "not_determined",
+                                }
+                                _mo_engine.apply_override(
+                                    email=_se,
+                                    action=_action_map.get(_ov_action, "not_determined"),
+                                    target_tab="ALL",
+                                    reason=_ov_reason or f"Changed to {_ov_action} via Browse Data",
+                                    original_category=_orig_status,
+                                )
+                                _ov_count += 1
+                            st.success(f"✅ Overrode {_ov_count} emails → {_ov_action}. They'll be applied on next pipeline run.")
+                    else:
+                        st.info("No email column found for override.")
+            elif not _mo_engine:
+                st.caption("⚠️ Manual override engine not loaded")
+
             _df(fl.head(mr), height=450)
             st.download_button(
                 "⬇️ Download",
@@ -1845,6 +2092,10 @@ elif page == "🔍 Browse Data":
                 mime="text/csv",
                 use_container_width=True,
             )
+
+            # Stripe data check
+            if _lb == "Stripe" and fl.empty:
+                st.warning("⚠️ No Stripe data loaded. The Stripe scraper may be timing out. Check pipeline logs.")
 
 # ═══════════════════════════════════════════════════════════════
 # PAGE: ✏️ MANUAL OVERRIDE
@@ -2144,7 +2395,7 @@ st.divider()
 _fc1, _fc2, _fc3 = st.columns(3)
 with _fc1:
     st.caption(
-        f"🦅 Eagle 3D Streaming KPI v5.1 | "
+        f"🦅 Eagle 3D Streaming KPI v5.6 | "
         f"{datetime.now().strftime('%Y-%m-%d %H:%M')}"
     )
 with _fc2:

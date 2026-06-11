@@ -15,28 +15,45 @@ from typing import Optional
 # ── Provider detection ─────────────────────────────────────
 
 def _get_provider():
-    """Returns 'groq', 'gemini', or 'rule_based'."""
-    # Check environment variables first
+    """Returns 'groq', 'gemini', or 'rule_based'. Detects from env + Streamlit secrets."""
+    # Check environment variables first (for local/pipeline)
     if os.environ.get("GROQ_API_KEY"):
         return "groq"
-    # Check Streamlit secrets
-    try:
-        import streamlit as st
-        _gk = st.secrets.get("GROQ_API_KEY", "")
-        if _gk and len(str(_gk)) > 10:
-            return "groq"
-    except Exception:
-        pass
     if os.environ.get("GEMINI_API_KEY"):
         return "gemini"
+    # Check Streamlit secrets (for cloud)
     try:
         import streamlit as st
+        # Check Groq
+        _gk = st.secrets.get("GROQ_API_KEY", "")
+        if _gk and len(str(_gk).strip()) > 10:
+            return "groq"
+        # Check Gemini
         _gmk = st.secrets.get("GEMINI_API_KEY", "")
-        if _gmk and len(str(_gmk)) > 10:
+        if _gmk and len(str(_gmk).strip()) > 10:
             return "gemini"
     except Exception:
         pass
     return "rule_based"
+
+
+def _get_provider_debug():
+    """Returns (provider, debug_info) for sidebar display."""
+    info = {"env_groq": False, "env_gemini": False, "secret_groq": False, "secret_gemini": False,
+            "groq_len": 0, "gemini_len": 0}
+    info["env_groq"] = bool(os.environ.get("GROQ_API_KEY"))
+    info["env_gemini"] = bool(os.environ.get("GEMINI_API_KEY"))
+    try:
+        import streamlit as st
+        _gk = st.secrets.get("GROQ_API_KEY", "")
+        _gmk = st.secrets.get("GEMINI_API_KEY", "")
+        info["secret_groq"] = bool(_gk)
+        info["secret_gemini"] = bool(_gmk)
+        info["groq_len"] = len(str(_gk).strip())
+        info["gemini_len"] = len(str(_gmk).strip())
+    except Exception:
+        pass
+    return _get_provider(), info
 
 
 def _get_api_key(provider):
@@ -84,14 +101,16 @@ def _call_groq(system_prompt: str, user_message: str, api_key: str) -> str:
             result = _json.loads(resp.read())
             return result["choices"][0]["message"]["content"]
     except Exception as e:
-        # Try Gemini as fallback before rule-based
+        # Try Gemini as fallback — with actual data, not rule-based
         gemini_key = _get_api_key("gemini")
-        if gemini_key:
+        if gemini_key and len(str(gemini_key).strip()) > 10:
             try:
-                return _call_gemini(system_prompt, user_message, gemini_key)
-            except:
+                gemini_answer = _call_gemini(system_prompt, user_message, gemini_key)
+                return f"*(Groq rate-limited, used Gemini)*\n\n{gemini_answer}"
+            except Exception:
                 pass
-        return f"Groq API error: {e}. Falling back to rule-based analysis.\n\n" + _rule_based_answer(user_message, system_prompt)
+        # Final fallback: rule-based with the actual data context
+        return _rule_based_answer(user_message, system_prompt + "\n\n" + user_message)
 
 
 # ── Gemini API ──────────────────────────────────────────────
@@ -119,7 +138,16 @@ def _call_gemini(system_prompt: str, user_message: str, api_key: str) -> str:
             result = _json.loads(resp.read())
             return result["candidates"][0]["content"]["parts"][0]["text"]
     except Exception as e:
-        return f"Gemini API error: {e}. Falling back to rule-based analysis.\n\n" + _rule_based_answer(user_message, system_prompt)
+        # Try Groq as fallback
+        groq_key = _get_api_key("groq")
+        if groq_key and len(str(groq_key).strip()) > 10:
+            try:
+                groq_answer = _call_groq(system_prompt, user_message, groq_key)
+                return f"*(Gemini rate-limited, used Groq)*\n\n{groq_answer}"
+            except Exception:
+                pass
+        # Final fallback: rule-based with actual data context
+        return _rule_based_answer(user_message, system_prompt + "\n\n" + user_message)
 
 
 # ── Rule-based fallback ─────────────────────────────────────
