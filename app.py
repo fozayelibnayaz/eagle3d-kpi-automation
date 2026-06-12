@@ -4115,7 +4115,61 @@ elif page == "⚙️ Settings":
             st.metric(_l, _c)
 
     st.markdown("---")
-    st.markdown("#### ⚡ Pipeline & Auto-Refresh")
+    st.markdown("#### 💳 Stripe Data Diagnostics")
+    if not stripe_raw.empty:
+        _s_acc = sum(1 for _, r in stripe_raw.iterrows() if str(r.get("final_status", "")).upper() == "ACCEPTED")
+        _s_rej = sum(1 for _, r in stripe_raw.iterrows() if str(r.get("final_status", "")).upper() == "REJECTED")
+        _s_has_fp = sum(1 for _, r in stripe_raw.iterrows() if str(r.get("First payment", "")).strip() not in ("", "nan", "None", "—"))
+        _s_has_spend = sum(1 for _, r in stripe_raw.iterrows() if str(r.get("Total spend", "")).strip() not in ("", "nan", "None", "—", "$0.00", "$0"))
+        _s_cur_month = datetime.now().strftime("%Y-%m")
+        _s_fp_month = 0
+        _s_created_month = 0
+        for _, r in stripe_raw.iterrows():
+            if str(r.get("final_status", "")).upper() == "ACCEPTED":
+                _fp = str(r.get("First payment", "")).strip()
+                _cr = str(r.get("Created", "")).strip()
+                _rd = str(r.get("row_date_used", "")).strip()
+                if _fp and _fp.startswith(_s_cur_month):
+                    _s_fp_month += 1
+                if _cr and _cr.startswith(_s_cur_month):
+                    _s_created_month += 1
+                if _rd and _rd.startswith(_s_cur_month):
+                    _s_created_month += 1  # row_date_used counts too
+
+        _sc1, _sc2, _sc3, _sc4 = st.columns(4)
+        with _sc1:
+            st.metric("Total Rows", f"{len(stripe_raw):,}")
+        with _sc2:
+            st.metric("ACCEPTED", f"{_s_acc:,}")
+        with _sc3:
+            st.metric("REJECTED", f"{_s_rej:,}")
+        with _sc4:
+            st.metric("This Month (Accepted)", f"{_s_fp_month} (FP) / {_s_created_month} (Created)")
+
+        with st.expander("🔍 Stripe Details — Accept/Reject Breakdown"):
+            if "category" in stripe_raw.columns:
+                _cat_counts = stripe_raw.groupby("category").size().reset_index(name="Count").sort_values("Count", ascending=False)
+                _df(_cat_counts, height=300)
+
+            if _s_has_fp < _s_acc:
+                st.warning(f"⚠️ Only {_s_has_fp}/{_s_acc} ACCEPTED rows have 'First payment' date. "
+                          f"Rows without First payment use 'Created' date instead. "
+                          f"If this seems wrong, check if Stripe scraper is capturing the 'first_payment' column.")
+
+            st.caption(f"💡 Rows with 'First payment' date: {_s_has_fp} | Rows with 'Total spend' > $0: {_s_has_spend}")
+            st.caption("💡 Pipeline must re-run after code update to re-categorize Stripe data with the new logic.")
+
+        # Show sample of recent Stripe data
+        with st.expander("📋 Recent Stripe Data (first 10 rows)"):
+            _show_cols = [c for c in ["Email", "Customer", "First payment", "Created", "Total spend", "final_status", "category"] if c in stripe_raw.columns]
+            if _show_cols:
+                _df(stripe_raw[_show_cols].head(10), height=300)
+            else:
+                st.dataframe(stripe_raw.head(10), height=300)
+    else:
+        st.error("❌ No Stripe data loaded! Either Verified_STRIPE sheet is empty or connection failed.")
+        st.caption("💡 This means the pipeline hasn't successfully scraped Stripe data. "
+                   "Check that STRIPE_COOKIES_JSON secret is set and valid in GitHub repo secrets.")
     st.caption("The pipeline fetches fresh data from all sources. Auto-trigger runs daily when data is stale.")
 
     # Auto-trigger status
