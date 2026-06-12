@@ -1,5 +1,5 @@
 """
-Eagle 3D Streaming — KPI Analytics Dashboard v7
+Eagle Analytics Hub — Unified KPI & Analytics Dashboard v7
 =================================================
 All-in-one: KPI, GA4, YouTube, LinkedIn, Cross-Platform Correlation
 Dark/light mode, AI-powered analytics, Telegram alerts.
@@ -37,7 +37,7 @@ else:
     _icon = "🦅"
 
 st.set_page_config(
-    page_title="Eagle 3D Streaming — KPI",
+    page_title="Eagle Analytics Hub",
     page_icon=_icon,
     layout="wide",
     initial_sidebar_state="expanded",
@@ -694,7 +694,7 @@ with st.sidebar:
     st.markdown(
         '<div style="text-align:center;padding:2px 0 6px 0;">'
         '<div style="font-size:0.9rem;font-weight:800;color:var(--accent);'
-        'letter-spacing:0.5px;">Eagle 3D Streaming</div>'
+        'letter-spacing:0.5px;">Eagle Analytics Hub</div>'
         '<div style="font-size:0.58rem;color:var(--muted);'
         'text-transform:uppercase;letter-spacing:2px;">KPI Analytics v7</div>'
         "</div>",
@@ -808,7 +808,7 @@ with st.sidebar:
                 lines.append("⚠️ No AI keys in secrets — using rule-based")
             for l in lines:
                 st.caption(l)
-    st.caption(f"🦅 v7.0 | {datetime.now().strftime('%H:%M')}")
+    st.caption(f"🦅 Eagle Analytics Hub v7.1 | {datetime.now().strftime('%H:%M')}")
 
 # ═══════════════════════════════════════════════════════════════
 # LOAD DATA
@@ -1225,15 +1225,85 @@ if page == "📊 Dashboard":
     h += "</div>"
     st.markdown(h, unsafe_allow_html=True)
 
+    # ── Monthly Goals Tracker ──
+    _cur_month = datetime.now().strftime("%Y-%m")
+    _month_kpi = kpi_all.copy() if not kpi_all.empty else pd.DataFrame()
+    if not _month_kpi.empty and "date" in _month_kpi.columns:
+        _month_kpi["_d"] = pd.to_datetime(_month_kpi["date"], errors="coerce").dt.strftime("%Y-%m")
+        _month_kpi = _month_kpi[_month_kpi["_d"] == _cur_month].drop(columns=["_d"])
+    _month_s = int(_month_kpi["signups"].sum()) if not _month_kpi.empty and "signups" in _month_kpi.columns else 0
+    _month_u = int(_month_kpi["first_uploads"].sum()) if not _month_kpi.empty and "first_uploads" in _month_kpi.columns else 0
+    _month_p = int(_month_kpi["paid_customers"].sum()) if not _month_kpi.empty and "paid_customers" in _month_kpi.columns else 0
+
+    _goals_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data_output", "monthly_goals.json")
+    def _load_goals():
+        if os.path.exists(_goals_file):
+            try:
+                with open(_goals_file, "r") as _gf:
+                    return json.load(_gf)
+            except Exception:
+                pass
+        return {}
+    def _save_goals(data):
+        os.makedirs(os.path.dirname(_goals_file), exist_ok=True)
+        with open(_goals_file, "w") as _gf:
+            json.dump(data, _gf, indent=2)
+
+    _goals = _load_goals()
+    _goal_s = _goals.get("signups", 100)
+    _goal_u = _goals.get("uploads", 30)
+    _goal_p = _goals.get("paid", 5)
+
+    with st.expander("🎯 Monthly Goals — " + datetime.now().strftime("%B %Y"), expanded=True):
+        _gc1, _gc2, _gc3 = st.columns(3)
+        with _gc1:
+            _pct_s = (_month_s / _goal_s * 100) if _goal_s > 0 else 0
+            st.metric("👥 Sign-ups", f"{_month_s} / {_goal_s}", f"{_pct_s:.0f}% of goal",
+                      delta_color="normal" if _pct_s >= 50 else "inverse")
+            st.progress(min(_pct_s / 100, 1.0))
+        with _gc2:
+            _pct_u = (_month_u / _goal_u * 100) if _goal_u > 0 else 0
+            st.metric("📤 Uploads", f"{_month_u} / {_goal_u}", f"{_pct_u:.0f}% of goal",
+                      delta_color="normal" if _pct_u >= 50 else "inverse")
+            st.progress(min(_pct_u / 100, 1.0))
+        with _gc3:
+            _pct_p = (_month_p / _goal_p * 100) if _goal_p > 0 else 0
+            st.metric("💳 Paid", f"{_month_p} / {_goal_p}", f"{_pct_p:.0f}% of goal",
+                      delta_color="normal" if _pct_p >= 50 else "inverse")
+            st.progress(min(_pct_p / 100, 1.0))
+
+        _g_e1, _g_e2, _g_e3 = st.columns(3)
+        with _g_e1:
+            _new_gs = st.number_input("Sign-up Goal", value=_goal_s, min_value=1, key="goal_s")
+        with _g_e2:
+            _new_gu = st.number_input("Upload Goal", value=_goal_u, min_value=1, key="goal_u")
+        with _g_e3:
+            _new_gp = st.number_input("Paid Goal", value=_goal_p, min_value=1, key="goal_p")
+        if st.button("💾 Save Goals", use_container_width=True):
+            _save_goals({"signups": _new_gs, "uploads": _new_gu, "paid": _new_gp})
+            st.success(f"✅ Goals saved: {_new_gs} sign-ups, {_new_gu} uploads, {_new_gp} paid")
+            st.rerun()
+
     c1, c2 = st.columns([1, 2])
     with c1:
+        # Build full funnel: Sessions → Sign-ups → Uploads → Paid
+        _sess = int(utm_df["sessions"].sum()) if not utm_df.empty and "sessions" in utm_df.columns else 0
+        _funnel_y = ["Sessions"]
+        _funnel_x = [_sess if _sess > 0 else cs]
+        if _sess > 0:
+            _funnel_y += ["Sign-ups", "Uploads", "Paid"]
+            _funnel_x += [cs, cu, cp]
+        else:
+            _funnel_y += ["Sign-ups", "Uploads", "Paid"]
+            _funnel_x += [cs, cu, cp]
+
         fig = go.Figure(
             go.Funnel(
-                y=["Sign-ups", "Uploads", "Paid"],
-                x=[cs, cu, cp],
+                y=_funnel_y,
+                x=_funnel_x,
                 textposition="inside",
                 textinfo="value+percent initial",
-                marker=dict(color=[T["accent"], T["accent2"], T["green"]]),
+                marker=dict(color=[T["muted"], T["accent"], T["accent2"], T["green"]][:len(_funnel_y)]),
             )
         )
         fig.update_layout(
@@ -1815,16 +1885,29 @@ elif page == "📋 Reports":
                 st.markdown(f'<div style="border-left:3px solid {_c};padding:8px 12px;margin:4px 0;background:#111D32;border-radius:6px;">{_a["msg"][:200]}</div>', unsafe_allow_html=True)
 
     st.markdown("---")
-    st.markdown("#### 📁 Archive")
+    st.markdown("#### 📁 Report Archive")
     _saved = _rep.list_saved_reports()
     if _saved:
-        for _r in _saved[:15]:
-            st.markdown(
-                f"- **{_r['filename']}** — {_r['modified']} "
-                f"({_r['size'] / 1024:.1f} KB)"
-            )
+        for _r in _saved[:20]:
+            _rf_path = os.path.join("data_output", "reports", _r['filename'])
+            with st.expander(f"📄 {_r['filename']} — {_r['modified']} ({_r['size'] / 1024:.1f} KB)"):
+                try:
+                    _rf_content = Path(_rf_path).read_text() if os.path.exists(_rf_path) else ""
+                    if _rf_content:
+                        st.markdown(_rf_content[:5000])
+                        if len(_rf_content) > 5000:
+                            st.caption(f"... ({len(_rf_content):,} total characters)")
+                        st.download_button(
+                            "⬇️ Download", _rf_content,
+                            file_name=_r['filename'], mime="text/markdown",
+                            key=f"dl_{_r['filename']}", use_container_width=True,
+                        )
+                    else:
+                        st.info("Report file not found")
+                except Exception as _e:
+                    st.error(f"Error reading: {_e}")
     else:
-        st.info("No saved reports yet.")
+        st.info("No saved reports yet. Generate a report first.")
 
 # ═══════════════════════════════════════════════════════════════
 # PAGE: 🔔 ALERTS
@@ -1910,37 +1993,87 @@ elif page == "🔔 Alerts":
 
     # ── TELEGRAM ALERTS ──
     st.markdown("---")
-    st.markdown("### 📨 Send Alerts to Telegram")
+    st.markdown("### 📨 Send Alerts to Telegram (Per Subsystem)")
 
-    try:
-        from telegram_alerts import anomaly_alerts, send, daily_kpi_report, marketing_performance
-        _tg_ok = True
-    except ImportError:
-        _tg_ok = False
-        st.warning("telegram_alerts module not found")
+    _tg_bot = get_secret("TELEGRAM_BOT_TOKEN", "")
+    _tg_chat = get_secret("TELEGRAM_CHAT_ID", "")
+    if not _tg_bot or not _tg_chat:
+        st.warning("⚠️ Add `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` to secrets to enable Telegram alerts.")
+    else:
+        _sub_c1, _sub_c2 = st.columns(2)
 
-    if _tg_ok:
-        _ac1, _ac2, _ac3 = st.columns(3)
-        with _ac1:
-            if st.button("📤 Send All Alerts", type="primary", use_container_width=True, key="alert_tg_all"):
-                with st.spinner("Sending alerts..."):
-                    _all_a = anomaly_alerts(kpi, prev_kpi if enable_comp else None)
-                    _sent = 0
-                    for _a in _all_a[:5]:
-                        _r = send(_a["msg"])
-                        if _r["ok"]:
-                            _sent += 1
-                    st.success(f"✅ Sent {_sent}/{len(_all_a[:5])} alerts")
-        with _ac2:
-            if st.button("📊 Send Daily Summary", use_container_width=True, key="alert_tg_daily"):
-                with st.spinner("Sending..."):
-                    _r = send(daily_kpi_report(kpi, prev_kpi if enable_comp else None, utm_df, leads_df))
-                    st.success("✅ Sent!") if _r["ok"] else st.error(f"❌ {_r.get('error')}")
-        with _ac3:
-            if st.button("📊 Marketing Score", use_container_width=True, key="alert_tg_mkt"):
-                with st.spinner("Sending..."):
-                    _r = send(marketing_performance(kpi, prev_kpi if enable_comp else None, utm_df, leads_df))
-                    st.success("✅ Sent!") if _r["ok"] else st.error(f"❌ {_r.get('error')}")
+        with _sub_c1:
+            st.markdown("#### 📊 KPI System Alert")
+            if st.button("📤 Send KPI Report", use_container_width=True, key="tg_kpi"):
+                with st.spinner("Sending KPI report..."):
+                    try:
+                        from reporting_engine import build_kpi_stats, build_telegram_kpi_section
+                        _kpi_data = build_kpi_stats()
+                        _msg = build_telegram_kpi_section(_kpi_data)
+                        from reporting_engine import send_telegram
+                        _ok = send_telegram(_msg)
+                        st.success("✅ KPI report sent!") if _ok else st.error("❌ Failed")
+                    except Exception as _e:
+                        st.error(f"❌ {_e}")
+
+            st.markdown("#### 🌐 GA4 Analytics Alert")
+            if st.button("📤 Send GA4 Report", use_container_width=True, key="tg_ga4"):
+                with st.spinner("Sending GA4 report..."):
+                    try:
+                        from reporting_engine import build_ga4_stats, build_telegram_ga4_section, send_telegram
+                        _ga4_data = build_ga4_stats()
+                        _msg = build_telegram_ga4_section(_ga4_data)
+                        send_telegram(_msg)
+                        st.success("✅ GA4 report sent!")
+                    except Exception as _e:
+                        st.error(f"❌ {_e}")
+
+            st.markdown("#### 📺 YouTube Alert")
+            if st.button("📤 Send YouTube Report", use_container_width=True, key="tg_yt"):
+                with st.spinner("Sending YouTube report..."):
+                    try:
+                        from reporting_engine import build_youtube_stats, build_telegram_youtube_section, send_telegram
+                        _yt_data = build_youtube_stats()
+                        _msg = build_telegram_youtube_section(_yt_data)
+                        send_telegram(_msg)
+                        st.success("✅ YouTube report sent!")
+                    except Exception as _e:
+                        st.error(f"❌ {_e}")
+
+        with _sub_c2:
+            st.markdown("#### 💼 LinkedIn Alert")
+            if st.button("📤 Send LinkedIn Report", use_container_width=True, key="tg_li"):
+                with st.spinner("Sending LinkedIn report..."):
+                    try:
+                        from reporting_engine import build_linkedin_stats, build_telegram_linkedin_section, send_telegram
+                        _li_data = build_linkedin_stats()
+                        _msg = build_telegram_linkedin_section(_li_data)
+                        send_telegram(_msg)
+                        st.success("✅ LinkedIn report sent!")
+                    except Exception as _e:
+                        st.error(f"❌ {_e}")
+
+            st.markdown("#### 💳 Stripe Alert")
+            if st.button("📤 Send Stripe Report", use_container_width=True, key="tg_stripe"):
+                with st.spinner("Sending Stripe report..."):
+                    try:
+                        from reporting_engine import build_stripe_stats, build_telegram_stripe_section, send_telegram
+                        _stripe_data = build_stripe_stats()
+                        _msg = build_telegram_stripe_section(_stripe_data)
+                        send_telegram(_msg)
+                        st.success("✅ Stripe report sent!")
+                    except Exception as _e:
+                        st.error(f"❌ {_e}")
+
+            st.markdown("#### 🦅 Full System Report")
+            if st.button("📤 Send ALL Reports", type="primary", use_container_width=True, key="tg_all"):
+                with st.spinner("Sending full system report..."):
+                    try:
+                        from reporting_engine import main as _rep_main
+                        _rep_main()
+                        st.success("✅ All subsystem reports sent to Telegram!")
+                    except Exception as _e:
+                        st.error(f"❌ {_e}")
 
 # ═══════════════════════════════════════════════════════════════
 # PAGE: 🔬 EDA LAB
@@ -2328,6 +2461,30 @@ elif page == "🔍 Browse Data":
             elif not _mo_engine:
                 st.caption("⚠️ Manual override engine not loaded")
 
+            # Show project links for First Uploads tab
+            if _lb == "First Uploads" and not fl.empty:
+                _proj_cols = [c for c in fl.columns if any(k in c.lower() for k in ["project", "url", "link", "scene", "upload_url"])]
+                _email_col_bd = next((c for c in fl.columns if "email" in c.lower()), None)
+                if _proj_cols or _email_col_bd:
+                    with st.expander("🔗 Project Links", expanded=False):
+                        _display_rows = fl.head(50)
+                        for _, _pr in _display_rows.iterrows():
+                            _em = str(_pr.get(_email_col_bd, "")) if _email_col_bd else ""
+                            _links = []
+                            for _pc_col in _proj_cols:
+                                _pv = str(_pr.get(_pc_col, ""))
+                                if _pv and _pv not in ("nan", "None", ""):
+                                    if _pv.startswith("http"):
+                                        _links.append(f"([{_pc_col}]({_pv}))")
+                                    else:
+                                        _links.append(f"{_pc_col}: {_pv}")
+                            _date_col = next((c for c in fl.columns if "date" in c.lower() and "upload" in c.lower()), None)
+                            _dt = str(_pr.get(_date_col, "")) if _date_col else ""
+                            if _links:
+                                st.markdown(f"📤 **{_em}** ({_dt}) — {' | '.join(_links)}")
+                            elif _em:
+                                st.markdown(f"📤 **{_em}** ({_dt})")
+
             _df(fl.head(mr), height=450)
             st.download_button(
                 "⬇️ Download",
@@ -2616,7 +2773,10 @@ elif page == "📺 YouTube":
         _period_subs_lost = 0
 
         if _has_oauth:
-            _daily_data = get_daily_analytics(_yt_start, _yt_end)
+            try:
+                _daily_data = get_daily_analytics(_yt_start, _yt_end)
+            except Exception:
+                _daily_data = pd.DataFrame()
             if not _daily_data.empty:
                 _period_views = int(_daily_data["views"].sum())
                 _period_watch_min = float(_daily_data.get("estimatedMinutesWatched", pd.Series([0])).sum())
@@ -3227,18 +3387,75 @@ elif page == "💼 LinkedIn":
         if _li_cached and not _li_cached.get("error"):
             _lc1, _lc2, _lc3, _lc4 = st.columns(4)
             with _lc1:
-                st.metric("Followers", f"{_li_cached.get('followers', 0):,}")
+                st.metric("👥 Followers", f"{_li_cached.get('followers', 0):,}")
             with _lc2:
-                st.metric("Company", _li_cached.get('company_name', 'N/A'))
+                st.metric("🏢 Company", _li_cached.get('company_name', 'N/A'))
             with _lc3:
-                st.metric("Industry", _li_cached.get('industry', 'N/A'))
+                st.metric("🏭 Industry", _li_cached.get('industry', 'N/A'))
             with _lc4:
-                st.metric("Scraped", _li_cached.get('scraped_at', 'N/A')[:16])
-
-            if _li_cached.get('employees'):
-                st.metric("Employees", _li_cached['employees'])
+                st.metric("👔 Employees", _li_cached.get('employees', 'N/A'))
+            if _li_cached.get('scraped_at'):
+                st.caption(f"🕐 Last scraped: {_li_cached.get('scraped_at', '')[:19]}")
             if _li_cached.get('description'):
-                st.caption(_li_cached['description'][:300])
+                with st.expander("📝 Company Description"):
+                    st.write(_li_cached['description'][:500])
+
+            # Historical data charts
+            _li_hist = get_manual_history()
+            if not _li_hist.empty and "date" in _li_hist.columns:
+                st.markdown("---")
+                st.markdown("#### 📈 Historical Trends")
+
+                _li_metric = st.selectbox(
+                    "Select metric", 
+                    ["followers", "impressions", "engagement_rate", "unique_visitors", "posts", "likes", "comments"],
+                    key="li_metric_sel"
+                )
+                if _li_metric in _li_hist.columns:
+                    fig = go.Figure()
+                    fig.add_trace(go.Scatter(
+                        x=_li_hist["date"], y=_li_hist[_li_metric],
+                        mode="lines+markers", name=_li_metric,
+                        line=dict(color=T["accent"], width=2),
+                        fill="tozeroy", fillcolor=f"rgba(100,180,255,0.1)",
+                    ))
+                    fig.update_layout(
+                        title=f"LinkedIn {_li_metric.title()} Over Time",
+                        height=350, **CT(),
+                        margin=dict(l=0, r=0, t=40, b=0),
+                    )
+                    _pc(fig)
+
+                # Growth rate
+                if len(_li_hist) >= 2 and "followers" in _li_hist.columns:
+                    _latest_f = _li_hist["followers"].iloc[-1]
+                    _prev_f = _li_hist["followers"].iloc[-2]
+                    if _prev_f > 0:
+                        _growth_rate = ((_latest_f - _prev_f) / _prev_f * 100)
+                        st.metric("Follower Growth", f"{_growth_rate:+.1f}%",
+                                  f"{_latest_f - _prev_f:+d} followers")
+
+                # Engagement chart
+                if "likes" in _li_hist.columns and "comments" in _li_hist.columns:
+                    _ec1, _ec2 = st.columns(2)
+                    with _ec1:
+                        fig2 = go.Figure()
+                        fig2.add_trace(go.Bar(x=_li_hist["date"], y=_li_hist["likes"], name="Likes", marker_color=T["accent"]))
+                        fig2.add_trace(go.Bar(x=_li_hist["date"], y=_li_hist["comments"], name="Comments", marker_color=T["accent2"]))
+                        fig2.update_layout(title="Engagement", height=300, **CT(), barmode="stack", margin=dict(l=0, r=0, t=40, b=0))
+                        _pc(fig2)
+                    with _ec2:
+                        if "impressions" in _li_hist.columns:
+                            fig3 = go.Figure()
+                            fig3.add_trace(go.Scatter(x=_li_hist["date"], y=_li_hist["impressions"], mode="lines+markers", name="Impressions", line=dict(color=T["green"])))
+                            fig3.update_layout(title="Impressions", height=300, **CT(), margin=dict(l=0, r=0, t=40, b=0))
+                            _pc(fig3)
+
+                # Data table
+                with st.expander("📋 Raw Data"):
+                    _df(_li_hist.tail(30))
+            else:
+                st.info("📊 No historical data yet. Add data via Manual Entry or Scrape to see trends.")
         else:
             # Auto-scrape public page if no cached data
             if st.button("🌐 Scrape LinkedIn Now", type="primary", use_container_width=True):
@@ -3886,7 +4103,7 @@ st.divider()
 _fc1, _fc2, _fc3 = st.columns(3)
 with _fc1:
     st.caption(
-        f"🦅 Eagle 3D Streaming KPI v7.0 | "
+        f"🦅 Eagle Analytics Hub v7.1 | "
         f"{datetime.now().strftime('%Y-%m-%d %H:%M')}"
     )
 with _fc2:

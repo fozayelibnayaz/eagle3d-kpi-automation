@@ -46,6 +46,37 @@ def sf(v, decimals=1):
         return 0.0
 
 
+def _parse_report_date(raw):
+    """Parse any date string to YYYY-MM-DD format for reporting."""
+    if not raw or str(raw).strip() in ("", "nan", "None", "—", "-"):
+        return ""
+    from email.utils import parsedate_to_datetime as _pdt
+    import re as _re
+    raw = str(raw).strip()
+    # Try RFC 2822
+    try:
+        dt = _pdt(raw)
+        if dt:
+            return dt.strftime("%Y-%m-%d")
+    except Exception:
+        pass
+    # Try common formats
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%m/%d/%y, %I:%M %p",
+                "%m/%d/%Y, %I:%M %p", "%b %d, %Y", "%d %b %Y"):
+        try:
+            return datetime.strptime(raw, fmt).strftime("%Y-%m-%d")
+        except Exception:
+            continue
+    # Regex: YYYY-MM-DD
+    m = _re.search(r"(\d{4})-(\d{1,2})-(\d{1,2})", raw)
+    if m:
+        try:
+            return f"{m.group(1)}-{int(m.group(2)):02d}-{int(m.group(3)):02d}"
+        except Exception:
+            pass
+    return ""
+
+
 def fmt_num(n):
     """Format number with commas."""
     try:
@@ -214,17 +245,26 @@ def build_kpi_stats():
             stats["signups_month_override"] = sum(
                 1 for r in free_rows
                 if str(r.get("final_status", "")).upper() == "ACCEPTED"
-                and str(r.get("Account Created On", "")).startswith(cur_month_str)
+                and any(
+                    _parse_report_date(str(r.get(f, ""))).startswith(cur_month_str)
+                    for f in ("row_date_used", "Account Created On", "__scraped_at__")
+                )
             )
             stats["uploads_month_override"] = sum(
                 1 for r in upload_rows
                 if str(r.get("final_status", "")).upper() == "ACCEPTED"
-                and str(r.get("Upload Date", "")).startswith(cur_month_str)
+                and any(
+                    _parse_report_date(str(r.get(f, ""))).startswith(cur_month_str)
+                    for f in ("row_date_used", "Upload Date", "__scraped_at__")
+                )
             )
             stats["paid_month_override"] = sum(
                 1 for r in stripe_rows
                 if str(r.get("final_status", "")).upper() == "ACCEPTED"
-                and str(r.get("Created", r.get("First payment", ""))).startswith(cur_month_str)
+                and any(
+                    _parse_report_date(str(r.get(f, ""))).startswith(cur_month_str)
+                    for f in ("row_date_used", "Created", "First payment", "__scraped_at__")
+                )
             )
         except Exception as e:
             log(f"Override rebuild error: {e}")
@@ -362,7 +402,7 @@ def build_cross_platform_stats():
 def build_stripe_stats():
     """Stripe revenue summary."""
     result = {"connected": False, "total_paid": 0, "month_paid": 0,
-              "today_paid": 0}
+              "today_paid": 0, "total_revenue": 0.0, "month_revenue": 0.0}
     try:
         from sheets_writer import read_tab_data
         stripe_rows = read_tab_data("Verified_STRIPE")
@@ -370,14 +410,32 @@ def build_stripe_stats():
         month_str = datetime.now().strftime("%Y-%m")
         accepted = [r for r in stripe_rows if str(r.get("final_status", "")).upper() == "ACCEPTED"]
         result["total_paid"] = len(accepted)
-        result["month_paid"] = sum(
-            1 for r in accepted
-            if str(r.get("Created", "")).startswith(month_str)
-        )
-        result["today_paid"] = sum(
-            1 for r in accepted
-            if str(r.get("Created", "")).startswith(today_str)
-        )
+        for r in accepted:
+            # Try multiple date fields and parse properly
+            date_val = ""
+            for field in ("row_date_used", "Created", "First payment", "__scraped_at__"):
+                raw = str(r.get(field, "")).strip()
+                if raw and raw not in ("nan", "None", ""):
+                    date_val = _parse_report_date(raw)
+                    if date_val:
+                        break
+            # Revenue
+            for amt_field in ("amount", "Total spend", "Total Spend", "__amount__"):
+                amt_raw = r.get(amt_field, "")
+                if amt_raw and str(amt_raw) not in ("nan", "None", ""):
+                    try:
+                        amt = float(str(amt_raw).replace("$", "").replace(",", "").strip())
+                        result["total_revenue"] += amt
+                        if date_val and date_val.startswith(month_str):
+                            result["month_revenue"] += amt
+                        break
+                    except Exception:
+                        pass
+            if date_val:
+                if date_val.startswith(today_str):
+                    result["today_paid"] += 1
+                if date_val.startswith(month_str):
+                    result["month_paid"] += 1
         result["connected"] = len(stripe_rows) > 0
     except Exception as e:
         log(f"Stripe stats error: {e}")
@@ -529,8 +587,12 @@ def build_telegram_stripe_section(stripe):
         f"│ 📅 Today: `{stripe['today_paid']}` paid\n"
         f"│ 📆 Month: `{stripe['month_paid']}` paid\n"
         f"│ 🏆 All Time: `{stripe['total_paid']}` paid\n"
-        f"└────────────────────────\n"
     )
+    if stripe.get("month_revenue", 0) > 0:
+        section += f"│ 💰 Month Revenue: `${stripe['month_revenue']:,.2f}`\n"
+    if stripe.get("total_revenue", 0) > 0:
+        section += f"│ 💰 Total Revenue: `${stripe['total_revenue']:,.2f}`\n"
+    section += "└────────────────────────\n"
     return section
 
 

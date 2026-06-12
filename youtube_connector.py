@@ -107,11 +107,15 @@ def _analytics_request(params: dict) -> Optional[dict]:
     except urllib.error.HTTPError as e:
         if e.code == 401:
             # Token expired — try refresh
-            refreshed = _try_refresh_token()
-            if refreshed:
-                req.add_header("Authorization", f"Bearer {refreshed}")
-                with urllib.request.urlopen(req, timeout=30) as resp2:
-                    return json.loads(resp2.read().decode())
+            try:
+                refreshed = _try_refresh_token()
+                if refreshed:
+                    req2 = urllib.request.Request(full_url)
+                    req2.add_header("Authorization", f"Bearer {refreshed}")
+                    with urllib.request.urlopen(req2, timeout=30) as resp2:
+                        return json.loads(resp2.read().decode())
+            except Exception as e2:
+                print(f"[YouTube Analytics] Refresh retry failed: {e2}")
         print(f"[YouTube Analytics] HTTP {e.code}: {e.reason}")
         return None
     except Exception as e:

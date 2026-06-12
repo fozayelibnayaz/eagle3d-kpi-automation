@@ -160,13 +160,14 @@ def main():
         _health_path = _P("data_output") / "pipeline_health.json"
         _health_path.parent.mkdir(exist_ok=True)
         import json as _json
-        _json.dump({
-            "last_run":           start.isoformat(),
-            "duration_seconds":   round(duration, 1),
-            "stages_passed":      passed,
-            "total_stages":       7,
-            "results":            results,
-        }, open(_health_path, "w"), indent=2)
+        with open(_health_path, "w") as _hf:
+            _json.dump({
+                "last_run":           start.isoformat(),
+                "duration_seconds":   round(duration, 1),
+                "stages_passed":      passed,
+                "total_stages":       7,
+                "results":            results,
+            }, _hf, indent=2)
         log(f"Pipeline health saved: {_health_path}")
     except Exception as e:
         log(f"Pipeline health save failed: {e}")

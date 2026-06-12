@@ -22,7 +22,8 @@ SCRAPE_DATE = datetime.now().strftime("%Y-%m-%d")
 
 STRIPE_URL = (
     "https://dashboard.stripe.com/acct_1J7M5XIKrnGFhGm1"
-    "/customers?has_subscription=true"
+    "/customers?sort_field=first_payment&sort_direction=desc"
+    "&payment_count[gte]=1"
 )
 
 STRIPE_SESSION_DIR = Path("stripe_session")

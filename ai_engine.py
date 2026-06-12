@@ -143,7 +143,6 @@ def _rule_based_answer(question: str, data_context: str) -> str:
     
     # Extract numbers from context
     import re
-    numbers = re.findall(r'(\d+)\s*(?:sign|signup|upload|paid|customer|session|conversion)', q + ' ' + data_context, re.IGNORECASE)
     
     # Smart pattern matching
     if any(w in q for w in ["why", "reason", "cause", "dropped", "declined", "decreased"]):
@@ -163,31 +162,116 @@ def _rule_based_answer(question: str, data_context: str) -> str:
         lines.append("4. **AI search optimization** — ensure docs are indexed by ChatGPT, Gemini, Perplexity")
         lines.append("5. **Referral program** — incentivize word-of-mouth with credits")
         lines.append("\n*Connect Groq or Gemini for data-specific recommendations.*")
-    elif any(w in q for w in ["predict", "forecast", "future", "next week", "next month", "next", "can we get", "how many more", "achieve", "goal"]):
-        lines.append("### 🔮 Forecast Note")
-        lines.append("Visit the **🔮 Predictions** page for ML-powered forecasts.")
-        lines.append("The ensemble model uses Moving Average + Linear Regression + Exponential Smoothing.")
+    elif any(w in q for w in ["predict", "forecast", "future", "next week", "next month", "next", "can we get", "how many more", "achieve", "goal", "expect", "will we"]):
+        lines.append("### 🔮 Prediction Analysis")
         
-        # Extract numbers from the question for context
-        import re as _re
-        _days_match = _re.search(r'(\d+)\s*days?', q)
-        _days = int(_days_match.group(1)) if _days_match else 30
-        
-        lines.append(f"\nBased on current trends for the next {_days} days:")
-        lines.append("- Connect Groq or Gemini for AI-powered prediction with real data analysis.")
-        lines.append("\n*Note: The Predictions page uses historical patterns for accurate forecasting.*")
+        # Parse data context for prediction
+        _signup_vals = []
+        _upload_vals = []
+        _paid_vals = []
+        for _line in data_context.split("\n"):
+            _m = re.match(r'- (\d{4}-\d{2}-\d{2}):\s*(\d+)\s*signup.*?(\d+)\s*upload.*?(\d+)\s*paid', _line)
+            if _m:
+                _signup_vals.append(int(_m.group(2)))
+                _upload_vals.append(int(_m.group(3)))
+                _paid_vals.append(int(_m.group(4)))
+            _m2 = re.match(r'- Sign-ups:\s*(\d+)', _line)
+            if _m2 and not _signup_vals:
+                _signup_vals.append(int(_m2.group(1)))
+            _m3 = re.match(r'- First Uploads:\s*(\d+)', _line)
+            if _m3 and not _upload_vals:
+                _upload_vals.append(int(_m3.group(1)))
+            _m4 = re.match(r'- Paid Customers:\s*(\d+)', _line)
+            if _m4 and not _paid_vals:
+                _paid_vals.append(int(_m4.group(1)))
+
+        # Determine days remaining in month
+        from datetime import datetime as _dt
+        _now = _dt.now()
+        _days_in_month = 30  # approximate
+        _days_passed = _now.day
+        _days_remaining = max(1, _days_in_month - _days_passed)
+
+        if _signup_vals:
+            _total_signups = sum(_signup_vals)
+            _daily_avg = _total_signups / max(1, len(_signup_vals)) if _signup_vals else 0
+            
+            # Trend: use last 7 days if available
+            _recent = _signup_vals[-7:] if len(_signup_vals) >= 7 else _signup_vals
+            _recent_avg = sum(_recent) / max(1, len(_recent))
+            
+            # Growth rate
+            if len(_signup_vals) >= 4:
+                _first_half = sum(_signup_vals[:len(_signup_vals)//2])
+                _second_half = sum(_signup_vals[len(_signup_vals)//2:])
+                _growth_rate = ((_second_half - _first_half) / max(1, _first_half)) if _first_half > 0 else 0
+            else:
+                _growth_rate = 0
+            
+            _best_daily = _recent_avg * (1 + max(0.1, _growth_rate))
+            _worst_daily = _recent_avg * 0.6
+            _possible_daily = _recent_avg
+            
+            _best_total = _total_signups + int(_best_daily * _days_remaining)
+            _possible_total = _total_signups + int(_possible_daily * _days_remaining)
+            _worst_total = _total_signups + int(_worst_daily * _days_remaining)
+            
+            _best_additional = int(_best_daily * _days_remaining)
+            _possible_additional = int(_possible_daily * _days_remaining)
+            _worst_additional = int(_worst_daily * _days_remaining)
+
+            lines.append(f"**📅 Current Month Progress ({_days_passed}/{_days_in_month} days passed)**")
+            lines.append(f"- Current sign-ups: **{_total_signups}**")
+            lines.append(f"- Daily average: **{_daily_avg:.1f}**")
+            lines.append(f"- Recent trend (7d): **{_recent_avg:.1f}/day**")
+            lines.append(f"- Growth rate: **{_growth_rate:+.0%}**")
+            lines.append(f"")
+            lines.append(f"**📈 Sign-up Forecast for Remaining {_days_remaining} Days:**")
+            lines.append(f"")
+            lines.append(f"| Scenario | Additional | Month Total | Daily Rate |")
+            lines.append(f"|----------|-----------|-------------|------------|")
+            lines.append(f"| 🟢 **Best Case** | +{_best_additional} | **{_best_total}** | {_best_daily:.1f}/day |")
+            lines.append(f"| 🟡 **Possible** | +{_possible_additional} | **{_possible_total}** | {_possible_daily:.1f}/day |")
+            lines.append(f"| 🔴 **Worst Case** | +{_worst_additional} | **{_worst_total}** | {_worst_daily:.1f}/day |")
+            lines.append(f"")
+            
+            # Date-wise breakdown
+            lines.append(f"**📊 Date-wise Projection (Possible Scenario):**")
+            for _d in range(1, min(_days_remaining + 1, 15)):
+                _proj_date = (_now + __import__('datetime').timedelta(days=_d)).strftime("%Y-%m-%d")
+                _proj_cumulative = _total_signups + int(_possible_daily * _d)
+                lines.append(f"- {_proj_date}: ~{_proj_cumulative} total (+{int(_possible_daily)}/day)")
+            
+            if _days_remaining > 14:
+                lines.append(f"- ... and {_days_remaining - 14} more days at ~{int(_possible_daily)}/day")
+
+            # Upload and paid forecasts
+            if _upload_vals:
+                _total_uploads = sum(_upload_vals)
+                _u_avg = _total_uploads / max(1, len(_upload_vals))
+                _u_projected = _total_uploads + int(_u_avg * _days_remaining)
+                lines.append(f"\n**📤 Upload Forecast:** Currently {_total_uploads}, projected **{_u_projected}** by month end")
+            if _paid_vals:
+                _total_paid = sum(_paid_vals)
+                _p_avg = _total_paid / max(1, len(_paid_vals))
+                _p_projected = _total_paid + int(_p_avg * _days_remaining)
+                lines.append(f"**💳 Paid Forecast:** Currently {_total_paid}, projected **{_p_projected}** by month end")
+
+            lines.append(f"\n💡 *Connect Groq/Gemini for AI-enhanced predictions with deeper pattern analysis.*")
+        else:
+            lines.append("Insufficient data for prediction. Need daily breakdown data.")
+            lines.append("\n*Connect Groq or Gemini for AI-powered forecasting.*")
     else:
         lines.append(data_context)
         lines.append("\n### 💡 Summary")
-        lines.append("The data above shows your current performance metrics.")
-        lines.append("For specific insights and recommendations, try asking:")
+        lines.append("The data above shows your current performance metrics. For specific insights and recommendations, try asking:")
         lines.append("- \"Why did signups change?\" — for root cause analysis")
         lines.append("- \"How to improve uploads?\" — for growth recommendations")
-        lines.append("- \"Predict next month\" — for forecasts")
+        lines.append("- \"How many sign-ups can we get more this month?\" — for 3-scenario predictions")
         lines.append("\n*Connect Groq or Gemini API for deeper AI analysis.*")
     
     lines.append("\n---")
-    lines.append("*Analysis by Eagle3D Intelligence Engine (rule-based mode)*")
+    lines.append("*Analysis by Eagle Analytics Hub (rule-based mode)*")
     return "\n".join(lines)
 
 

@@ -381,3 +381,35 @@ def generate_cross_insights(
         insights.append("📊 Connect more platforms and add data for richer cross-platform insights.")
 
     return insights
+
+
+def compute_platform_comparison(unified: pd.DataFrame) -> Dict[str, Any]:
+    """Compare metrics across platforms for the same time period."""
+    result = {"platforms": {}, "rankings": []}
+    if unified.empty:
+        return result
+
+    platform_metrics = {
+        "KPI": {"cols": ["signups", "first_uploads", "paid_customers"], "label": "KPI System"},
+        "GA4": {"cols": ["sessions", "activeUsers"], "label": "GA4 Analytics"},
+        "YouTube": {"cols": ["youtube_views", "youtube_likes", "youtube_subscribers"], "label": "YouTube"},
+        "LinkedIn": {"cols": ["linkedin_followers", "linkedin_engagement"], "label": "LinkedIn"},
+    }
+
+    for platform, info in platform_metrics.items():
+        available = [c for c in info["cols"] if c in unified.columns]
+        if available:
+            totals = {}
+            for col in available:
+                totals[col] = _safe_sum(unified[col])
+            result["platforms"][platform] = {
+                "label": info["label"],
+                "metrics": totals,
+                "total_engagement": sum(totals.values()),
+            }
+
+    # Rank by total engagement
+    ranked = sorted(result["platforms"].items(), key=lambda x: x[1]["total_engagement"], reverse=True)
+    result["rankings"] = [(p, d["total_engagement"]) for p, d in ranked]
+
+    return result
