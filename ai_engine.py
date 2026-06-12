@@ -16,22 +16,20 @@ from typing import Optional
 
 def _get_provider():
     """Returns 'groq', 'gemini', or 'rule_based'. Detects from env + Streamlit secrets."""
-    # Check environment variables first (for local/pipeline)
     if os.environ.get("GROQ_API_KEY"):
         return "groq"
     if os.environ.get("GEMINI_API_KEY"):
         return "gemini"
-    # Check Streamlit secrets (for cloud)
     try:
         import streamlit as st
-        # Check Groq
-        _gk = st.secrets.get("GROQ_API_KEY", "")
-        if _gk and len(str(_gk).strip()) > 10:
-            return "groq"
-        # Check Gemini
-        _gmk = st.secrets.get("GEMINI_API_KEY", "")
-        if _gmk and len(str(_gmk).strip()) > 10:
-            return "gemini"
+        if "GROQ_API_KEY" in st.secrets:
+            _gk = st.secrets["GROQ_API_KEY"]
+            if _gk and str(_gk).strip() and len(str(_gk).strip()) > 10:
+                return "groq"
+        if "GEMINI_API_KEY" in st.secrets:
+            _gmk = st.secrets["GEMINI_API_KEY"]
+            if _gmk and str(_gmk).strip() and len(str(_gmk).strip()) > 10:
+                return "gemini"
     except Exception:
         pass
     return "rule_based"
@@ -64,9 +62,13 @@ def _get_api_key(provider):
         return key
     try:
         import streamlit as st
-        return st.secrets.get(key_name, "")
+        if key_name in st.secrets:
+            val = st.secrets[key_name]
+            if val and str(val).strip():
+                return str(val).strip()
     except Exception:
-        return ""
+        pass
+    return ""
 
 
 # ── Groq API (OpenAI-compatible) ────────────────────────────

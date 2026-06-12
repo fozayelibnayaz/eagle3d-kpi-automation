@@ -2968,7 +2968,15 @@ elif page == "💼 LinkedIn":
             if _li_cached.get('description'):
                 st.caption(_li_cached['description'][:300])
         else:
-            st.info("No cached data. Click 'Scrape Now' or enter data manually.")
+            # Auto-scrape public page if no cached data
+            if st.button("🌐 Scrape LinkedIn Now", type="primary", use_container_width=True):
+                with st.spinner("Scraping LinkedIn public page..."):
+                    _result = scrape_public_metrics()
+                    if _result.get("error"):
+                        st.error(f"Scrape failed: {_result['error']}")
+                    else:
+                        st.success("✅ Metrics scraped!")
+                        st.rerun()
 
         # Scrape buttons
         _sbc1, _sbc2 = st.columns(2)
