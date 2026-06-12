@@ -3405,33 +3405,38 @@ Provide specific, actionable advice based on the data. Include numbers and speci
 
 
 # ═══════════════════════════════════════════════════════════════
-# PAGE: 💼 LINKEDIN ANALYTICS
+# PAGE: 💼 LINKEDIN COMMAND CENTER
 # ═══════════════════════════════════════════════════════════════
 elif page == "💼 LinkedIn":
     st.markdown(
-        '<div class="sec-head">💼 LinkedIn Analytics Center</div>',
+        '<div class="sec-head">💼 LinkedIn Command Center</div>',
         unsafe_allow_html=True,
     )
     try:
         from linkedin_connector import (
             scrape_public_metrics, get_cached_metrics, get_manual_history,
             save_manual_entry, import_csv_data, get_status,
-            scrape_with_playwright,
+            scrape_with_playwright, get_posts, save_posts,
+            calculate_post_score, get_score_label, get_aggregate_stats,
         )
     except Exception as e:
         st.error(f"LinkedIn connector not loaded: {e}")
         st.stop()
 
     _li_status = get_status()
+    _li_stats = get_aggregate_stats()
 
-    # Status indicators
-    _ls1, _ls2, _ls3 = st.columns(3)
+    # ── Status bar (like YouTube) ──
+    _ls1, _ls2, _ls3, _ls4 = st.columns(4)
     with _ls1:
-        st.metric("Company Page", "✅" if _li_status["company_page"] else "❌ Not Set")
+        st.metric("Followers", f"{_li_stats['followers']:,}")
     with _ls2:
-        st.metric("Auth Cookies", "✅ Deep Scrape" if _li_status["cookies"] else "⚠️ Public Only")
+        st.metric("Total Impressions", f"{_li_stats['total_impressions']:,}")
     with _ls3:
-        st.metric("Cached Data", "✅" if _li_status["cached_data"] else "—")
+        st.metric("Posts", _li_stats["post_count"])
+    with _ls4:
+        _data_src = "✅ Authenticated" if _li_status["cookies"] else "📋 Public API"
+        st.metric("Data", _data_src)
 
     if not _li_status["configured"]:
         st.warning("⚠️ LinkedIn not configured. Add `LINKEDIN_COMPANY_PAGE` to secrets.")
@@ -3442,13 +3447,12 @@ elif page == "💼 LinkedIn":
             **Method 1: Public Page Scrape (Free, No Auth)**
             - Just provide your company page URL
             - Gets: follower count, company name, industry
-            - Add to secrets: `LINKEDIN_COMPANY_PAGE = "https://www.linkedin.com/company/eagle3d/"`
+            - Add to secrets: `LINKEDIN_COMPANY_PAGE = "https://www.linkedin.com/company/eagle-3d-streaming/"`
 
             **Method 2: Authenticated Scrape (Recommended)**
             - Export cookies from your logged-in LinkedIn session
-            - Gets: analytics, post engagement, follower demographics
+            - Gets: analytics, post engagement, follower demographics, individual posts
             - Add to secrets: `LINKEDIN_COOKIES_JSON = '[{"name":"li_at","value":"...","domain":".linkedin.com"}]'`
-            - **How to get cookies:** Use browser extension "EditThisCookie" or "Cookie-Editor"
 
             **Method 3: Manual Entry**
             - Enter metrics directly in the dashboard
@@ -3459,96 +3463,125 @@ elif page == "💼 LinkedIn":
     st.markdown("---")
 
     _li_tabs = st.tabs([
-        "📊 Overview", "📝 Manual Entry", "📥 Import CSV", "🔧 Scrape Settings",
+        "📊 Dashboard", "📝 All Posts", "📈 Analytics", "👥 Followers",
+        "📥 Import Data", "🔧 Settings",
     ])
 
-    with _li_tabs[0]:  # Overview
-        st.markdown("#### 📊 LinkedIn Metrics")
+    # ══════════════════════════════════════════════
+    # TAB 1: Dashboard
+    # ══════════════════════════════════════════════
+    with _li_tabs[0]:
+        _lc1, _lc2, _lc3, _lc4 = st.columns(4)
+        with _lc1:
+            st.metric("👥 Followers", f"{_li_stats['followers']:,}")
+        with _lc2:
+            st.metric("👁️ Impressions", f"{_li_stats['total_impressions']:,}")
+        with _lc3:
+            st.metric("👍 Total Likes", f"{_li_stats['total_likes']:,}")
+        with _lc4:
+            st.metric("💬 Total Comments", f"{_li_stats['total_comments']:,}")
 
-        # Try cached data first
-        _li_cached = get_cached_metrics()
-        if _li_cached and not _li_cached.get("error"):
-            _lc1, _lc2, _lc3, _lc4 = st.columns(4)
-            with _lc1:
-                st.metric("👥 Followers", f"{_li_cached.get('followers', 0):,}")
-            with _lc2:
-                st.metric("🏢 Company", _li_cached.get('company_name', 'N/A'))
-            with _lc3:
-                st.metric("🏭 Industry", _li_cached.get('industry', 'N/A'))
-            with _lc4:
-                st.metric("👔 Employees", _li_cached.get('employees', 'N/A'))
-            if _li_cached.get('scraped_at'):
-                st.caption(f"🕐 Last scraped: {_li_cached.get('scraped_at', '')[:19]}")
-            if _li_cached.get('description'):
-                with st.expander("📝 Company Description"):
-                    st.write(_li_cached['description'][:500])
+        _lc5, _lc6, _lc7 = st.columns(3)
+        with _lc5:
+            st.metric("🔄 Reposts", f"{_li_stats['total_reposts']:,}")
+        with _lc6:
+            st.metric("📊 Avg Engagement", f"{_li_stats['avg_engagement_rate']:.1f}%")
+        with _lc7:
+            _eng_label, _ = get_score_label(int(_li_stats['avg_engagement_rate'] * 10))
+            st.metric("Engagement Level", _eng_label)
 
-            # Historical data charts
-            _li_hist = get_manual_history()
-            if not _li_hist.empty and "date" in _li_hist.columns:
-                st.markdown("---")
-                st.markdown("#### 📈 Historical Trends")
+        # ── Top & Worst posts ──
+        _li_posts = get_posts()
+        if _li_posts:
+            for p in _li_posts:
+                p["_score"] = calculate_post_score(p)
+            _li_posts_sorted = sorted(_li_posts, key=lambda x: x.get("_score", 0), reverse=True)
 
-                _li_metric = st.selectbox(
-                    "Select metric", 
-                    ["followers", "impressions", "engagement_rate", "unique_visitors", "posts", "likes", "comments"],
-                    key="li_metric_sel"
+            st.markdown("---")
+            st.markdown("#### 🏆 Best Performing")
+            _best = _li_posts_sorted[0] if _li_posts_sorted else {}
+            if _best:
+                _b_label, _b_color = get_score_label(_best.get("_score", 0))
+                st.markdown(f"**{_best.get('title', 'Untitled')[:100]}**")
+                _bm1, _bm2, _bm3, _bm4 = st.columns(4)
+                with _bm1:
+                    st.metric("Impressions", f"{_best.get('impressions', 0):,}")
+                with _bm2:
+                    st.metric("Likes", f"{_best.get('likes', 0):,}")
+                with _bm3:
+                    st.metric("Comments", f"{_best.get('comments', 0):,}")
+                with _bm4:
+                    st.metric("Score", f"{_best.get('_score', 0)}/100 {_b_label}")
+
+            st.markdown("#### 💀 Worst Performing")
+            _worst = _li_posts_sorted[-1] if _li_posts_sorted else {}
+            if _worst:
+                _w_label, _w_color = get_score_label(_worst.get("_score", 0))
+                st.markdown(f"**{_worst.get('title', 'Untitled')[:100]}**")
+                _wm1, _wm2, _wm3, _wm4 = st.columns(4)
+                with _wm1:
+                    st.metric("Impressions", f"{_worst.get('impressions', 0):,}")
+                with _wm2:
+                    st.metric("Likes", f"{_worst.get('likes', 0):,}")
+                with _wm3:
+                    st.metric("Comments", f"{_worst.get('comments', 0):,}")
+                with _wm4:
+                    st.metric("Score", f"{_worst.get('_score', 0)}/100 {_w_label}")
+
+        # ── Historical trends ──
+        _li_hist = get_manual_history()
+        if not _li_hist.empty and "date" in _li_hist.columns:
+            st.markdown("---")
+            st.markdown("#### 📈 Historical Trends")
+
+            _li_metric = st.selectbox(
+                "Select metric",
+                ["followers", "impressions", "engagement_rate", "unique_visitors", "posts", "likes", "comments"],
+                key="li_metric_sel"
+            )
+            if _li_metric in _li_hist.columns:
+                fig = go.Figure()
+                fig.add_trace(go.Scatter(
+                    x=_li_hist["date"], y=_li_hist[_li_metric],
+                    mode="lines+markers", name=_li_metric,
+                    line=dict(color=T["accent"], width=2),
+                    fill="tozeroy", fillcolor=f"rgba(100,180,255,0.1)",
+                ))
+                fig.update_layout(
+                    title=f"LinkedIn {_li_metric.title()} Over Time",
+                    height=350, **CT(),
+                    margin=dict(l=0, r=0, t=40, b=0),
                 )
-                if _li_metric in _li_hist.columns:
-                    fig = go.Figure()
-                    fig.add_trace(go.Scatter(
-                        x=_li_hist["date"], y=_li_hist[_li_metric],
-                        mode="lines+markers", name=_li_metric,
-                        line=dict(color=T["accent"], width=2),
-                        fill="tozeroy", fillcolor=f"rgba(100,180,255,0.1)",
-                    ))
-                    fig.update_layout(
-                        title=f"LinkedIn {_li_metric.title()} Over Time",
-                        height=350, **CT(),
-                        margin=dict(l=0, r=0, t=40, b=0),
-                    )
-                    _pc(fig)
+                _pc(fig)
 
-                # Growth rate
-                if len(_li_hist) >= 2 and "followers" in _li_hist.columns:
-                    _latest_f = _li_hist["followers"].iloc[-1]
-                    _prev_f = _li_hist["followers"].iloc[-2]
-                    if _prev_f > 0:
-                        _growth_rate = ((_latest_f - _prev_f) / _prev_f * 100)
-                        st.metric("Follower Growth", f"{_growth_rate:+.1f}%",
-                                  f"{_latest_f - _prev_f:+d} followers")
+            # Growth metrics
+            if len(_li_hist) >= 2 and "followers" in _li_hist.columns:
+                _latest_f = _li_hist["followers"].dropna()
+                if len(_latest_f) >= 2:
+                    _growth = int(_latest_f.iloc[-1]) - int(_latest_f.iloc[-2])
+                    _growth_rate = (_growth / max(1, int(_latest_f.iloc[-2]))) * 100
+                    st.metric("Follower Growth", f"{_growth:+d}", f"{_growth_rate:+.1f}%")
 
-                # Engagement chart
+            # Engagement charts
+            _ec1, _ec2 = st.columns(2)
+            with _ec1:
                 if "likes" in _li_hist.columns and "comments" in _li_hist.columns:
-                    _ec1, _ec2 = st.columns(2)
-                    with _ec1:
-                        fig2 = go.Figure()
-                        fig2.add_trace(go.Bar(x=_li_hist["date"], y=_li_hist["likes"], name="Likes", marker_color=T["accent"]))
-                        fig2.add_trace(go.Bar(x=_li_hist["date"], y=_li_hist["comments"], name="Comments", marker_color=T["accent2"]))
-                        fig2.update_layout(title="Engagement", height=300, **CT(), barmode="stack", margin=dict(l=0, r=0, t=40, b=0))
-                        _pc(fig2)
-                    with _ec2:
-                        if "impressions" in _li_hist.columns:
-                            fig3 = go.Figure()
-                            fig3.add_trace(go.Scatter(x=_li_hist["date"], y=_li_hist["impressions"], mode="lines+markers", name="Impressions", line=dict(color=T["green"])))
-                            fig3.update_layout(title="Impressions", height=300, **CT(), margin=dict(l=0, r=0, t=40, b=0))
-                            _pc(fig3)
+                    fig2 = go.Figure()
+                    fig2.add_trace(go.Bar(x=_li_hist["date"], y=_li_hist["likes"], name="Likes", marker_color=T["accent"]))
+                    fig2.add_trace(go.Bar(x=_li_hist["date"], y=_li_hist["comments"], name="Comments", marker_color=T["accent2"]))
+                    fig2.update_layout(title="Engagement", height=300, **CT(), barmode="stack", margin=dict(l=0, r=0, t=40, b=0))
+                    _pc(fig2)
+            with _ec2:
+                if "impressions" in _li_hist.columns:
+                    fig3 = go.Figure()
+                    fig3.add_trace(go.Scatter(x=_li_hist["date"], y=_li_hist["impressions"], mode="lines+markers", name="Impressions", line=dict(color=T["green"])))
+                    fig3.update_layout(title="Impressions", height=300, **CT(), margin=dict(l=0, r=0, t=40, b=0))
+                    _pc(fig3)
 
-                # Data table
-                with st.expander("📋 Raw Data"):
-                    _df(_li_hist.tail(30))
-            else:
-                st.info("📊 No historical data yet. Add data via Manual Entry or Scrape to see trends.")
+            with st.expander("📋 Raw Daily Data"):
+                _df(_li_hist.tail(30))
         else:
-            # Auto-scrape public page if no cached data
-            if st.button("🌐 Scrape LinkedIn Now", type="primary", use_container_width=True):
-                with st.spinner("Scraping LinkedIn public page..."):
-                    _result = scrape_public_metrics()
-                    if _result.get("error"):
-                        st.error(f"Scrape failed: {_result['error']}")
-                    else:
-                        st.success("✅ Metrics scraped!")
-                        st.rerun()
+            st.info("📊 No historical data yet. Data will auto-accumulate when the pipeline runs daily, or add data via Manual Entry.")
 
         # Scrape buttons
         _sbc1, _sbc2 = st.columns(2)
@@ -3561,7 +3594,6 @@ elif page == "💼 LinkedIn":
                     else:
                         st.success("✅ Public metrics scraped!")
                         st.rerun()
-
         with _sbc2:
             if _li_status["cookies"]:
                 if st.button("🔐 Deep Scrape (Authenticated)", use_container_width=True):
@@ -3573,37 +3605,207 @@ elif page == "💼 LinkedIn":
                             st.success("✅ Deep metrics scraped!")
                             st.rerun()
             else:
-                st.info("💡 Add `LINKEDIN_COOKIES_JSON` to secrets for deep scraping.")
+                st.info("💡 Add `LINKEDIN_COOKIES_JSON` to secrets for deep scraping + post data.")
 
-        # Manual history chart
+    # ══════════════════════════════════════════════
+    # TAB 2: All Posts (like YouTube All Videos)
+    # ══════════════════════════════════════════════
+    with _li_tabs[1]:
+        _li_posts = get_posts()
+        if not _li_posts:
+            st.info("📝 No post data yet. Run an authenticated scrape or import CSV to see posts.")
+            st.caption("💡 LinkedIn posts are scraped during the daily pipeline when LINKEDIN_COOKIES_JSON is configured.")
+        else:
+            # Score all posts
+            for p in _li_posts:
+                p["_score"] = calculate_post_score(p)
+            _li_posts_sorted = sorted(_li_posts, key=lambda x: x.get("_score", 0), reverse=True)
+
+            st.caption(f"📋 All Posts ({len(_li_posts)} posts, ranked by score)")
+
+            # Post cards
+            for i, post in enumerate(_li_posts_sorted[:50]):
+                _score = post.get("_score", 0)
+                _label, _color = get_score_label(_score)
+                _title = post.get("title", "Untitled Post")[:120]
+                _imp = post.get("impressions", 0)
+                _likes = post.get("likes", 0)
+                _comments = post.get("comments", 0)
+                _reposts = post.get("reposts", 0)
+                _eng = 0.0
+                if _imp > 0:
+                    _eng = (_likes + _comments * 3 + _reposts * 2) / _imp * 100
+
+                with st.expander(f"#{i+1} — {_title} — Score: {_score}/100 {_label}"):
+                    _pc1, _pc2, _pc3, _pc4, _pc5 = st.columns(5)
+                    with _pc1:
+                        st.metric("👁️ Impressions", f"{_imp:,}")
+                    with _pc2:
+                        st.metric("👍 Likes", f"{_likes:,}")
+                    with _pc3:
+                        st.metric("💬 Comments", f"{_comments:,}")
+                    with _pc4:
+                        st.metric("🔄 Reposts", f"{_reposts:,}")
+                    with _pc5:
+                        st.metric("📊 Engagement", f"{_eng:.1f}%")
+
+                    if post.get("urn"):
+                        st.caption(f"URN: {post['urn']}")
+                    if _title:
+                        st.markdown(f"**Full text:** {post.get('title', '')}")
+
+            # Posts table
+            with st.expander("📋 Posts Data Table"):
+                _posts_df_data = []
+                for p in _li_posts_sorted:
+                    _imp = p.get("impressions", 0)
+                    _likes = p.get("likes", 0)
+                    _comments = p.get("comments", 0)
+                    _reposts = p.get("reposts", 0)
+                    _eng = (_likes + _comments * 3 + _reposts * 2) / max(1, _imp) * 100 if _imp > 0 else 0
+                    _posts_df_data.append({
+                        "Title": p.get("title", "")[:80],
+                        "Impressions": _imp,
+                        "Likes": _likes,
+                        "Comments": _comments,
+                        "Reposts": _reposts,
+                        "Engagement %": round(_eng, 2),
+                        "Score": p.get("_score", 0),
+                    })
+                if _posts_df_data:
+                    _df(pd.DataFrame(_posts_df_data), height=400)
+
+    # ══════════════════════════════════════════════
+    # TAB 3: Analytics (time-series charts)
+    # ══════════════════════════════════════════════
+    with _li_tabs[2]:
         _li_hist = get_manual_history()
-        if not _li_hist.empty:
-            st.markdown("#### 📈 Historical Data")
-            _df(_li_hist.tail(30))
+        if _li_hist.empty:
+            st.info("📈 No analytics data yet. Data auto-accumulates during daily pipeline runs.")
+            st.caption("💡 You can also add data manually via the Import Data tab.")
+        else:
+            st.markdown("#### 📈 LinkedIn Analytics")
 
-    with _li_tabs[1]:  # Manual Entry
+            _an1, _an2 = st.columns(2)
+
+            with _an1:
+                # Followers over time
+                if "followers" in _li_hist.columns:
+                    fig = go.Figure()
+                    fig.add_trace(go.Scatter(
+                        x=_li_hist["date"], y=_li_hist["followers"],
+                        mode="lines+markers", name="Followers",
+                        line=dict(color=T["accent"], width=2),
+                        fill="tozeroy", fillcolor=f"rgba(100,180,255,0.1)",
+                    ))
+                    fig.update_layout(title="👥 Followers Over Time", height=350, **CT(), margin=dict(l=0, r=0, t=40, b=0))
+                    _pc(fig)
+
+                # Engagement rate
+                if "engagement_rate" in _li_hist.columns:
+                    fig = go.Figure()
+                    fig.add_trace(go.Scatter(
+                        x=_li_hist["date"], y=_li_hist["engagement_rate"],
+                        mode="lines+markers", name="Engagement Rate %",
+                        line=dict(color=T["green"], width=2),
+                    ))
+                    fig.update_layout(title="📊 Engagement Rate Over Time", height=350, **CT(), margin=dict(l=0, r=0, t=40, b=0))
+                    _pc(fig)
+
+            with _an2:
+                # Impressions over time
+                if "impressions" in _li_hist.columns:
+                    fig = go.Figure()
+                    fig.add_trace(go.Bar(
+                        x=_li_hist["date"], y=_li_hist["impressions"],
+                        name="Impressions", marker_color=T["accent"],
+                    ))
+                    fig.update_layout(title="👁️ Impressions Over Time", height=350, **CT(), margin=dict(l=0, r=0, t=40, b=0))
+                    _pc(fig)
+
+                # Likes vs Comments
+                if "likes" in _li_hist.columns and "comments" in _li_hist.columns:
+                    fig = go.Figure()
+                    fig.add_trace(go.Bar(x=_li_hist["date"], y=_li_hist["likes"], name="Likes", marker_color=T["accent"]))
+                    fig.add_trace(go.Bar(x=_li_hist["date"], y=_li_hist["comments"], name="Comments", marker_color=T["accent2"]))
+                    fig.update_layout(title="👍💬 Likes vs Comments", height=350, **CT(), barmode="stack", margin=dict(l=0, r=0, t=40, b=0))
+                    _pc(fig)
+
+    # ══════════════════════════════════════════════
+    # TAB 4: Followers
+    # ══════════════════════════════════════════════
+    with _li_tabs[3]:
+        _li_hist = get_manual_history()
+        if _li_hist.empty or "followers" not in _li_hist.columns:
+            st.info("👥 No follower data yet. Data auto-accumulates during daily pipeline runs.")
+        else:
+            st.markdown("#### 👥 Follower Growth")
+
+            _f1, _f2, _f3 = st.columns(3)
+            _f_vals = _li_hist["followers"].dropna()
+            with _f1:
+                st.metric("Current Followers", f"{int(_f_vals.iloc[-1]):,}" if len(_f_vals) > 0 else "0")
+            with _f2:
+                if len(_f_vals) >= 2:
+                    _f_growth = int(_f_vals.iloc[-1]) - int(_f_vals.iloc[-2])
+                    st.metric("New Followers", f"{_f_growth:+d}")
+                else:
+                    st.metric("New Followers", "—")
+            with _f3:
+                if len(_f_vals) >= 7:
+                    _f_7d = int(_f_vals.iloc[-1]) - int(_f_vals.iloc[-7])
+                    st.metric("7-Day Growth", f"{_f_7d:+d}")
+                else:
+                    st.metric("7-Day Growth", "—")
+
+            # Growth chart
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(
+                x=_li_hist["date"], y=_li_hist["followers"],
+                mode="lines+markers", name="Followers",
+                line=dict(color=T["accent"], width=2),
+                fill="tozeroy", fillcolor=f"rgba(100,180,255,0.1)",
+            ))
+            fig.update_layout(title="Follower Count Over Time", height=400, **CT(), margin=dict(l=0, r=0, t=40, b=0))
+            _pc(fig)
+
+            # Daily growth chart
+            if len(_f_vals) >= 2:
+                _f_diff = _li_hist["followers"].diff().dropna()
+                fig2 = go.Figure()
+                fig2.add_trace(go.Bar(
+                    x=_li_hist["date"].iloc[1:], y=_f_diff,
+                    name="Daily Growth", marker_color=T["green"],
+                ))
+                fig2.update_layout(title="Daily Follower Growth", height=350, **CT(), margin=dict(l=0, r=0, t=40, b=0))
+                _pc(fig2)
+
+    # ══════════════════════════════════════════════
+    # TAB 5: Import Data
+    # ══════════════════════════════════════════════
+    with _li_tabs[4]:
         st.markdown("#### 📝 Enter LinkedIn Metrics Manually")
-        st.caption("Enter current metric values. Each entry is timestamped and saved to history.")
+        st.caption("Enter current metric values. Each entry is timestamped and saved to daily history.")
 
         _me1, _me2, _me3, _me4 = st.columns(4)
         with _me1:
-            _m_followers = st.number_input("Followers", min_value=0, value=0, step=1)
+            _m_followers = st.number_input("Followers", min_value=0, value=0, step=1, key="li_mf")
         with _me2:
-            _m_impressions = st.number_input("Impressions (period)", min_value=0, value=0, step=1)
+            _m_impressions = st.number_input("Impressions (period)", min_value=0, value=0, step=1, key="li_mi")
         with _me3:
-            _m_engagement = st.number_input("Engagement Rate (%)", min_value=0.0, value=0.0, step=0.1)
+            _m_engagement = st.number_input("Engagement Rate (%)", min_value=0.0, value=0.0, step=0.1, key="li_me")
         with _me4:
-            _m_posts = st.number_input("Posts (period)", min_value=0, value=0, step=1)
+            _m_posts = st.number_input("Posts (period)", min_value=0, value=0, step=1, key="li_mp")
 
         _me5, _me6, _me7 = st.columns(3)
         with _me5:
-            _m_visitors = st.number_input("Unique Visitors", min_value=0, value=0, step=1)
+            _m_visitors = st.number_input("Unique Visitors", min_value=0, value=0, step=1, key="li_mv")
         with _me6:
-            _m_likes = st.number_input("Total Likes", min_value=0, value=0, step=1)
+            _m_likes = st.number_input("Total Likes", min_value=0, value=0, step=1, key="li_ml")
         with _me7:
-            _m_comments = st.number_input("Total Comments", min_value=0, value=0, step=1)
+            _m_comments = st.number_input("Total Comments", min_value=0, value=0, step=1, key="li_mc")
 
-        if st.button("💾 Save Manual Entry", use_container_width=True):
+        if st.button("💾 Save Manual Entry", use_container_width=True, key="li_save"):
             _entry = {
                 "followers": _m_followers,
                 "impressions": _m_impressions,
@@ -3619,7 +3821,7 @@ elif page == "💼 LinkedIn":
             else:
                 st.error("Failed to save entry.")
 
-    with _li_tabs[2]:  # Import CSV
+        st.markdown("---")
         st.markdown("#### 📥 Import LinkedIn Data from CSV")
         st.caption("Paste CSV content exported from LinkedIn Analytics or enter manually.")
 
@@ -3627,9 +3829,10 @@ elif page == "💼 LinkedIn":
             "CSV Content",
             value="date,followers,impressions,engagement_rate,unique_visitors,posts,likes,comments\n",
             height=200,
+            key="li_csv",
         )
 
-        if st.button("📥 Import CSV", use_container_width=True):
+        if st.button("📥 Import CSV", use_container_width=True, key="li_import"):
             if import_csv_data(_csv_text):
                 st.success("✅ CSV data imported!")
             else:
@@ -3640,14 +3843,16 @@ elif page == "💼 LinkedIn":
 2026-06-01,450,12000,3.5,800,5,350,42
 2026-06-02,452,11500,3.2,750,3,280,35""")
 
-    with _li_tabs[3]:  # Scrape Settings
-        st.markdown("#### 🔧 LinkedIn Scraping Configuration")
-        st.caption("Configure automated daily scraping via GitHub Actions pipeline.")
+    # ══════════════════════════════════════════════
+    # TAB 6: Settings
+    # ══════════════════════════════════════════════
+    with _li_tabs[5]:
+        st.markdown("#### 🔧 LinkedIn Configuration")
 
         _co_url = st.text_input(
             "Company Page URL",
-            value=os.environ.get("LINKEDIN_COMPANY_PAGE", ""),
-            help="e.g., https://www.linkedin.com/company/eagle3d/",
+            value=_get_company_page() if callable(_get_company_page) else os.environ.get("LINKEDIN_COMPANY_PAGE", ""),
+            help="e.g., https://www.linkedin.com/company/eagle-3d-streaming/",
         )
 
         with st.expander("🍪 Cookie Instructions"):
@@ -3667,15 +3872,32 @@ elif page == "💼 LinkedIn":
 
             **Add to Streamlit Cloud Secrets:**
             ```toml
-            LINKEDIN_COMPANY_PAGE = "https://www.linkedin.com/company/eagle3d/"
+            LINKEDIN_COMPANY_PAGE = "https://www.linkedin.com/company/eagle-3d-streaming/"
             LINKEDIN_COOKIES_JSON = '[{"name":"li_at","value":"...","domain":".linkedin.com"}]'
             ```
 
-            ⚠️ **Important:** LinkedIn cookies expire every ~90 days. You'll need to re-export periodically.
+            ⚠️ **Important:** LinkedIn cookies expire every ~90 days. You will need to re-export periodically.
             """)
 
+        # Data diagnostics
+        st.markdown("---")
+        st.markdown("#### 📊 LinkedIn Data Diagnostics")
+        _dg1, _dg2, _dg3 = st.columns(3)
+        with _dg1:
+            st.metric("Cached Metrics", "✅" if _li_status["cached_data"] else "❌ None")
+        with _dg2:
+            st.metric("Post Data", f"{len(get_posts())} posts" if _li_status.get("has_posts") else "❌ None")
+        with _dg3:
+            _h = get_manual_history()
+            st.metric("Daily History", f"{len(_h)} days" if not _h.empty else "❌ None")
 
-# ═══════════════════════════════════════════════════════════════
+        if _li_status.get("has_daily"):
+            _h = get_manual_history()
+            if not _h.empty:
+                with st.expander("📋 Recent Daily Data"):
+                    _df(_h.tail(14))
+
+
 # PAGE: 🔗 CROSS-PLATFORM CORRELATION
 # ═══════════════════════════════════════════════════════════════
 elif page == "🔗 Cross-Platform":

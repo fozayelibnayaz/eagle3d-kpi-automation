@@ -148,7 +148,7 @@ def main():
         from linkedin_connector import (
             scrape_public_metrics, scrape_with_playwright,
             has_cookies, is_configured, get_status,
-            save_manual_entry,
+            save_manual_entry, save_posts,
         )
         from pathlib import Path as _P
         import json as _json
@@ -168,8 +168,48 @@ def main():
         else:
             log(f"LinkedIn: Scrape OK — {list(result.keys())}")
 
-            # AUTO-ACCUMULATE: Save daily time-series entry from scraped data
-            # This is the KEY FIX — LinkedIn gets historical data automatically, like KPI system
+            # ── Save posts data if available ──
+            _posts = result.get("posts", [])
+            if _posts:
+                try:
+                    # Merge with existing posts (by URN or title)
+                    _existing_posts = []
+                    _posts_path = _P("data_output") / "linkedin_posts.json"
+                    if _posts_path.exists():
+                        try:
+                            _ep_data = _json.loads(_posts_path.read_text())
+                            _existing_posts = _ep_data if isinstance(_ep_data, list) else _ep_data.get("posts", [])
+                        except Exception:
+                            pass
+                    
+                    # Merge: update existing posts, add new ones
+                    _by_key = {}
+                    for p in _existing_posts:
+                        _key = p.get("urn") or p.get("title", "")
+                        if _key:
+                            _by_key[_key] = p
+                    for p in _posts:
+                        _key = p.get("urn") or p.get("title", "")
+                        if _key and _key in _by_key:
+                            # Update metrics for existing post
+                            _old = _by_key[_key]
+                            for _k in ("likes", "comments", "reposts", "impressions"):
+                                if p.get(_k, 0) > 0:
+                                    _old[_k] = p[_k]
+                            _old["_last_scraped"] = datetime.now().isoformat()
+                        else:
+                            p["_first_seen"] = datetime.now().isoformat()
+                            p["_last_scraped"] = datetime.now().isoformat()
+                            _by_key[_key] = p
+                    
+                    _merged = list(_by_key.values())
+                    save_posts(_merged)
+                    log(f"LinkedIn: Saved {len(_merged)} posts (+{len(_posts)} scraped)")
+                except Exception as e:
+                    log(f"LinkedIn: Posts save error: {e}")
+
+            # ── AUTO-ACCUMULATE: Save daily time-series entry ──
+            # This builds historical data automatically, like KPI system
             try:
                 _entry = {
                     "followers": result.get("followers", 0),
@@ -178,22 +218,34 @@ def main():
                     "industry": result.get("industry", ""),
                     "scraped_at": datetime.now().isoformat(),
                 }
-                # Also add authenticated data if available
-                if result.get("impressions"):
-                    _entry["impressions"] = result.get("impressions", 0)
-                if result.get("engagement_rate"):
-                    _entry["engagement_rate"] = result.get("engagement_rate", 0)
-                if result.get("unique_visitors"):
-                    _entry["unique_visitors"] = result.get("unique_visitors", 0)
-                if result.get("likes"):
-                    _entry["likes"] = result.get("likes", 0)
-                if result.get("comments"):
-                    _entry["comments"] = result.get("comments", 0)
-                if result.get("posts"):
-                    _entry["posts"] = result.get("posts", 0)
+                # Authenticated data
+                for _k in ("impressionCount", "uniqueVisitors", "totalPageViews",
+                           "likeCount", "commentCount", "shareCount", "clickCount"):
+                    if result.get(_k):
+                        _entry[_k] = result.get(_k)
+                # Also map to friendly names
+                if result.get("impressionCount"):
+                    _entry["impressions"] = result.get("impressionCount", 0)
+                if result.get("uniqueVisitors"):
+                    _entry["unique_visitors"] = result.get("uniqueVisitors", 0)
+                if result.get("likeCount"):
+                    _entry["likes"] = result.get("likeCount", 0)
+                if result.get("commentCount"):
+                    _entry["comments"] = result.get("commentCount", 0)
+                # Posts count
+                if _posts:
+                    _entry["posts"] = len(_posts)
+                    _entry["post_likes"] = sum(p.get("likes", 0) for p in _posts)
+                    _entry["post_comments"] = sum(p.get("comments", 0) for p in _posts)
+                    _entry["post_reposts"] = sum(p.get("reposts", 0) for p in _posts)
+                    _entry["post_impressions"] = sum(p.get("impressions", 0) for p in _posts)
+                    _total_imp = max(_entry.get("impressions", 0), _entry.get("post_impressions", 0))
+                    _total_eng = _entry.get("post_likes", 0) + _entry.get("post_comments", 0) + _entry.get("post_reposts", 0)
+                    if _total_imp > 0:
+                        _entry["engagement_rate"] = round(_total_eng / _total_imp * 100, 2)
 
                 save_manual_entry(_entry)
-                log(f"LinkedIn: Auto-saved daily entry — followers={_entry.get('followers', 0)}")
+                log(f"LinkedIn: Auto-saved daily entry — followers={_entry.get('followers', 0)}, posts={_entry.get('posts', 0)}")
             except Exception as e:
                 log(f"LinkedIn: Auto-accumulate error: {e}")
     ok6, e6 = run_stage(6, "LinkedIn Scrape + Auto-Accumulate", s6)
