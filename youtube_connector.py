@@ -41,14 +41,16 @@ YT_DAILY_CACHE = DATA_DIR / "youtube_daily.json"
 
 
 def _get_secret(key: str, default: str = "") -> str:
+    """Get secret from env, then Streamlit secrets."""
     val = os.environ.get(key, "")
     if val:
         return val
     try:
         import streamlit as st
-        val = st.secrets.get(key, "")
-        if isinstance(val, str) and val:
-            return val
+        if key in st.secrets:
+            val = st.secrets[key]
+            if val is not None and str(val).strip():
+                return str(val).strip()
     except Exception:
         pass
     return default

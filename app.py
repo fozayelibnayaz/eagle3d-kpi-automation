@@ -713,18 +713,33 @@ with st.sidebar:
 
     st.markdown("---")
 
-    # Navigation
-    page = st.radio(
-        "Navigate",
-        [
-            "📊 Dashboard", "🚦 Traffic Intel", "🤖 Ask AI",
-            "🔮 Predictions", "📋 Reports", "🔔 Alerts",
-            "🔬 EDA Lab", "🔍 Browse Data", "✏️ Manual Override",
-            "📺 YouTube", "💼 LinkedIn", "🔗 Cross-Platform",
-            "⚙️ Settings",
-        ],
+    # Navigation — 4 primary platform groups
+    _nav_section = st.radio(
+        "Platform",
+        ["📊 KPI System", "🌐 Analytics", "📺 YouTube", "💼 LinkedIn"],
         label_visibility="collapsed",
+        key="nav_section",
     )
+    st.markdown("---")
+    if _nav_section == "📊 KPI System":
+        page = st.radio("KPI", [
+            "📊 Dashboard", "🔍 Browse Data", "✏️ Manual Override", "⚙️ Settings",
+        ], label_visibility="collapsed", key="nav_kpi")
+    elif _nav_section == "🌐 Analytics":
+        page = st.radio("GA", [
+            "🚦 Traffic Intel", "🔬 EDA Lab", "🤖 Ask AI",
+            "🔮 Predictions", "📋 Reports", "🔔 Alerts",
+        ], label_visibility="collapsed", key="nav_ga")
+    elif _nav_section == "📺 YouTube":
+        page = st.radio("YT", [
+            "📺 YouTube", "🔗 Cross-Platform", "🤖 Ask AI",
+            "🔮 Predictions", "📋 Reports", "🔔 Alerts",
+        ], label_visibility="collapsed", key="nav_yt")
+    else:
+        page = st.radio("LI", [
+            "💼 LinkedIn", "🔗 Cross-Platform", "🤖 Ask AI",
+            "🔮 Predictions", "📋 Reports", "🔔 Alerts",
+        ], label_visibility="collapsed", key="nav_li")
 
     st.markdown("---")
 
@@ -1929,10 +1944,10 @@ elif page == "🔍 Browse Data":
     _bd_c1, _bd_c2, _bd_c3, _bd_c4 = st.columns(4)
     with _bd_c1:
         _bd_preset = st.selectbox("📅 Date filter:", [
-            "All Time", "Today", "Yesterday", "This Week", "Last Week",
-            "This Month", "Last Month", "Last 3 Months", "Last 6 Months", "This Year",
-            "Custom Month",
-        ], key="bd_preset")
+            "This Month", "Last Month", "All Time", "Today", "Yesterday", "This Week", "Last Week",
+            "Last 7 Days", "Last 14 Days", "Last 28 Days", "Last 30 Days",
+            "Last 3 Months", "Last 6 Months", "This Year", "Custom Range", "Custom Month",
+        ], index=0, key="bd_preset")
     with _bd_c2:
         if _bd_preset == "Custom Month":
             _bd_month = st.selectbox("Month:", [
@@ -1955,11 +1970,21 @@ elif page == "🔍 Browse Data":
         "Last Week": (_bd_today - timedelta(days=_bd_today.weekday() + 7), _bd_today - timedelta(days=_bd_today.weekday() + 1)),
         "This Month": (_bd_today.replace(day=1), _bd_today),
         "Last Month": ((_bd_today.replace(day=1) - timedelta(days=1)).replace(day=1), _bd_today.replace(day=1) - timedelta(days=1)),
+        "Last 7 Days": (_bd_today - timedelta(days=6), _bd_today),
+        "Last 14 Days": (_bd_today - timedelta(days=13), _bd_today),
+        "Last 28 Days": (_bd_today - timedelta(days=27), _bd_today),
+        "Last 30 Days": (_bd_today - timedelta(days=29), _bd_today),
         "Last 3 Months": (_bd_today - timedelta(days=90), _bd_today),
         "Last 6 Months": (_bd_today - timedelta(days=180), _bd_today),
         "This Year": (_bd_today.replace(month=1, day=1), _bd_today),
     }
-    if _bd_preset == "Custom Month" and _bd_month:
+    if _bd_preset == "Custom Range":
+        with _bd_c2:
+            _bd_cr_start = st.date_input("Start", value=_bd_today - timedelta(days=30), key="bd_cr_start")
+        with _bd_c3:
+            _bd_cr_end = st.date_input("End", value=_bd_today, key="bd_cr_end")
+        _bd_ds, _bd_de = _bd_cr_start, _bd_cr_end
+    elif _bd_preset == "Custom Month" and _bd_month:
         _m_parts = _bd_month.split("-")
         _m_y, _m_m = int(_m_parts[0]), int(_m_parts[1])
         _m_start = datetime(_m_y, _m_m, 1).date()
@@ -2081,7 +2106,9 @@ elif page == "🔍 Browse Data":
                                     original_category=_orig_status,
                                 )
                                 _ov_count += 1
-                            st.success(f"✅ Overrode {_ov_count} emails → {_ov_action}. They'll be applied on next pipeline run.")
+                            st.success(f"✅ Overrode {_ov_count} emails → {_ov_action}. Changes applied!")
+                            st.cache_data.clear()
+                            st.rerun()
                     else:
                         st.info("No email column found for override.")
             elif not _mo_engine:
@@ -3156,7 +3183,14 @@ elif page == "🔗 Cross-Platform":
     with _cp_tabs[0]:  # Unified Timeline
         st.markdown("#### 🔄 Unified Cross-Platform Timeline")
         if not _unified.empty:
-            _avail_cols = [c for c in _unified.columns if c != "date" and _unified[c].sum() > 0]
+            _avail_cols = []
+            for c in _unified.columns:
+                if c != "date":
+                    try:
+                        if pd.api.types.is_numeric_dtype(_unified[c]) and _unified[c].sum() > 0:
+                            _avail_cols.append(c)
+                    except Exception:
+                        pass
             if _avail_cols:
                 # Let user pick metrics to chart
                 _sel_metrics = st.multiselect(

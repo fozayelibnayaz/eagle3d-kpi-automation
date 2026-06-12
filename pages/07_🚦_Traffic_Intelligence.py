@@ -19,6 +19,9 @@ from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
 import sys, os, hashlib
 
+# Theme detection
+IS_DARK = st.session_state.get("theme_mode", "dark") == "dark"
+
 # ── Page config ──────────────────────────────────────────────
 try:
     st.set_page_config(
@@ -158,13 +161,18 @@ def _delta_html(pct):
         return f'<span style="color:#00E676;font-weight:600;">▲ {pct:+.1f}%</span>'
     elif pct < 0:
         return f'<span style="color:#FF5252;font-weight:600;">▼ {abs(pct):.1f}%</span>'
-    return '<span style="color:#5B6B85;">→ flat</span>'
+    c = "#5B6B85" if IS_DARK else "#64748B"
+    return f'<span style="color:{c};">→ flat</span>'
 
 def _kpi_card(title, value, delta="", color="#00D4FF"):
-    """HTML KPI card."""
-    return f"""<div style="background:#111D32;border:1px solid #1B3054;border-radius:12px;padding:16px;text-align:center;min-width:120px;">
-        <div style="font-size:0.75rem;color:#5B6B85;text-transform:uppercase;letter-spacing:0.5px;">{title}</div>
-        <div style="font-size:1.6rem;font-weight:800;color:{color};margin:4px 0;">{value}</div>
+    """HTML KPI card — theme-aware."""
+    _bg = "#111D32" if IS_DARK else "#FFFFFF"
+    _border = "#1B3054" if IS_DARK else "#CBD5E1"
+    _lbl = "#5B6B85" if IS_DARK else "#64748B"
+    _val_color = color if IS_DARK else "#0077B6"
+    return f"""<div style="background:{_bg};border:1px solid {_border};border-radius:12px;padding:16px;text-align:center;min-width:120px;">
+        <div style="font-size:0.75rem;color:{_lbl};text-transform:uppercase;letter-spacing:0.5px;">{title}</div>
+        <div style="font-size:1.6rem;font-weight:800;color:{_val_color};margin:4px 0;">{value}</div>
         {f'<div style="font-size:0.8rem;">{delta}</div>' if delta else ''}
     </div>"""
 
