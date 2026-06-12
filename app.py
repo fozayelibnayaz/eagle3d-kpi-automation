@@ -931,6 +931,55 @@ prev_kpi = (
 free_rows = free_raw.copy()
 upload_rows = upload_raw.copy()
 
+# ── Apply manual overrides instantly to in-memory data ──
+_ov_engine = MOD.get("manual_override_engine")
+if _ov_engine and "final_status" in free_rows.columns:
+    try:
+        _ovs = _ov_engine.load_overrides()
+        if _ovs:
+            from manual_override_engine import normalize_email, ACTION_TO_STATUS
+            _applied = 0
+            for _idx, _row in free_rows.iterrows():
+                _em = ""
+                for _k in ("Email", "email", "__email_normalized__"):
+                    if _k in free_rows.columns and _row.get(_k) and "@" in str(_row[_k]):
+                        _em = str(_row[_k]).strip().lower()
+                        break
+                _norm = normalize_email(_em) if _em else ""
+                if _norm and _norm in _ovs:
+                    _ov = _ovs[_norm]
+                    _action = _ov.get("action", "")
+                    _mapping = ACTION_TO_STATUS.get(_action, {})
+                    if _mapping:
+                        free_rows.at[_idx, "final_status"] = _mapping["final_status"]
+                        free_rows.at[_idx, "category"] = _mapping.get("category", "")
+                        _applied += 1
+            if _applied:
+                st.toast(f"🔄 {_applied} manual overrides applied to live data")
+    except Exception:
+        pass
+if _ov_engine and "final_status" in upload_rows.columns:
+    try:
+        _ovs = _ov_engine.load_overrides()
+        if _ovs:
+            from manual_override_engine import normalize_email, ACTION_TO_STATUS
+            for _idx, _row in upload_rows.iterrows():
+                _em = ""
+                for _k in ("Email", "email", "__email_normalized__"):
+                    if _k in upload_rows.columns and _row.get(_k) and "@" in str(_row[_k]):
+                        _em = str(_row[_k]).strip().lower()
+                        break
+                _norm = normalize_email(_em) if _em else ""
+                if _norm and _norm in _ovs:
+                    _ov = _ovs[_norm]
+                    _action = _ov.get("action", "")
+                    _mapping = ACTION_TO_STATUS.get(_action, {})
+                    if _mapping:
+                        upload_rows.at[_idx, "final_status"] = _mapping["final_status"]
+                        upload_rows.at[_idx, "category"] = _mapping.get("category", "")
+    except Exception:
+        pass
+
 leads_df = pd.DataFrame()
 if "kpi_bridge" in MOD and not free_rows.empty:
     try:

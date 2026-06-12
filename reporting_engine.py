@@ -182,7 +182,7 @@ def build_telegram_message(stats):
         f"💳 Paid:          `{stats['paid_all']}`\n"
         f"\n"
         f"🔗 [View Dashboard](https://eagle3d\\-kpi\\-automation\\.streamlit\\.app/)\n"
-        f"_Auto\\-generated at 04:00 UTC_"
+        f"_Auto\\-generated at " + datetime.utcnow().strftime("%H:%M") + " UTC_"
     )
 
 
