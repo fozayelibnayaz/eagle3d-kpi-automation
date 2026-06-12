@@ -1152,7 +1152,18 @@ if "kpi_bridge" in MOD and not free_rows.empty:
         pass
 if leads_df.empty and "source_normalizer" in MOD and not free_rows.empty:
     try:
-        leads_df = MOD["source_normalizer"].aggregate_normalized_sources(free_rows)
+        # Apply date filter to free_rows before aggregating sources
+        _fr_filtered = free_rows.copy()
+        if "Account Created On" in _fr_filtered.columns:
+            _fr_filtered["_src_date"] = _fr_filtered["Account Created On"].apply(
+                lambda x: parse_to_date(x)
+            )
+            _fr_filtered = _fr_filtered[
+                (_fr_filtered["_src_date"] >= p_start)
+                & (_fr_filtered["_src_date"] <= p_end)
+            ].drop(columns=["_src_date"])
+        if not _fr_filtered.empty:
+            leads_df = MOD["source_normalizer"].aggregate_normalized_sources(_fr_filtered)
     except Exception:
         pass
 
