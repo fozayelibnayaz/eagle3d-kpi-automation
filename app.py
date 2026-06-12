@@ -334,6 +334,57 @@ def _css():
 _css()
 
 # ═══════════════════════════════════════════════════════════════
+# AUTHENTICATION GATE
+# ═══════════════════════════════════════════════════════════════
+def _get_app_password():
+    """Get password from secrets first, then fallback to default."""
+    try:
+        if "APP_PASSWORD" in st.secrets:
+            val = st.secrets["APP_PASSWORD"]
+            if val and str(val).strip():
+                return str(val).strip()
+    except Exception:
+        pass
+    return os.environ.get("APP_PASSWORD", "eagleanalytics")
+
+_APP_PASSWORD = _get_app_password()
+
+def _check_auth():
+    """Simple password-gate for the dashboard. Only allows access after correct password."""
+    if "authenticated" not in st.session_state:
+        st.session_state["authenticated"] = False
+    if st.session_state["authenticated"]:
+        return True
+    # Login screen
+    st.markdown("""
+    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;
+                min-height:60vh;text-align:center;">
+        <div style="font-size:3rem;margin-bottom:0.5rem;">🦅</div>
+        <div style="font-size:1.6rem;font-weight:800;color:var(--accent);margin-bottom:0.3rem;">
+            Eagle Analytics Hub</div>
+        <div style="font-size:0.9rem;color:var(--text-sec, #94A3C1);margin-bottom:2rem;">
+            Secure Dashboard — Authentication Required</div>
+    </div>
+    """, unsafe_allow_html=True)
+    _cols = st.columns([2, 1, 2])
+    with _cols[1]:
+        _pwd = st.text_input("🔒 Enter Password", type="password", key="_auth_pwd",
+                             placeholder="Password...")
+        _login_btn = st.button("🔓 Sign In", use_container_width=True, key="_auth_btn")
+        if _login_btn or _pwd:
+            if _pwd == _APP_PASSWORD:
+                st.session_state["authenticated"] = True
+                st.toast("✅ Access granted", icon="🦅")
+                st.rerun()
+            else:
+                st.error("❌ Incorrect password. Try again.")
+        st.caption("🔒 This dashboard is private and password-protected.")
+    return False
+
+if not _check_auth():
+    st.stop()
+
+# ═══════════════════════════════════════════════════════════════
 # COMPATIBILITY HELPERS
 # ═══════════════════════════════════════════════════════════════
 
@@ -693,8 +744,9 @@ with st.sidebar:
         )
     st.markdown(
         '<div style="text-align:center;padding:2px 0 6px 0;">'
-        '<div style="font-size:0.9rem;font-weight:800;color:var(--accent);'
-        'letter-spacing:0.5px;">Eagle Analytics Hub</div>'
+        '<a href="https://eagle3d-kpi-automation.streamlit.app/" target="_blank" '
+        'style="font-size:0.9rem;font-weight:800;color:var(--accent);'
+        'letter-spacing:0.5px;text-decoration:none;">Eagle Analytics Hub 🦅</a>'
         "</div>",
         unsafe_allow_html=True,
     )
@@ -806,7 +858,11 @@ with st.sidebar:
                 lines.append("⚠️ No AI keys in secrets — using rule-based")
             for l in lines:
                 st.caption(l)
-    st.caption(f"🦅 Eagle Analytics Hub v7.1 | {datetime.now().strftime('%H:%M')}")
+    st.caption(f"🦅 Eagle Analytics Hub v7.2 | {datetime.now().strftime('%H:%M')}")
+    # Logout button
+    if st.button("🔒 Sign Out", key="_auth_logout", use_container_width=True):
+        st.session_state["authenticated"] = False
+        st.rerun()
 
 # ═══════════════════════════════════════════════════════════════
 # LOAD DATA
@@ -1197,7 +1253,10 @@ period_label = f"{fd(p_start)} to {fd(p_end)}"
 # ═══════════════════════════════════════════════════════════════
 if page == "📊 Dashboard":
     st.markdown(
-        '<div class="sec-head">📊 Executive Dashboard</div>',
+        '<div class="sec-head">📊 Executive Dashboard '
+        '<a href="https://eagle3d-kpi-automation.streamlit.app/" target="_blank" '
+        'style="font-size:0.7em;color:var(--accent);text-decoration:none;opacity:0.7;">'
+        '🦅 eagle3d-kpi-automation.streamlit.app</a></div>',
         unsafe_allow_html=True,
     )
 
@@ -2393,12 +2452,15 @@ elif page == "🔍 Browse Data":
             _date_col = "row_date_used"
         if _date_col and _bd_preset != "All Time":
             fl["_parsed_date"] = fl[_date_col].apply(parse_to_date)
-            # Keep rows where date is parseable AND in range
-            # Also keep rows where date is NOT parseable (don't silently drop them!)
             _has_date = fl["_parsed_date"].notna()
             _in_range = fl["_parsed_date"].between(_bd_ds, _bd_de)
-            fl = fl[~_has_date | _in_range]  # Keep: no-date OR in-range
+            # Only keep rows that have a parseable date AND are in range
+            # Rows without parseable dates are excluded (they can't be assigned to any period)
+            _no_date_count = int((~_has_date).sum())
+            fl = fl[_has_date & _in_range]
             fl = fl.drop(columns=["_parsed_date"])
+            if _no_date_count > 0:
+                st.caption(f"ℹ️ {_no_date_count} rows without a parseable date were excluded from this period")
         # Status filter
         if _bd_status != "All" and "final_status" in fl.columns:
             fl = fl[fl["final_status"].astype(str).str.upper() == _bd_status]
@@ -4516,7 +4578,7 @@ st.divider()
 _fc1, _fc2, _fc3 = st.columns(3)
 with _fc1:
     st.caption(
-        f"🦅 Eagle Analytics Hub v7.1 | "
+        f"🦅 Eagle Analytics Hub v7.2 | "
         f"{datetime.now().strftime('%Y-%m-%d %H:%M')}"
     )
 with _fc2:
