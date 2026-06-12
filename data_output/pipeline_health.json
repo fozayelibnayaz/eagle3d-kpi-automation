@@ -1,9 +1,15 @@
 {
-  "alerts_sent": {
-    "daily_summary_2026-05-14": "2026-05-14T18:26:07.966714",
-    "daily_summary_2026-05-15": "2026-05-15T05:55:21.957812",
-    "daily_summary_2026-05-16": "2026-05-16T06:24:31.832827",
-    "daily_summary_2026-05-17": "2026-05-17T06:47:13.459506",
-    "daily_summary_2026-05-18": "2026-05-18T04:42:19.882810"
+  "last_run": "2026-06-12T18:35:26.927740",
+  "duration_seconds": 893.8,
+  "stages_passed": 7,
+  "total_stages": 7,
+  "results": {
+    "stage1_kpi": "ok",
+    "stage2_stripe": "ok",
+    "stage3_process": "ok",
+    "stage4_counts": "ok",
+    "stage5_youtube": "ok",
+    "stage6_linkedin": "ok",
+    "stage7_report": "ok"
   }
 }
