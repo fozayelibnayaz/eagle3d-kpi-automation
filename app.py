@@ -564,25 +564,45 @@ def load_sheet(tab):
 
 
 def parse_to_date(raw):
-    if not raw or str(raw).strip() in ("", "-", "—", "nan", "None"):
+    if not raw or str(raw).strip() in ("", "-", "—", "nan", "None", "N/A"):
         return None
     s = str(raw).strip()
+    # Try email.utils RFC 2822 parser (handles many web formats)
     try:
         return parsedate_to_datetime(s).date()
     except Exception:
         pass
+    # Exhaustive format list — covers KPI Dashboard, Stripe, Google Sheets, etc.
     for fmt in [
-        "%Y-%m-%d %H:%M:%S", "%Y-%m-%d",
+        "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d",
         "%m/%d/%y, %I:%M %p", "%m/%d/%Y, %I:%M %p",
+        "%m/%d/%y, %I:%M:%S %p", "%m/%d/%Y, %I:%M:%S %p",
+        "%m/%d/%y %I:%M %p", "%m/%d/%Y %I:%M %p",
+        "%m/%d/%y", "%m/%d/%Y",
+        "%d/%m/%Y", "%d/%m/%y",
+        "%b %d, %Y", "%d %b %Y",
+        "%a %b %d %Y %H:%M:%S", "%a %b %d %Y",
+        "%Y/%m/%d", "%Y.%m.%d",
     ]:
         try:
             return datetime.strptime(s, fmt).date()
         except Exception:
             continue
+    # Regex fallback: extract YYYY-MM-DD
     m = re.search(r"(\d{4})-(\d{1,2})-(\d{1,2})", s)
     if m:
         try:
             return datetime(int(m.group(1)), int(m.group(2)), int(m.group(3))).date()
+        except Exception:
+            pass
+    # Regex fallback: extract MM/DD/YY or MM/DD/YYYY
+    m = re.match(r"^(\d{1,2})/(\d{1,2})/(\d{2,4})", s)
+    if m:
+        try:
+            y = int(m.group(3))
+            if y < 100:
+                y += 2000
+            return datetime(y, int(m.group(1)), int(m.group(2))).date()
         except Exception:
             pass
     return None
@@ -1253,11 +1273,13 @@ period_label = f"{fd(p_start)} to {fd(p_end)}"
 # ═══════════════════════════════════════════════════════════════
 if page == "📊 Dashboard":
     st.markdown(
-        '<div class="sec-head">📊 Executive Dashboard '
-        '<a href="https://eagle3d-kpi-automation.streamlit.app/" target="_blank" '
-        'style="font-size:0.7em;color:var(--accent);text-decoration:none;opacity:0.7;">'
-        '🦅 eagle3d-kpi-automation.streamlit.app</a></div>',
+        '<div class="sec-head">📊 Executive Dashboard</div>',
         unsafe_allow_html=True,
+    )
+    # App link — prominent and clickable
+    st.markdown(
+        '🦅 **App URL:** [https://eagle3d-kpi-automation.streamlit.app/](https://eagle3d-kpi-automation.streamlit.app/)',
+        unsafe_allow_html=False,
     )
 
     # Data diagnostics
@@ -2429,38 +2451,89 @@ elif page == "🔍 Browse Data":
     st.caption(f"📅 Showing: **{_bd_ds}** → **{_bd_de}**")
 
     def _apply_browse_filters(df, label):
-        """Apply date, status, and search filters to a dataframe."""
+        """Apply date, status, and search filters to a dataframe.
+        
+        Smart date column detection:
+        1. Tries ALL date-related columns in the data
+        2. Picks the column with the highest parse rate
+        3. Always includes row_date_used (YYYY-MM-DD from process_data)
+        4. For First Uploads: also uses Account Created On as fallback
+        5. If NO column parses >0%, falls back to Account Created On
+        """
         fl = df.copy()
-        # Date filter: find the date column
-        _date_col = None
-        # Priority: look for the most specific date column first
-        for _cand in fl.columns:
-            _cl = _cand.lower()
-            if _cl in ("upload date", "account created on", "first payment", "created"):
-                _date_col = _cand
-                break
-        # Fallback: any column with "date" in name
-        if not _date_col:
+        if _bd_preset != "All Time":
+            # ── Smart date column detection ──
+            _date_candidates = []
+            _parse_rates = {}
+            
+            # Scan ALL columns that could contain dates
             for _cand in fl.columns:
-                _cl = _cand.lower()
-                if any(k in _cl for k in ["created", "upload date", "date"]):
-                    if "detail" not in _cl and "last" not in _cl and "scraped" not in _cl and "processed" not in _cl:
-                        _date_col = _cand
-                        break
-        # Try row_date_used as last resort (set by process_data)
-        if not _date_col and "row_date_used" in fl.columns:
-            _date_col = "row_date_used"
-        if _date_col and _bd_preset != "All Time":
-            fl["_parsed_date"] = fl[_date_col].apply(parse_to_date)
-            _has_date = fl["_parsed_date"].notna()
-            _in_range = fl["_parsed_date"].between(_bd_ds, _bd_de)
-            # Only keep rows that have a parseable date AND are in range
-            # Rows without parseable dates are excluded (they can't be assigned to any period)
-            _no_date_count = int((~_has_date).sum())
-            fl = fl[_has_date & _in_range]
-            fl = fl.drop(columns=["_parsed_date"])
-            if _no_date_count > 0:
-                st.caption(f"ℹ️ {_no_date_count} rows without a parseable date were excluded from this period")
+                _cl = _cand.lower().strip()
+                # Specific known date columns (highest priority)
+                if _cl in ("upload date", "account created on", "first payment", "created"):
+                    _date_candidates.append(_cand)
+                # Any column with date/created in name
+                elif any(k in _cl for k in ["created", "upload date", "date"]):
+                    if not any(x in _cl for x in ["detail", "last", "scraped", "processed", "__", "verify"]):
+                        _date_candidates.append(_cand)
+            
+            # Always include row_date_used (process_data sets this in YYYY-MM-DD)
+            if "row_date_used" in fl.columns and "row_date_used" not in _date_candidates:
+                _date_candidates.append("row_date_used")
+            
+            # Also include __scraped_date__ as absolute last resort
+            if "__scraped_date__" in fl.columns and "__scraped_date__" not in _date_candidates:
+                _date_candidates.append("__scraped_date__")
+            
+            # Pick the best column: highest parse rate with >0% success
+            _best_col = None
+            _best_rate = 0
+            _total_rows = len(fl)
+            if _total_rows > 0:
+                for _dc in _date_candidates:
+                    try:
+                        _parsed = fl[_dc].apply(parse_to_date)
+                        _valid = int(_parsed.notna().sum())
+                        _rate = _valid / _total_rows
+                        _parse_rates[_dc] = (_valid, _rate)
+                        if _rate > _best_rate:
+                            _best_rate = _rate
+                            _best_col = _dc
+                    except Exception:
+                        _parse_rates[_dc] = (0, 0)
+            
+            # If best column has 0% parse rate, try Account Created On as absolute fallback
+            if _best_rate == 0 and "Account Created On" in fl.columns:
+                _best_col = "Account Created On"
+                _parsed = fl["Account Created On"].apply(parse_to_date)
+                _best_rate = int(_parsed.notna().sum()) / _total_rows
+                _parse_rates["Account Created On"] = (int(_parsed.notna().sum()), _best_rate)
+            
+            if _best_col and _best_rate > 0:
+                fl["_parsed_date"] = fl[_best_col].apply(parse_to_date)
+                _has_date = fl["_parsed_date"].notna()
+                _in_range = fl["_parsed_date"].between(_bd_ds, _bd_de)
+                _no_date_count = int((~_has_date).sum())
+                _out_range_count = int((_has_date & ~_in_range).sum())
+                fl = fl[_has_date & _in_range]
+                fl = fl.drop(columns=["_parsed_date"])
+                # Show which date column is used
+                st.caption(f"📅 Filtered by **{_best_col}** ({_best_rate*100:.0f}% parse rate) | Period: {_bd_ds} → {_bd_de}")
+                if _no_date_count > 0 or _out_range_count > 0:
+                    parts = []
+                    if _no_date_count > 0:
+                        parts.append(f"{_no_date_count} no date")
+                    if _out_range_count > 0:
+                        parts.append(f"{_out_range_count} outside period")
+                    st.caption(f"ℹ️ Excluded: {', '.join(parts)}")
+            elif _best_col and _best_rate == 0:
+                st.warning(f"⚠️ Found date column '{_best_col}' but 0% of dates are parseable. Showing all rows for {label}.")
+                with st.expander("🔧 Debug: Date column parse rates"):
+                    for _col, (_valid, _rate) in _parse_rates.items():
+                        st.text(f"  {_col}: {_valid}/{_total_rows} ({_rate*100:.0f}%)")
+            else:
+                st.warning(f"⚠️ No date column found in {label} data. Showing all rows.")
+                st.caption(f"Available columns: {', '.join(fl.columns[:15])}")
         # Status filter
         if _bd_status != "All" and "final_status" in fl.columns:
             fl = fl[fl["final_status"].astype(str).str.upper() == _bd_status]
@@ -2471,6 +2544,46 @@ elif page == "🔍 Browse Data":
                 msk = msk | fl[c].astype(str).str.contains(_bd_search, case=False, na=False)
             fl = fl[msk]
         return fl
+
+    # ── Data diagnostics (shows column names and date info) ──
+    with st.expander("🔧 Data Diagnostics", expanded=False):
+        _dcols1, _dcols2, _dcols3 = st.columns(3)
+        with _dcols1:
+            st.markdown("**📥 Sign-ups columns:**")
+            if not free_rows.empty:
+                st.text(", ".join(free_rows.columns.tolist()))
+                _date_cols = [c for c in free_rows.columns if any(k in c.lower() for k in ["date", "created", "row_date"])]
+                if _date_cols:
+                    st.text(f"Date cols: {', '.join(_date_cols)}")
+                    for _dc in _date_cols[:3]:
+                        _sample = free_rows[_dc].dropna().head(3).tolist()
+                        st.text(f"  {_dc}: {_sample}")
+            else:
+                st.text("No data")
+        with _dcols2:
+            st.markdown("**📦 First Uploads columns:**")
+            if not upload_rows.empty:
+                st.text(", ".join(upload_rows.columns.tolist()))
+                _date_cols = [c for c in upload_rows.columns if any(k in c.lower() for k in ["date", "created", "row_date"])]
+                if _date_cols:
+                    st.text(f"Date cols: {', '.join(_date_cols)}")
+                    for _dc in _date_cols[:3]:
+                        _sample = upload_rows[_dc].dropna().head(3).tolist()
+                        st.text(f"  {_dc}: {_sample}")
+            else:
+                st.text("No data")
+        with _dcols3:
+            st.markdown("**💳 Stripe columns:**")
+            if not stripe_raw.empty:
+                st.text(", ".join(stripe_raw.columns.tolist()))
+                _date_cols = [c for c in stripe_raw.columns if any(k in c.lower() for k in ["date", "created", "payment", "row_date"])]
+                if _date_cols:
+                    st.text(f"Date cols: {', '.join(_date_cols)}")
+                    for _dc in _date_cols[:3]:
+                        _sample = stripe_raw[_dc].dropna().head(3).tolist()
+                        st.text(f"  {_dc}: {_sample}")
+            else:
+                st.text("No data")
 
     # ── INLINE OVERRIDE ENGINE ──
     _mo_engine = MOD.get("manual_override_engine")
