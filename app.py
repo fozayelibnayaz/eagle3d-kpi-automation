@@ -2374,15 +2374,30 @@ elif page == "🔍 Browse Data":
         fl = df.copy()
         # Date filter: find the date column
         _date_col = None
+        # Priority: look for the most specific date column first
         for _cand in fl.columns:
             _cl = _cand.lower()
-            if any(k in _cl for k in ["created", "upload date", "date"]):
-                if "detail" not in _cl and "last" not in _cl:
-                    _date_col = _cand
-                    break
+            if _cl in ("upload date", "account created on", "first payment", "created"):
+                _date_col = _cand
+                break
+        # Fallback: any column with "date" in name
+        if not _date_col:
+            for _cand in fl.columns:
+                _cl = _cand.lower()
+                if any(k in _cl for k in ["created", "upload date", "date"]):
+                    if "detail" not in _cl and "last" not in _cl and "scraped" not in _cl and "processed" not in _cl:
+                        _date_col = _cand
+                        break
+        # Try row_date_used as last resort (set by process_data)
+        if not _date_col and "row_date_used" in fl.columns:
+            _date_col = "row_date_used"
         if _date_col and _bd_preset != "All Time":
             fl["_parsed_date"] = fl[_date_col].apply(parse_to_date)
-            fl = fl[fl["_parsed_date"].between(_bd_ds, _bd_de)]
+            # Keep rows where date is parseable AND in range
+            # Also keep rows where date is NOT parseable (don't silently drop them!)
+            _has_date = fl["_parsed_date"].notna()
+            _in_range = fl["_parsed_date"].between(_bd_ds, _bd_de)
+            fl = fl[~_has_date | _in_range]  # Keep: no-date OR in-range
             fl = fl.drop(columns=["_parsed_date"])
         # Status filter
         if _bd_status != "All" and "final_status" in fl.columns:
@@ -2414,6 +2429,18 @@ elif page == "🔍 Browse Data":
 
             # Apply all filters
             fl = _apply_browse_filters(_df_data, _lb)
+
+            # Status summary
+            if "final_status" in fl.columns:
+                _acc = sum(1 for _, r in fl.iterrows() if str(r.get("final_status", "")).upper() in ("ACCEPTED", "ALREADY_COUNTED"))
+                _rej = len(fl) - _acc
+                _sc1, _sc2, _sc3 = st.columns(3)
+                with _sc1:
+                    st.metric("✅ Accepted", f"{_acc}")
+                with _sc2:
+                    st.metric("❌ Rejected", f"{_rej}")
+                with _sc3:
+                    st.metric("📋 Total", f"{len(fl)}")
 
             # Sort + display controls
             c1, c2, c3 = st.columns(3)
