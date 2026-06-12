@@ -65,15 +65,65 @@ def main():
     # ── YouTube Data Fetch (Stage 5) ──
     def s5():
         from youtube_connector import get_channel_info, get_channel_videos, get_daily_analytics, is_configured
+        from pathlib import Path as _P
+        import json as _json
         if not is_configured():
             log("YouTube: Not configured — skipping")
             return
         log("YouTube: Fetching channel info...")
         ch = get_channel_info()
         log(f"YouTube: Channel = {ch.get('title', 'N/A')}, Subscribers = {ch.get('subscribers', 0):,}")
+
+        # Save channel snapshot daily
+        try:
+            _yt_cache_dir = _P("data_output")
+            _yt_cache_dir.mkdir(exist_ok=True)
+            # Save channel info
+            _ch_path = _yt_cache_dir / "youtube_channel.json"
+            _ch_path.write_text(_json.dumps(ch, indent=2, default=str))
+            log(f"YouTube: Channel info saved")
+        except Exception as e:
+            log(f"YouTube: Channel save error: {e}")
+
         log("YouTube: Fetching video list...")
         videos = get_channel_videos(max_videos=200)
         log(f"YouTube: Got {len(videos)} videos")
+
+        # Save video list
+        try:
+            _vid_path = _P("data_output") / "youtube_videos.json"
+            _vid_path.write_text(_json.dumps(videos, indent=2, default=str))
+            log(f"YouTube: Videos saved ({len(videos)})")
+        except Exception as e:
+            log(f"YouTube: Video save error: {e}")
+
+        # Build daily time-series from video publish dates (available without OAuth)
+        try:
+            from collections import defaultdict as _dd
+            _yt_daily = _dd(lambda: {"youtube_views": 0, "youtube_likes": 0, "youtube_comments": 0, "youtube_videos": 0})
+            for v in videos:
+                vd = v.get("published_at", "")
+                if vd:
+                    vdate = vd[:10]
+                    _yt_daily[vdate]["youtube_views"] += v.get("views", 0)
+                    _yt_daily[vdate]["youtube_likes"] += v.get("likes", 0)
+                    _yt_daily[vdate]["youtube_comments"] += v.get("comments", 0)
+                    _yt_daily[vdate]["youtube_videos"] += 1
+            _daily_path = _P("data_output") / "youtube_daily.json"
+            # Merge with existing daily data
+            _existing = {}
+            if _daily_path.exists():
+                try:
+                    _existing = _json.loads(_daily_path.read_text())
+                except Exception:
+                    pass
+            for d, vals in _yt_daily.items():
+                _existing[d] = vals  # Overwrite with latest
+            _daily_path.write_text(_json.dumps(_existing, indent=2, sort_keys=True, default=str))
+            log(f"YouTube: Daily time-series saved ({len(_existing)} days)")
+        except Exception as e:
+            log(f"YouTube: Daily build error: {e}")
+
         # Analytics (if OAuth token available)
         try:
             from youtube_connector import has_analytics_access, get_daily_analytics
@@ -83,21 +133,30 @@ def main():
                 end_d = datetime.now().strftime("%Y-%m-%d")
                 daily = get_daily_analytics(start_d, end_d)
                 log(f"YouTube Analytics: Got {len(daily)} days of data")
+                # Save analytics data
+                if not daily.empty:
+                    _analytics_path = _P("data_output") / "youtube_analytics.json"
+                    _analytics_path.write_text(daily.to_json(orient="records", indent=2))
+                    log(f"YouTube Analytics: Saved to {_analytics_path}")
         except Exception as e:
             log(f"YouTube Analytics: Skipped ({e})")
     ok5, e5 = run_stage(5, "YouTube Data Fetch", s5)
     results["stage5_youtube"] = "ok" if ok5 else f"failed: {e5}"
 
-    # ── LinkedIn Scrape (Stage 6) ──
+    # ── LinkedIn Scrape + Auto-Accumulate (Stage 6) ──
     def s6():
         from linkedin_connector import (
             scrape_public_metrics, scrape_with_playwright,
             has_cookies, is_configured, get_status,
+            save_manual_entry,
         )
+        from pathlib import Path as _P
+        import json as _json
         if not is_configured():
             log("LinkedIn: Not configured — skipping")
             return
         log("LinkedIn: Starting scrape...")
+        result = {}
         if has_cookies():
             log("LinkedIn: Using authenticated scrape...")
             result = scrape_with_playwright(historical=False)
@@ -108,7 +167,36 @@ def main():
             log(f"LinkedIn: Scrape issue — {result['error']}")
         else:
             log(f"LinkedIn: Scrape OK — {list(result.keys())}")
-    ok6, e6 = run_stage(6, "LinkedIn Scrape", s6)
+
+            # AUTO-ACCUMULATE: Save daily time-series entry from scraped data
+            # This is the KEY FIX — LinkedIn gets historical data automatically, like KPI system
+            try:
+                _entry = {
+                    "followers": result.get("followers", 0),
+                    "company_name": result.get("company_name", ""),
+                    "employees": result.get("employees", ""),
+                    "industry": result.get("industry", ""),
+                    "scraped_at": datetime.now().isoformat(),
+                }
+                # Also add authenticated data if available
+                if result.get("impressions"):
+                    _entry["impressions"] = result.get("impressions", 0)
+                if result.get("engagement_rate"):
+                    _entry["engagement_rate"] = result.get("engagement_rate", 0)
+                if result.get("unique_visitors"):
+                    _entry["unique_visitors"] = result.get("unique_visitors", 0)
+                if result.get("likes"):
+                    _entry["likes"] = result.get("likes", 0)
+                if result.get("comments"):
+                    _entry["comments"] = result.get("comments", 0)
+                if result.get("posts"):
+                    _entry["posts"] = result.get("posts", 0)
+
+                save_manual_entry(_entry)
+                log(f"LinkedIn: Auto-saved daily entry — followers={_entry.get('followers', 0)}")
+            except Exception as e:
+                log(f"LinkedIn: Auto-accumulate error: {e}")
+    ok6, e6 = run_stage(6, "LinkedIn Scrape + Auto-Accumulate", s6)
     results["stage6_linkedin"] = "ok" if ok6 else f"failed: {e6}"
 
     # ── Reporting (Stage 7) ──

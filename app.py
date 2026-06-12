@@ -695,8 +695,6 @@ with st.sidebar:
         '<div style="text-align:center;padding:2px 0 6px 0;">'
         '<div style="font-size:0.9rem;font-weight:800;color:var(--accent);'
         'letter-spacing:0.5px;">Eagle Analytics Hub</div>'
-        '<div style="font-size:0.58rem;color:var(--muted);'
-        'text-transform:uppercase;letter-spacing:2px;">KPI Analytics v7</div>'
         "</div>",
         unsafe_allow_html=True,
     )
@@ -2703,7 +2701,18 @@ elif page == "📺 YouTube":
     with _s3:
         st.metric("Videos", _ch_info.get('video_count', 0))
     with _s4:
-        _data_src = "✅ REAL" if _has_oauth else "📋 Public"
+        # Verify OAuth actually works by checking if we can get analytics
+        _oauth_works = False
+        if _has_oauth:
+            try:
+                _test_daily = get_daily_analytics(
+                    (datetime.now() - timedelta(days=3)).strftime("%Y-%m-%d"),
+                    datetime.now().strftime("%Y-%m-%d")
+                )
+                _oauth_works = not _test_daily.empty
+            except Exception:
+                _oauth_works = False
+        _data_src = "✅ OAuth" if _oauth_works else "📋 Public API"
         st.metric("Data", _data_src)
 
     if not _yt_status["configured"]:
@@ -2975,13 +2984,42 @@ elif page == "📺 YouTube":
     # ════════════════════════════════════════════════════════════
     with _yt_tabs[2]:
         st.markdown("#### 📈 Channel Analytics")
-        if not _has_oauth:
-            st.warning("⚠️ YouTube Analytics API requires OAuth token. See Settings → YouTube OAuth Setup.")
-            st.stop()
 
-        _daily = get_daily_analytics(_yt_start, _yt_end)
+        _daily = pd.DataFrame()
+        if _has_oauth:
+            try:
+                _daily = get_daily_analytics(_yt_start, _yt_end)
+            except Exception:
+                _daily = pd.DataFrame()
+
         if _daily.empty:
-            st.info("No analytics data for this period.")
+            # Fallback: build analytics from public video data
+            st.caption("📋 OAuth analytics unavailable — showing aggregated video data from Data API")
+            try:
+                _pub_vids = st.session_state.get("yt_videos", [])
+                if not _pub_vids:
+                    _pub_vids = get_channel_videos(max_videos=300)
+                    st.session_state["yt_videos"] = _pub_vids
+                if _pub_vids:
+                    from collections import defaultdict as _dd_ya
+                    _ya = _dd_ya(lambda: {"views": 0, "likes": 0, "comments": 0})
+                    for _v in _pub_vids:
+                        _vd = _v.get("published_at", "")
+                        if _vd:
+                            _vdate = _vd[:10]
+                            if _yt_start <= _vdate <= _yt_end:
+                                _ya[_vdate]["views"] += _v.get("views", 0)
+                                _ya[_vdate]["likes"] += _v.get("likes", 0)
+                                _ya[_vdate]["comments"] += _v.get("comments", 0)
+                    if _ya:
+                        _daily = pd.DataFrame([
+                            {"day": d, **_ya[d]} for d in sorted(_ya.keys())
+                        ])
+            except Exception:
+                pass
+
+        if _daily.empty:
+            st.warning("⚠️ No analytics data available. Connect YouTube OAuth for full analytics, or ensure Data API key is configured.")
             st.stop()
 
         # Summary metrics
@@ -3075,10 +3113,20 @@ elif page == "📺 YouTube":
     with _yt_tabs[3]:
         st.markdown("#### 👥 Audience Demographics")
         if not _has_oauth:
-            st.warning("⚠️ Requires YouTube Analytics API (OAuth).")
-            st.stop()
-
-        _demo = get_demographics(_yt_start, _yt_end)
+            st.warning("⚠️ Demographics require YouTube Analytics API (OAuth). Current data is from public Data API only.")
+            # Show what we can from public data
+            if not _vids:
+                st.info("No video data available.")
+            else:
+                st.markdown("##### 📊 Video Engagement Distribution")
+                _eng_data = pd.DataFrame([
+                    {"Title": v["title"][:50], "Views": v["views"], "Likes": v["likes"],
+                     "Comments": v["comments"], "Engagement %": f"{v['engagement_rate']:.1f}%"}
+                    for v in sorted(_vids, key=lambda x: x.get("views", 0), reverse=True)[:20]
+                ])
+                _df(_eng_data, height=400)
+        else:
+            _demo = get_demographics(_yt_start, _yt_end)
         _dt1, _dt2 = st.columns(2)
 
         with _dt1:
@@ -3133,8 +3181,8 @@ elif page == "📺 YouTube":
     with _yt_tabs[4]:
         st.markdown("#### 💰 Revenue")
         if not _has_oauth:
-            st.warning("⚠️ Requires YouTube Analytics API (OAuth).")
-            st.stop()
+            st.warning("⚠️ Revenue data requires YouTube Analytics API (OAuth). Connect OAuth to see revenue, CPM, and ad metrics.")
+            st.info("💡 YouTube revenue is only available through the YouTube Analytics API with an authorized OAuth token. See **Settings → YouTube OAuth Setup** for instructions.")
 
         _rev = get_revenue(_yt_start, _yt_end)
         if _rev:
@@ -3171,8 +3219,15 @@ elif page == "📺 YouTube":
     with _yt_tabs[5]:
         st.markdown("#### 🔍 Traffic & Discovery")
         if not _has_oauth:
-            st.warning("⚠️ Requires YouTube Analytics API (OAuth).")
-            st.stop()
+            st.warning("⚠️ Traffic sources require YouTube Analytics API (OAuth). Showing search terms from public data instead.")
+            # Show what we can from public video data
+            if _vids:
+                st.markdown("##### 🔥 Top Videos by Views")
+                _top_vids = sorted(_vids, key=lambda x: x.get("views", 0), reverse=True)[:10]
+                for i, v in enumerate(_top_vids, 1):
+                    st.markdown(f"**{i}.** {v['title'][:60]} — {v['views']:,} views, {v['likes']:,} likes")
+            else:
+                st.info("No video data available.")
 
         _tc1, _tc2 = st.columns(2)
         with _tc1:
@@ -3655,8 +3710,8 @@ elif page == "🔗 Cross-Platform":
         try:
             _yt_daily = get_daily_analytics(_cp_start, _cp_end)
         except Exception:
-            pass
-        # Fallback: build YouTube daily from public video data if no OAuth analytics
+            _yt_daily = pd.DataFrame()
+        # Fallback 1: build YouTube daily from public video data if no OAuth analytics
         if _yt_daily.empty:
             try:
                 _yt_vids = get_channel_videos(max_videos=200)
@@ -3677,11 +3732,38 @@ elif page == "🔗 Cross-Platform":
                         ])
             except Exception:
                 pass
+        # Fallback 2: use saved youtube_daily.json from pipeline
+        if _yt_daily.empty:
+            try:
+                _yt_daily_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data_output", "youtube_daily.json")
+                if os.path.exists(_yt_daily_path):
+                    with open(_yt_daily_path, "r") as _yf:
+                        _yt_daily_data = json.load(_yf)
+                    if _yt_daily_data:
+                        _yt_rows = []
+                        for _d, _vals in _yt_daily_data.items():
+                            if _cp_start <= _d <= _cp_end:
+                                _yt_rows.append({"date": _d, **_vals})
+                        if _yt_rows:
+                            _yt_daily = pd.DataFrame(_yt_rows)
+            except Exception:
+                pass
 
     # Get LinkedIn data
     _li_hist = get_manual_history()
     if not _li_hist.empty:
         _li_daily = _li_hist
+    else:
+        # Fallback: use cached metrics as single-day entry
+        _li_cached = get_cached_metrics()
+        if _li_cached and not _li_cached.get("error"):
+            _li_daily = pd.DataFrame([{
+                "date": datetime.now().strftime("%Y-%m-%d"),
+                "followers": _li_cached.get("followers", 0),
+                "company_name": _li_cached.get("company_name", ""),
+            }])
+        else:
+            _li_daily = pd.DataFrame()
 
     # Build unified
     _unified = build_unified_timeline(
