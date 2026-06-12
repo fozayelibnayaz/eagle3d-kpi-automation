@@ -154,6 +154,23 @@ def main():
     except Exception as e:
         log(f"Summary write failed: {e}")
 
+    # Save pipeline health for reporting engine
+    try:
+        from pathlib import Path as _P
+        _health_path = _P("data_output") / "pipeline_health.json"
+        _health_path.parent.mkdir(exist_ok=True)
+        import json as _json
+        _json.dump({
+            "last_run":           start.isoformat(),
+            "duration_seconds":   round(duration, 1),
+            "stages_passed":      passed,
+            "total_stages":       7,
+            "results":            results,
+        }, open(_health_path, "w"), indent=2)
+        log(f"Pipeline health saved: {_health_path}")
+    except Exception as e:
+        log(f"Pipeline health save failed: {e}")
+
     return 0
 
 

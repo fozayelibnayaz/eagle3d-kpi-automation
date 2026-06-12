@@ -813,11 +813,42 @@ with st.sidebar:
 # ═══════════════════════════════════════════════════════════════
 # LOAD DATA
 # ═══════════════════════════════════════════════════════════════
+
+# ── Auto-trigger pipeline if data is stale ──
+# After data loads, check if Daily_Counts has today's date.
+# If not and GITHUB_TOKEN is available, automatically trigger the GitHub Actions pipeline once per day.
+_today_str = datetime.now().strftime("%Y-%m-%d")
+_auto_trigger_key = f"_auto_triggered_{_today_str}"
+
 with st.spinner("Loading data..."):
     counts_raw = load_sheet("Daily_Counts")
     free_raw = load_sheet("Verified_FREE")
     upload_raw = load_sheet("Verified_FIRST_UPLOAD")
     stripe_raw = load_sheet("Verified_STRIPE")
+
+# Auto-trigger check (runs once per day per session)
+if not st.session_state.get(_auto_trigger_key):
+    _has_today = False
+    if not counts_raw.empty:
+        _dc = next((c for c in counts_raw.columns if "date" in c.lower()), None)
+        if _dc:
+            _has_today = _today_str in counts_raw[_dc].astype(str).values
+    if not _has_today:
+        _gh_tok = get_secret("GITHUB_TOKEN", "")
+        if _gh_tok:
+            try:
+                import urllib.request
+                _repo = "fozayelibnayaz/eagle3d-kpi-automation"
+                _url = f"https://api.github.com/repos/{_repo}/actions/workflows/daily_pipeline.yml/dispatches"
+                _data = json.dumps({"ref": "main"}).encode()
+                _req = urllib.request.Request(_url, data=_data, method="POST",
+                    headers={"Authorization": f"token {_gh_tok}", "Accept": "application/vnd.github+json"})
+                with urllib.request.urlopen(_req, timeout=10) as _r:
+                    if _r.status in (200, 204):
+                        st.toast("🚀 Auto-triggered daily pipeline (data was stale)", icon="🔄")
+            except Exception:
+                pass  # Silently fail — user can trigger manually
+    st.session_state[_auto_trigger_key] = True
 
 kpi_all = pd.DataFrame()
 
@@ -931,54 +962,185 @@ prev_kpi = (
 free_rows = free_raw.copy()
 upload_rows = upload_raw.copy()
 
-# ── Apply manual overrides instantly to in-memory data ──
+# ── Apply manual overrides to in-memory data ──
+# Override flow:
+#   1. Load overrides from data_output/manual_overrides.json
+#   2. Apply to free_rows, upload_rows, stripe_raw (change final_status)
+#   3. Compute DELTA: how many rows changed status (ACCEPTED→REJECTED or REJECTED→ACCEPTED)
+#   4. Adjust kpi_all by the delta per date so counts reflect overrides
+#   5. This avoids rebuilding kpi_all from scratch (which can lose non-parseable-date rows)
 _ov_engine = MOD.get("manual_override_engine")
-if _ov_engine and "final_status" in free_rows.columns:
+_ov_applied_total = 0
+_ov_changed_total = 0  # How many rows actually changed status
+
+
+def _apply_overrides_to_df(df, tab_name, overrides, norm_fn, mapping):
+    """Apply overrides to a DataFrame in-place. Returns (applied, changed) counts."""
+    if df.empty or "final_status" not in df.columns or not overrides:
+        return 0, 0
+    applied = 0
+    changed = 0
+    for _idx, _row in df.iterrows():
+        _em = ""
+        for _k in ("Email", "email", "__email_normalized__"):
+            if _k in df.columns and pd.notna(_row.get(_k)) and "@" in str(_row[_k]):
+                _em = str(_row[_k]).strip().lower()
+                break
+        _norm = norm_fn(_em) if _em else ""
+        if _norm and _norm in overrides:
+            _ov = overrides[_norm]
+            _ov_tab = _ov.get("target_tab", "ALL")
+            if _ov_tab in ("ALL", tab_name):
+                _action = _ov.get("action", "")
+                _m = mapping.get(_action, {})
+                if _m:
+                    _old_status = str(df.at[_idx, "final_status"]).upper()
+                    _new_status = _m["final_status"]
+                    df.at[_idx, "final_status"] = _new_status
+                    df.at[_idx, "category"] = _m.get("category", "")
+                    applied += 1
+                    # Track actual changes (status flipped)
+                    if _old_status != _new_status.upper():
+                        changed += 1
+    return applied, changed
+
+
+_ovs = {}  # Initialize globally for delta calculation
+if _ov_engine:
     try:
+        from manual_override_engine import normalize_email, ACTION_TO_STATUS
         _ovs = _ov_engine.load_overrides()
         if _ovs:
-            from manual_override_engine import normalize_email, ACTION_TO_STATUS
-            _applied = 0
-            for _idx, _row in free_rows.iterrows():
-                _em = ""
-                for _k in ("Email", "email", "__email_normalized__"):
-                    if _k in free_rows.columns and _row.get(_k) and "@" in str(_row[_k]):
-                        _em = str(_row[_k]).strip().lower()
-                        break
-                _norm = normalize_email(_em) if _em else ""
-                if _norm and _norm in _ovs:
-                    _ov = _ovs[_norm]
-                    _action = _ov.get("action", "")
-                    _mapping = ACTION_TO_STATUS.get(_action, {})
-                    if _mapping:
-                        free_rows.at[_idx, "final_status"] = _mapping["final_status"]
-                        free_rows.at[_idx, "category"] = _mapping.get("category", "")
-                        _applied += 1
-            if _applied:
-                st.toast(f"🔄 {_applied} manual overrides applied to live data")
+            _a1, _c1 = _apply_overrides_to_df(
+                free_rows, "Verified_FREE", _ovs, normalize_email, ACTION_TO_STATUS
+            )
+            _a2, _c2 = _apply_overrides_to_df(
+                upload_rows, "Verified_FIRST_UPLOAD", _ovs, normalize_email, ACTION_TO_STATUS
+            )
+            _a3, _c3 = _apply_overrides_to_df(
+                stripe_raw, "Verified_STRIPE", _ovs, normalize_email, ACTION_TO_STATUS
+            )
+            _ov_applied_total = _a1 + _a2 + _a3
+            _ov_changed_total = _c1 + _c2 + _c3
+
+            # Show override toast ONLY once per session (not on every rerun)
+            if _ov_changed_total > 0 and not st.session_state.get("_ov_toast_shown"):
+                st.toast(f"🔄 {_ov_applied_total} overrides applied ({_ov_changed_total} status changes)", icon="✏️")
+                st.session_state["_ov_toast_shown"] = True
+            elif _ov_applied_total > 0 and not st.session_state.get("_ov_toast_shown"):
+                st.toast(f"ℹ️ {_ov_applied_total} overrides active (no new changes)", icon="📋")
+                st.session_state["_ov_toast_shown"] = True
     except Exception:
         pass
-if _ov_engine and "final_status" in upload_rows.columns:
-    try:
-        _ovs = _ov_engine.load_overrides()
-        if _ovs:
-            from manual_override_engine import normalize_email, ACTION_TO_STATUS
-            for _idx, _row in upload_rows.iterrows():
-                _em = ""
-                for _k in ("Email", "email", "__email_normalized__"):
-                    if _k in upload_rows.columns and _row.get(_k) and "@" in str(_row[_k]):
-                        _em = str(_row[_k]).strip().lower()
-                        break
-                _norm = normalize_email(_em) if _em else ""
-                if _norm and _norm in _ovs:
-                    _ov = _ovs[_norm]
-                    _action = _ov.get("action", "")
-                    _mapping = ACTION_TO_STATUS.get(_action, {})
-                    if _mapping:
-                        upload_rows.at[_idx, "final_status"] = _mapping["final_status"]
-                        upload_rows.at[_idx, "category"] = _mapping.get("category", "")
-    except Exception:
-        pass
+
+# ── Adjust kpi_all by override delta ──
+# Instead of rebuilding from verified tabs (risky: may lose rows without parseable dates),
+# we compute the delta per date and adjust kpi_all.
+if _ov_changed_total > 0 and not kpi_all.empty:
+    # Build delta from free_rows (overridden) vs what the status was before override
+    _delta = {}  # date -> {"signups_delta": N, "first_uploads_delta": N, "paid_customers_delta": N}
+    if "final_status" in free_rows.columns:
+        for _, _r in free_rows.iterrows():
+            _st = str(_r.get("final_status", "")).upper()
+            _norm_email = ""
+            for _k in ("Email", "email", "__email_normalized__"):
+                if _k in free_rows.columns and pd.notna(_r.get(_k)) and "@" in str(_r[_k]):
+                    _norm_email = normalize_email(str(_r[_k]).strip().lower()) if _ov_engine else ""
+                    break
+            if not _norm_email or _norm_email not in _ovs:
+                continue
+            _ov = _ovs[_norm_email]
+            _orig_cat = str(_ov.get("original_category", "")).upper()
+            _new_st = _st
+            _d = parse_to_date(_r.get("Account Created On", ""))
+            if not _d:
+                continue
+            _ds = _d.strftime("%Y-%m-%d")
+            if _ds not in _delta:
+                _delta[_ds] = {"signups_delta": 0, "first_uploads_delta": 0, "paid_customers_delta": 0}
+            # If original was ACCEPTED and now REJECTED → -1
+            # If original was REJECTED and now ACCEPTED → +1
+            if _orig_cat == "ACCEPTED" and _new_st != "ACCEPTED":
+                _delta[_ds]["signups_delta"] -= 1
+            elif _orig_cat != "ACCEPTED" and _new_st == "ACCEPTED":
+                _delta[_ds]["signups_delta"] += 1
+
+    if "final_status" in upload_rows.columns:
+        for _, _r in upload_rows.iterrows():
+            _st = str(_r.get("final_status", "")).upper()
+            _norm_email = ""
+            for _k in ("Email", "email", "__email_normalized__"):
+                if _k in upload_rows.columns and pd.notna(_r.get(_k)) and "@" in str(_r[_k]):
+                    _norm_email = normalize_email(str(_r[_k]).strip().lower()) if _ov_engine else ""
+                    break
+            if not _norm_email or _norm_email not in _ovs:
+                continue
+            _ov = _ovs[_norm_email]
+            _orig_cat = str(_ov.get("original_category", "")).upper()
+            _new_st = _st
+            _d = parse_to_date(_r.get("Upload Date", ""))
+            if not _d:
+                continue
+            _ds = _d.strftime("%Y-%m-%d")
+            if _ds not in _delta:
+                _delta[_ds] = {"signups_delta": 0, "first_uploads_delta": 0, "paid_customers_delta": 0}
+            if _orig_cat == "ACCEPTED" and _new_st != "ACCEPTED":
+                _delta[_ds]["first_uploads_delta"] -= 1
+            elif _orig_cat != "ACCEPTED" and _new_st == "ACCEPTED":
+                _delta[_ds]["first_uploads_delta"] += 1
+
+    if "final_status" in stripe_raw.columns:
+        for _, _r in stripe_raw.iterrows():
+            _st = str(_r.get("final_status", "")).upper()
+            _norm_email = ""
+            for _k in ("Email", "email", "__email_normalized__"):
+                if _k in stripe_raw.columns and pd.notna(_r.get(_k)) and "@" in str(_r[_k]):
+                    _norm_email = normalize_email(str(_r[_k]).strip().lower()) if _ov_engine else ""
+                    break
+            if not _norm_email or _norm_email not in _ovs:
+                continue
+            _ov = _ovs[_norm_email]
+            _orig_cat = str(_ov.get("original_category", "")).upper()
+            _new_st = _st
+            _d = parse_to_date(_r.get("Created", _r.get("First payment", "")))
+            if not _d:
+                continue
+            _ds = _d.strftime("%Y-%m-%d")
+            if _ds not in _delta:
+                _delta[_ds] = {"signups_delta": 0, "first_uploads_delta": 0, "paid_customers_delta": 0}
+            if _orig_cat == "ACCEPTED" and _new_st != "ACCEPTED":
+                _delta[_ds]["paid_customers_delta"] -= 1
+            elif _orig_cat != "ACCEPTED" and _new_st == "ACCEPTED":
+                _delta[_ds]["paid_customers_delta"] += 1
+
+    # Apply delta to kpi_all
+    if _delta and "date" in kpi_all.columns:
+        kpi_all = kpi_all.copy()
+        for _ds, _deltas in _delta.items():
+            _mask = kpi_all["date"] == _ds
+            if _mask.any():
+                for _col, _key in [("signups", "signups_delta"), ("first_uploads", "first_uploads_delta"), ("paid_customers", "paid_customers_delta")]:
+                    if _col in kpi_all.columns and _deltas[_key] != 0:
+                        kpi_all.loc[_mask, _col] = kpi_all.loc[_mask, _col] + _deltas[_key]
+            else:
+                # Date not in kpi_all — add a new row for this date
+                _new_row = {"date": _ds, "signups": 0, "first_uploads": 0, "paid_customers": 0}
+                for _col, _key in [("signups", "signups_delta"), ("first_uploads", "first_uploads_delta"), ("paid_customers", "paid_customers_delta")]:
+                    _new_row[_col] = max(0, _deltas[_key])
+                kpi_all = pd.concat([kpi_all, pd.DataFrame([_new_row])], ignore_index=True)
+
+        # Ensure no negative counts
+        for _col in ["signups", "first_uploads", "paid_customers"]:
+            if _col in kpi_all.columns:
+                kpi_all[_col] = kpi_all[_col].clip(lower=0)
+
+        # Re-apply date filter
+        kpi = filter_kpi(kpi_all, p_start, p_end)
+        prev_kpi = (
+            filter_kpi(kpi_all, comp_s, comp_e)
+            if enable_comp and comp_s
+            else pd.DataFrame()
+        )
 
 leads_df = pd.DataFrame()
 if "kpi_bridge" in MOD and not free_rows.empty:
@@ -1034,7 +1196,8 @@ if page == "📊 Dashboard":
     _total_p_all = int(kpi_all["paid_customers"].sum()) if not kpi_all.empty and "paid_customers" in kpi_all.columns else 0
     if _total_all > 0 or _total_u_all > 0 or _total_p_all > 0:
         _src = "Daily_Counts" if not counts_raw.empty else "Verified tabs" if not free_raw.empty else "Historical JSON"
-        st.caption(f"📡 Source: {_src} | All-time: {_total_all:,} sign-ups, {_total_u_all:,} uploads, {_total_p_all:,} paid")
+        _ov_note = f" | ✏️ {_ov_applied_total} overrides active" if _ov_applied_total > 0 else ""
+        st.caption(f"📡 Source: {_src} | All-time: {_total_all:,} sign-ups, {_total_u_all:,} uploads, {_total_p_all:,} paid{_ov_note}")
     else:
         st.warning("⚠️ No KPI data loaded. Check Settings → Secrets Status.")
 
@@ -2077,13 +2240,12 @@ elif page == "🔍 Browse Data":
     _mo_engine = MOD.get("manual_override_engine")
 
     tabs = st.tabs(["📥 Sign-ups", "📦 First Uploads", "💳 Stripe"])
-    _stripe = load_sheet("Verified_STRIPE")
     for _tab, (_lb, _df_data) in zip(
         tabs,
         [
             ("Sign-ups", free_rows),
             ("First Uploads", upload_rows),
-            ("Stripe", _stripe),
+            ("Stripe", stripe_raw),
         ],
     ):
         with _tab:
@@ -2140,7 +2302,9 @@ elif page == "🔍 Browse Data":
                         if _sel_emails and st.button(f"✅ Apply Override ({len(_sel_emails)} emails)", type="primary", key=f"ov_btn_{_lb}", use_container_width=True):
                             _ov_count = 0
                             for _se in _sel_emails:
-                                _orig = fl.loc[fl[_email_col] == _se, "final_status"].values
+                                # Get the ORIGINAL status from raw data (before any overrides)
+                                _orig_df = {"Sign-ups": free_raw, "First Uploads": upload_raw, "Stripe": stripe_raw}.get(_lb, free_raw)
+                                _orig = _orig_df.loc[_orig_df[_email_col] == _se, "final_status"].values if _email_col in _orig_df.columns else []
                                 _orig_status = str(_orig[0]) if len(_orig) > 0 else "UNKNOWN"
                                 _action_map = {
                                     "ACCEPTED": "accept", "REJECTED": "reject",
@@ -2155,7 +2319,8 @@ elif page == "🔍 Browse Data":
                                     original_category=_orig_status,
                                 )
                                 _ov_count += 1
-                            st.success(f"✅ Overrode {_ov_count} emails → {_ov_action}. Changes applied!")
+                            st.success(f"✅ Overrode {_ov_count} emails → {_ov_action}. Counts updated everywhere!")
+                            st.session_state["_ov_toast_shown"] = False  # Reset so delta toast shows
                             st.cache_data.clear()
                             st.rerun()
                     else:
@@ -2184,8 +2349,8 @@ elif page == "✏️ Manual Override":
         '<div class="sec-head">✏️ Manual Data Entry & Override</div>',
         unsafe_allow_html=True,
     )
-    _mo_tab1, _mo_tab2, _mo_tab3 = st.tabs([
-        "📝 Add Daily Entry", "📂 Bulk CSV Import", "📋 Entries Log",
+    _mo_tab1, _mo_tab2, _mo_tab3, _mo_tab4 = st.tabs([
+        "📝 Add Daily Entry", "📂 Bulk CSV Import", "📋 Entries Log", "🔧 Override Manager",
     ])
     MANUAL_DATA_FILE = os.path.join(
         os.path.dirname(os.path.abspath(__file__)),
@@ -2285,6 +2450,64 @@ elif page == "✏️ Manual Override":
                     st.warning("⚠️ Cannot write on Streamlit Cloud.")
         else:
             st.info("No manual entries yet.")
+
+    # ── OVERRIDE MANAGER TAB ──
+    with _mo_tab4:
+        st.markdown("#### 🔧 Override Manager")
+        st.caption("View, manage, and remove label overrides. Changes update counts everywhere instantly.")
+        _mo_engine4 = MOD.get("manual_override_engine")
+        if _mo_engine4:
+            _ov_summary = _mo_engine4.get_override_summary()
+            if _ov_summary["total"] > 0:
+                # Show impact summary
+                st.metric("Active Overrides", _ov_summary["total"])
+                c_a1, c_a2 = st.columns(2)
+                with c_a1:
+                    for act, cnt in _ov_summary.get("by_action", {}).items():
+                        _act_label = {
+                            "accept": "✅ Accepted", "reject": "❌ Rejected",
+                            "disposable": "🗑️ Disposable", "duplicate": "📋 Duplicate",
+                            "repeat_upload": "🔄 Repeat Upload", "not_determined": "❓ Not Determined",
+                        }.get(act, act)
+                        st.metric(_act_label, cnt)
+                with c_a2:
+                    st.metric("Impact", f"{_ov_summary['total']} emails affected")
+
+                if st.button("🗑️ Clear All Overrides", type="secondary", use_container_width=True):
+                    _mo_engine4.save_overrides({})
+                    st.session_state["_ov_toast_shown"] = False
+                    st.success("✅ All overrides cleared! Counts restored to original.")
+                    st.cache_data.clear()
+                    st.rerun()
+
+                st.markdown("---")
+                st.markdown("##### Override Details")
+                st.caption("Click ❌ to remove an override. The email will revert to its original status.")
+                _ovs = _mo_engine4.load_overrides()
+                for _ov_em, _ov_data in _ovs.items():
+                    c_r1, c_r2, c_r3, c_r4 = st.columns([3, 2, 2, 1])
+                    with c_r1:
+                        st.text(f"📧 {_ov_em}")
+                    with c_r2:
+                        _act_nice = {
+                            "accept": "→ ACCEPTED", "reject": "→ REJECTED",
+                            "disposable": "→ DISPOSABLE", "duplicate": "→ DUPLICATE",
+                            "repeat_upload": "→ REPEAT_UPLOAD", "not_determined": "→ NOT_DETERMINED",
+                        }.get(_ov_data.get("action", "?"), f"→ {_ov_data.get('action', '?')}")
+                        st.text(_act_nice)
+                    with c_r3:
+                        _orig = _ov_data.get("original_category", "Unknown")
+                        st.text(f"was: {_orig}")
+                    with c_r4:
+                        if st.button("❌", key=f"rm_ov_{_ov_em}", help=f"Remove override for {_ov_em}"):
+                            _mo_engine4.remove_override(_ov_em)
+                            st.session_state["_ov_toast_shown"] = False
+                            st.cache_data.clear()
+                            st.rerun()
+            else:
+                st.info("No active overrides. Use Browse Data → Override Labels to add them.")
+        else:
+            st.warning("⚠️ Override engine not loaded")
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -3216,6 +3439,27 @@ elif page == "🔗 Cross-Platform":
             _yt_daily = get_daily_analytics(_cp_start, _cp_end)
         except Exception:
             pass
+        # Fallback: build YouTube daily from public video data if no OAuth analytics
+        if _yt_daily.empty:
+            try:
+                _yt_vids = get_channel_videos(max_videos=200)
+                if _yt_vids:
+                    from collections import defaultdict as _dd3
+                    _yt_dd = _dd3(lambda: {"youtube_views": 0, "youtube_likes": 0, "youtube_comments": 0})
+                    for _v in _yt_vids:
+                        _vd = _v.get("published_at", "")
+                        if _vd:
+                            _vdate = _vd[:10]
+                            if _cp_start <= _vdate <= _cp_end:
+                                _yt_dd[_vdate]["youtube_views"] += _v.get("views", 0)
+                                _yt_dd[_vdate]["youtube_likes"] += _v.get("likes", 0)
+                                _yt_dd[_vdate]["youtube_comments"] += _v.get("comments", 0)
+                    if _yt_dd:
+                        _yt_daily = pd.DataFrame([
+                            {"date": d, **_yt_dd[d]} for d in sorted(_yt_dd.keys())
+                        ])
+            except Exception:
+                pass
 
     # Get LinkedIn data
     _li_hist = get_manual_history()
@@ -3544,52 +3788,73 @@ elif page == "⚙️ Settings":
             st.metric(_l, _c)
 
     st.markdown("---")
-    st.markdown("#### 🚀 Run Pipeline")
-    st.caption("Fetch fresh data from all sources and update the dashboard")
-    if st.button("🚀 Run Pipeline Now", type="primary", use_container_width=True):
-        with st.spinner("Running pipeline..."):
-            try:
-                import subprocess
-                _root_dir = os.path.dirname(os.path.abspath(__file__))
-                _result = subprocess.run(
-                    ["python3", "daily_pipeline.py"],
-                    capture_output=True, text=True, timeout=180,
-                    cwd=_root_dir,
-                )
-                if _result.returncode == 0:
-                    st.success("✅ Pipeline completed! Refresh page to see updated data.")
-                    if _result.stdout:
-                        st.code(_result.stdout[-800:])
-                else:
-                    st.warning("Pipeline finished with warnings")
-                    if _result.stderr:
-                        st.code(_result.stderr[-800:])
-            except FileNotFoundError:
-                st.info("Pipeline scripts not available here. Run locally:\n`python3 daily_pipeline.py`")
-            except Exception as _e:
-                st.info(f"Run manually: `python3 daily_pipeline.py` ({_e})")
+    st.markdown("#### ⚡ Pipeline & Auto-Refresh")
+    st.caption("The pipeline fetches fresh data from all sources. Auto-trigger runs daily when data is stale.")
 
-    st.markdown("---")
-    st.markdown("#### ⚡ Trigger Remote Pipeline (GitHub Actions)")
+    # Auto-trigger status
     _gh_token = get_secret("GITHUB_TOKEN", "")
-    if _gh_token:
-        if st.button("⚡ Trigger Remote Pipeline"):
-            try:
-                import urllib.request
-                import json as _json
-                _repo = "fozayelibnayaz/eagle3d-kpi-automation"
-                _url = f"https://api.github.com/repos/{_repo}/actions/workflows/daily_pipeline.yml/dispatches"
-                _data = _json.dumps({"ref": "main"}).encode()
-                _req = urllib.request.Request(_url, data=_data, method="POST",
-                    headers={"Authorization": f"token {_gh_token}", "Accept": "application/vnd.github+json"})
-                with urllib.request.urlopen(_req, timeout=15) as _r:
-                    if _r.status in (200, 204):
-                        st.success("✅ Pipeline triggered! Check GitHub Actions.")
-            except Exception as _e:
-                st.error(f"Failed: {_e}")
+    _auto_enabled = st.toggle("🔄 Auto-Trigger Pipeline (when data is stale)", value=True, key="auto_pipeline_toggle")
+    if _auto_enabled and not _gh_token:
+        st.warning("⚠️ Add `GITHUB_TOKEN` (GitHub PAT) to secrets to enable auto-trigger.")
+
+    # Show data freshness
+    _today_str2 = datetime.now().strftime("%Y-%m-%d")
+    _has_today_data = False
+    if not counts_raw.empty:
+        _dc2 = next((c for c in counts_raw.columns if "date" in c.lower()), None)
+        if _dc2:
+            _has_today_data = _today_str2 in counts_raw[_dc2].astype(str).values
+    if _has_today_data:
+        st.success(f"✅ Data is fresh — today ({_today_str2}) data exists")
     else:
-        st.info("Add `GITHUB_TOKEN` to secrets to enable remote trigger.")
-        st.markdown("[Go to GitHub Actions → Run manually](https://github.com/fozayelibnayaz/eagle3d-kpi-automation/actions)")
+        st.warning(f"⚠️ Data is stale — no data for today ({_today_str2})")
+
+    # Manual trigger buttons
+    _trig_c1, _trig_c2 = st.columns(2)
+    with _trig_c1:
+        if st.button("🚀 Run Pipeline (Local)", type="secondary", use_container_width=True):
+            with st.spinner("Running pipeline..."):
+                try:
+                    import subprocess
+                    _root_dir = os.path.dirname(os.path.abspath(__file__))
+                    _result = subprocess.run(
+                        ["python3", "daily_pipeline.py"],
+                        capture_output=True, text=True, timeout=180,
+                        cwd=_root_dir,
+                    )
+                    if _result.returncode == 0:
+                        st.success("✅ Pipeline completed! Refresh page to see updated data.")
+                        if _result.stdout:
+                            st.code(_result.stdout[-800:])
+                        st.cache_data.clear()
+                    else:
+                        st.warning("Pipeline finished with warnings")
+                        if _result.stderr:
+                            st.code(_result.stderr[-800:])
+                except FileNotFoundError:
+                    st.info("Pipeline scripts not available on Streamlit Cloud. Use Remote trigger.")
+                except Exception as _e:
+                    st.info(f"Run manually: `python3 daily_pipeline.py` ({_e})")
+
+    with _trig_c2:
+        if _gh_token:
+            if st.button("⚡ Trigger Remote Pipeline", type="primary", use_container_width=True):
+                try:
+                    import urllib.request
+                    import json as _json
+                    _repo = "fozayelibnayaz/eagle3d-kpi-automation"
+                    _url = f"https://api.github.com/repos/{_repo}/actions/workflows/daily_pipeline.yml/dispatches"
+                    _data = _json.dumps({"ref": "main"}).encode()
+                    _req = urllib.request.Request(_url, data=_data, method="POST",
+                        headers={"Authorization": f"token {_gh_token}", "Accept": "application/vnd.github+json"})
+                    with urllib.request.urlopen(_req, timeout=15) as _r:
+                        if _r.status in (200, 204):
+                            st.success("✅ Pipeline triggered! Data updates in ~5 min. Refresh then.")
+                except Exception as _e:
+                    st.error(f"Failed: {_e}")
+        else:
+            st.info("Add `GITHUB_TOKEN` to secrets for remote trigger.")
+            st.markdown("[GitHub Actions → Run manually](https://github.com/fozayelibnayaz/eagle3d-kpi-automation/actions)")
 
     st.markdown("---")
     st.markdown("#### 🔧 Add / Update Secrets (Local Only)")
