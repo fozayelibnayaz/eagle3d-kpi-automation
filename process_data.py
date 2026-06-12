@@ -71,18 +71,62 @@ def categorize_stripe(row):
     cr     = parse_date(row.get("Created", "") or row.get("Created (UTC)", ""))
     d      = fp or cr
 
+    # Check Payment Count — customers with payment_count >= 1 are verified paying customers
+    pc_raw = row.get("Payment Count", "") or row.get("payment_count", "")
+    payment_count = 0
+    if pc_raw:
+        try:
+            payment_count = int(str(pc_raw).strip())
+        except (ValueError, TypeError):
+            pass
+
+    # ── ACCEPTED: Any customer with a First payment date is a paying customer ──
+    # The Stripe URL filters for payment_count>=1, so if we have a First payment
+    # date, this customer has genuinely paid, even if Total spend is $0 (refunds,
+    # pending, or display issue). The First payment date is the most reliable signal.
+    if fp:
+        return {
+            "final_status": "ACCEPTED", "category": "ACCEPTED",
+            "reason": f"paid_${spend:.2f}" if spend > 0 else "has_first_payment",
+            "email": email,
+            "amount": spend, "scraped_date": fp, "row_date_used": fp,
+        }
+
+    # ── ACCEPTED: Has Payment Count >= 1 and any date ──
+    # Some rows might have payment count but missing First payment date
+    if payment_count >= 1 and d:
+        return {
+            "final_status": "ACCEPTED", "category": "ACCEPTED",
+            "reason": f"payment_count_{payment_count}", "email": email,
+            "amount": spend, "scraped_date": d, "row_date_used": d,
+        }
+
+    # ── ACCEPTED: Has spend > 0 and any parseable date ──
     if spend > 0 and d:
         return {
             "final_status": "ACCEPTED", "category": "ACCEPTED",
             "reason": f"paid_${spend:.2f}", "email": email,
             "amount": spend, "scraped_date": d, "row_date_used": d,
         }
+
+    # ── ACCEPTED: Has spend > 0 but no date — try harder to find a date ──
+    # Check additional fields that might contain a date
     if spend > 0:
+        for _df_name in ("Created", "Created (UTC)", "__scraped_at__", "__first_seen__", "__scrape_date__"):
+            _d = parse_date(row.get(_df_name, ""))
+            if _d:
+                return {
+                    "final_status": "ACCEPTED", "category": "ACCEPTED",
+                    "reason": f"paid_${spend:.2f}_date_fallback", "email": email,
+                    "amount": spend, "scraped_date": _d, "row_date_used": _d,
+                }
         return {
             "final_status": "REJECTED", "category": "NO_DATE",
             "reason": "spend_no_date", "email": email,
             "amount": spend, "scraped_date": "", "row_date_used": "",
         }
+
+    # ── REJECTED: Zero spend, no First payment date, no payment count ──
     return {
         "final_status": "REJECTED", "category": "ZERO_SPEND",
         "reason": "total_spend_zero", "email": email,

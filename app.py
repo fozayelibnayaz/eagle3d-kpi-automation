@@ -843,7 +843,7 @@ if not st.session_state.get(_auto_trigger_key):
                     headers={"Authorization": f"token {_gh_tok}", "Accept": "application/vnd.github+json"})
                 with urllib.request.urlopen(_req, timeout=10) as _r:
                     if _r.status in (200, 204):
-                        st.toast("🚀 Auto-triggered daily pipeline (data was stale)", icon="🔄")
+                        st.toast("🚀 Auto-triggered daily pipeline (data was stale) — refresh in ~5 min for updated numbers", icon="🔄")
             except Exception:
                 pass  # Silently fail — user can trigger manually
     st.session_state[_auto_trigger_key] = True
@@ -915,7 +915,8 @@ if kpi_all.empty and not free_raw.empty:
         for _, _row in stripe_raw.iterrows():
             _st = str(_row.get("final_status", "")).upper()
             if _st == "ACCEPTED":
-                _d = parse_to_date(_row.get("Created", _row.get("First payment", "")))
+                # Prefer First payment date (most reliable for paid customers), then row_date_used, then Created
+                _d = parse_to_date(_row.get("First payment", "") or _row.get("row_date_used", "") or _row.get("Created", ""))
                 if _d:
                     _daily[_d.strftime("%Y-%m-%d")]["paid_customers"] += 1
     _rows = [{"date": _d, **_daily[_d]} for _d in sorted(_daily.keys())]
@@ -1100,7 +1101,8 @@ if _ov_changed_total > 0 and not kpi_all.empty:
             _ov = _ovs[_norm_email]
             _orig_cat = str(_ov.get("original_category", "")).upper()
             _new_st = _st
-            _d = parse_to_date(_r.get("Created", _r.get("First payment", "")))
+            # Prefer First payment date, then row_date_used, then Created
+            _d = parse_to_date(_r.get("First payment", "") or _r.get("row_date_used", "") or _r.get("Created", ""))
             if not _d:
                 continue
             _ds = _d.strftime("%Y-%m-%d")
@@ -1386,66 +1388,81 @@ if page == "📊 Dashboard":
                 )
                 _pc(fig)
 
-    # ── COMBINED SOURCES: GA4 + CRM ──
+    # ── COMBINED SOURCES: GA4 + CRM (Smart Dedup) ──
     if not utm_df.empty or not leads_df.empty:
         st.markdown(
             '<div class="sec-head">🌐📋 Combined Sources — GA4 Traffic + CRM Sign-ups</div>',
             unsafe_allow_html=True,
         )
-        combined_rows = []
+        # Use source_normalizer for intelligent deduplication
+        _sn_mod = MOD.get("source_normalizer")
+        _norm_fn = _sn_mod.normalize_source if _sn_mod else None
 
-        # GA4 traffic sources
+        # Accumulate by canonical source name
+        _combined = {}  # canonical_name -> {sessions, conversions, signups, type}
+
+        # GA4 traffic sources — normalize each source
         if not utm_df.empty:
             src_col = "source_normalized" if "source_normalized" in utm_df.columns else "sessionSource"
             sess_col = "sessions" if "sessions" in utm_df.columns else src_col
-            by_src = utm_df.groupby(src_col).agg(
-                Sessions=(sess_col, "sum"),
-            ).reset_index()
-            if "conversions" in utm_df.columns:
-                conv_agg = utm_df.groupby(src_col)["conversions"].sum().reset_index()
-                by_src = by_src.merge(conv_agg, on=src_col, how="left")
-            by_src = by_src.rename(columns={src_col: "Source"})
-            for _, row in by_src.iterrows():
-                combined_rows.append({
-                    "Source": str(row["Source"]),
-                    "GA4 Sessions": int(row.get("Sessions", 0)),
-                    "GA4 Conversions": int(row.get("conversions", 0)),
-                    "CRM Signups": 0,
-                    "Type": "traffic",
-                })
+            for src_val, grp in utm_df.groupby(src_col):
+                canonical = src_val
+                if _norm_fn:
+                    try:
+                        canonical, _ = _norm_fn(str(src_val))
+                    except Exception:
+                        canonical = str(src_val).strip()
+                else:
+                    canonical = str(src_val).strip()
+                sessions = int(grp[sess_col].sum()) if sess_col in grp.columns else 0
+                conversions = int(grp["conversions"].sum()) if "conversions" in grp.columns else 0
+                if canonical not in _combined:
+                    _combined[canonical] = {"sessions": 0, "conversions": 0, "signups": 0, "type": "traffic"}
+                _combined[canonical]["sessions"] += sessions
+                _combined[canonical]["conversions"] += conversions
 
-        # CRM lead sources
+        # CRM lead sources — normalize and merge with GA4
         if not leads_df.empty:
             ls_col = "Lead Source" if "Lead Source" in leads_df.columns else None
             su_col = "Signups" if "Signups" in leads_df.columns else None
             if ls_col and su_col:
+                # First, aggregate CRM by raw source
+                _crm_agg = {}
                 for _, row in leads_df.iterrows():
-                    src = str(row[ls_col])
+                    raw_src = str(row[ls_col]).strip()
                     su = int(row.get(su_col, 0)) if pd.notna(row.get(su_col)) else 0
-                    # Try to merge with existing traffic source
-                    found = False
-                    for cr in combined_rows:
-                        if cr["Source"].lower() == src.lower():
-                            cr["CRM Signups"] = su
-                            cr["Type"] = "both"
-                            found = True
-                            break
-                    if not found:
-                        combined_rows.append({
-                            "Source": src,
-                            "GA4 Sessions": 0,
-                            "GA4 Conversions": 0,
-                            "CRM Signups": su,
-                            "Type": "signup",
-                        })
+                    # Normalize
+                    canonical = raw_src
+                    if _norm_fn:
+                        try:
+                            canonical, _ = _norm_fn(raw_src)
+                        except Exception:
+                            canonical = raw_src
+                    if canonical not in _crm_agg:
+                        _crm_agg[canonical] = 0
+                    _crm_agg[canonical] += su
+                # Merge into combined
+                for canonical, signups in _crm_agg.items():
+                    if canonical not in _combined:
+                        _combined[canonical] = {"sessions": 0, "conversions": 0, "signups": 0, "type": "signup"}
+                    _combined[canonical]["signups"] += signups
+                    # Update type
+                    if _combined[canonical]["sessions"] > 0 and signups > 0:
+                        _combined[canonical]["type"] = "both"
+                    elif signups > 0:
+                        _combined[canonical]["type"] = _combined[canonical]["type"] if _combined[canonical]["sessions"] > 0 else "signup"
 
-        if combined_rows:
+        if _combined:
+            combined_rows = []
+            for canonical, vals in _combined.items():
+                combined_rows.append({
+                    "Source": canonical,
+                    "GA4 Sessions": vals["sessions"],
+                    "GA4 Conversions": vals["conversions"],
+                    "CRM Signups": vals["signups"],
+                    "Type": vals["type"],
+                })
             combined_df = pd.DataFrame(combined_rows)
-            # Aggregate duplicates
-            combined_df = combined_df.groupby("Source").agg({
-                "GA4 Sessions": "sum", "GA4 Conversions": "sum",
-                "CRM Signups": "sum", "Type": "first",
-            }).reset_index()
             combined_df["Total Interactions"] = combined_df["GA4 Sessions"] + combined_df["CRM Signups"]
             combined_df = combined_df.sort_values("Total Interactions", ascending=False)
             combined_df["Conv %"] = (combined_df["GA4 Conversions"] / combined_df["GA4 Sessions"].replace(0, 1) * 100).round(1)

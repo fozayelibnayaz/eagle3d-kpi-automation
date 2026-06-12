@@ -281,10 +281,12 @@ def fetch_paid_details(start_date: str = None, end_date: str = None) -> pd.DataF
 
     df = pd.DataFrame(records)
 
-    if "Created" in df.columns:
-        df["date"] = pd.to_datetime(df["Created"], errors="coerce").dt.strftime("%Y-%m-%d")
-    elif "First payment" in df.columns:
+    if "First payment" in df.columns:
         df["date"] = pd.to_datetime(df["First payment"], errors="coerce").dt.strftime("%Y-%m-%d")
+    elif "row_date_used" in df.columns:
+        df["date"] = pd.to_datetime(df["row_date_used"], errors="coerce").dt.strftime("%Y-%m-%d")
+    elif "Created" in df.columns:
+        df["date"] = pd.to_datetime(df["Created"], errors="coerce").dt.strftime("%Y-%m-%d")
 
     if start_date and "date" in df.columns:
         df = df[df["date"] >= start_date]

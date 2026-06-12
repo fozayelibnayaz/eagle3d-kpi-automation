@@ -413,7 +413,7 @@ def build_stripe_stats():
         for r in accepted:
             # Try multiple date fields and parse properly
             date_val = ""
-            for field in ("row_date_used", "Created", "First payment", "__scraped_at__"):
+            for field in ("First payment", "row_date_used", "Created", "__scraped_at__"):
                 raw = str(r.get(field, "")).strip()
                 if raw and raw not in ("nan", "None", ""):
                     date_val = _parse_report_date(raw)
@@ -580,7 +580,7 @@ def build_telegram_linkedin_section(li):
 def build_telegram_stripe_section(stripe):
     """Build Stripe section."""
     if not stripe["connected"]:
-        return "💳 *STRIPE* — No data\n"
+        return "💳 *STRIPE* — No data (cookies may be expired)\n"
     section = (
         f"\n💳 *STRIPE PAYMENTS*\n"
         f"┌────────────────────────\n"

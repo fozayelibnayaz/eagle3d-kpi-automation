@@ -180,7 +180,10 @@ def build_daily_counts_table():
     # Group by date (ACCEPTED only)
     free_by_date,   free_stats   = group_accepted_by_date(free_rows,   "Account Created On", "FREE")
     upload_by_date, upload_stats = group_accepted_by_date(upload_rows, "Upload Date",        "UPLOAD")
-    stripe_by_date, stripe_stats = group_accepted_by_date(stripe_rows, "Created",            "STRIPE")
+    # For Stripe: use row_date_used (set by process_data to First payment date),
+    # then try First payment, then Created as fallbacks
+    # group_accepted_by_date already checks row_date_used as 2nd priority
+    stripe_by_date, stripe_stats = group_accepted_by_date(stripe_rows, "First payment",            "STRIPE", fallback_field="Created")
 
     log(f"Free grouping:   {dict(free_stats)}")
     log(f"Upload grouping: {dict(upload_stats)}")

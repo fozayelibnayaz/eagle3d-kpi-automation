@@ -1,99 +1,133 @@
-# Eagle Analytics Hub — v7.1 Complete Fix Summary
+# Eagle Analytics Hub — v7.1 Fix Summary
 
-## All Issues Fixed
+## Issues Fixed
 
-### 1. 🎯 Monthly Goals for KPIs (NEW)
-- Added **Monthly Goals Tracker** to Dashboard with:
-  - Sign-up goal, Upload goal, Paid goal — each with progress bar
-  - Current month progress vs goal (e.g., "42 / 100, 42% of goal")
-  - Editable goal targets saved to `data_output/monthly_goals.json`
-  - Persists across sessions
+### 1. 🌐📋 Combined Sources — Smart Deduplication
 
-### 2. 🔗 Project Links in Uploads (NEW)
-- Browse Data → First Uploads tab now has **Project Links** expander
-- Detects columns named "project", "url", "link", "scene", "upload_url"
-- Shows clickable markdown links for each project
-- Displays email + upload date + project URL
+**Problem:** Sources like "Google", "google", "Google Search", "Google Search Console" appeared as separate rows in the Combined Sources table. Same for LinkedIn/Linkedin, YouTube/Youtube, AI/ChatGPT/Claude, etc.
 
-### 3. 📊 Sessions Before Sign-ups in Funnel
-- Dashboard Conversion Funnel now starts with **Sessions** (from GA4)
-- Full funnel: Sessions → Sign-ups → Uploads → Paid
-- Falls back to Sign-ups → Uploads → Paid if no GA4 data
+**Root Cause:** The old code only did simple `lower()` matching (`cr["Source"].lower() == src.lower()`). This missed many variants:
+- "Google Search Console" ≠ "google" → separate rows
+- "ChatGPT" ≠ "AI" → separate rows
+- "recommendation" ≠ "Referral" → separate rows
 
-### 4. 📺 YouTube Crash Fixed (CRITICAL)
-- `get_daily_analytics()` HTTP error caused full app crash
-- Fixed: Added try/except around all `get_daily_analytics()` calls in app.py
-- Fixed: `_analytics_request()` refresh token retry now catches exceptions
-- Creates new Request object on retry instead of reusing (prevents header conflicts)
+**Fix:** Now uses `source_normalizer.normalize_source()` for BOTH GA4 traffic sources AND CRM lead sources before combining. The normalizer has 4-tier matching:
+1. Exact fuzzy match against canonical map (27 source groups, 200+ variants)
+2. Contains/compound matching ("Google, Instagram" → Google)
+3. Keyword classification (AI, search, social, referral, etc.)
+4. Unknown — kept as-is but title-cased
 
-### 5. 🔗 Cross-Platform Import Error Fixed (CRITICAL)
-- `compute_platform_comparison` was imported but didn't exist in `cross_platform_engine.py`
-- Added `compute_platform_comparison()` function that compares metrics across platforms
-- Ranks platforms by total engagement
+**Files Changed:** `app.py` (Combined Sources section, ~lines 1391-1475)
 
-### 6. 📨 Per-Subsystem Telegram Alerts (CRITICAL)
-- Alerts page now has **separate send buttons** for each subsystem:
-  - 📊 KPI System Alert
-  - 🌐 GA4 Analytics Alert
-  - 📺 YouTube Alert
-  - 💼 LinkedIn Alert
-  - 💳 Stripe Alert
-  - 🦅 Full System Report (all at once)
-- Each sends via `reporting_engine.py` build functions
-- Daily auto-sends happen via the GitHub Actions pipeline
+**Result:** One "Google" row, one "LinkedIn" row, one "AI Tools" row, etc. Sessions + Signups properly summed.
 
-### 7. 📁 Report Archive with View (IMPROVED)
-- Archive section now shows **full report content** in expanders
-- Each archived report is viewable and downloadable
-- Shows up to 20 reports with filename, date, size
+---
 
-### 8. 🤖 AI Prediction Engine Fixed (CRITICAL)
-- "How many sign-ups can we get more in this month?" now gives:
-  - Current month progress (days passed / total)
-  - Daily average and recent trend
-  - **3-scenario forecast table**: Best Case, Possible, Worst Case
-  - Date-wise projection for remaining days
-  - Upload and Paid forecasts
-  - Growth rate calculation
-- Rule-based mode is no longer a dead end — it computes real predictions
+### 2. 💳 Stripe Paid Count — Under-counting Customers
 
-### 9. 🏢 System Renamed to "Eagle Analytics Hub"
-- Page title: "Eagle Analytics Hub"
-- Sidebar header: "Eagle Analytics Hub"
-- Version: v7.1
-- All references updated
+**Problem:** Paid customers showing 1 for the month, but should be ~3 or more.
 
-### 10. 💼 LinkedIn Analytics Upgraded (YouTube-style)
-- Overview tab now shows:
-  - Full metrics grid: Followers, Company, Industry, Employees
-  - **Historical trend charts** with metric selector
-  - **Engagement chart** (likes + comments stacked bar)
-  - **Impressions chart** (line)
-  - **Follower growth rate** metric
-  - Raw data table in expander
-  - "No historical data" prompt when empty
+**Root Cause:** `categorize_stripe()` in `process_data.py` required `spend > 0 AND date` to ACCEPT. But some paying customers have:
+- `Total spend = $0.00` (refund, pending, display issue)
+- Empty `Total spend` field
+- The real indicator is `First payment` date — if it exists, customer HAS paid
 
-### 11. ⚡ YouTube OAuth Crash Guard
-- All `get_daily_analytics()` calls wrapped in try/except
-- Prevents 401/403 HTTP errors from crashing the app
-- Falls back to empty DataFrame gracefully
+**Fix:** Three-tier acceptance logic:
+1. **First payment date exists** → ACCEPTED (regardless of spend amount)
+2. **Payment Count ≥ 1 AND any date** → ACCEPTED
+3. **Spend > 0 AND any date** → ACCEPTED (with extended date fallback)
 
-## Files Modified (6 files in deploy)
+Also added `Payment Count` to Stripe COLUMN_MAP for scraping.
 
-| File | Size | Changes |
-|------|------|---------|
-| `app.py` | 175KB | Goals, project links, funnel, YouTube guard, LinkedIn upgrade, per-subsystem alerts, archive, rename |
-| `ai_engine.py` | 25KB | 3-scenario prediction engine with date-wise projections |
-| `youtube_connector.py` | 29KB | Analytics request crash guard on refresh retry |
-| `cross_platform_engine.py` | 16KB | Added `compute_platform_comparison()` function |
-| `reporting_engine.py` | 32KB | Multi-subsystem Telegram reports (from previous fix) |
-| `daily_pipeline.py` | 6KB | Pipeline health save (from previous fix) |
+**Files Changed:** `process_data.py`, `scrape_stripe.py`
 
-## Deploy
+---
+
+### 3. 📅 Stripe Date Priority — Inconsistent Across System
+
+**Problem:** Different parts of the code used different date fields for Stripe customers:
+- `daily_counts.py` used "Created"
+- `app.py` Method 2 used "Created" first, then "First payment"
+- `reporting_engine.py` used "row_date_used" first, then "Created"
+- `kpi_bridge.py` used "Created" first, then "First payment"
+
+**Fix:** Unified priority across ALL files:
+1. **First payment** (most reliable — confirms actual payment)
+2. **row_date_used** (set by process_data from First payment)
+3. **Created** (account creation date, not payment date)
+
+**Files Changed:** `app.py`, `daily_counts.py`, `reporting_engine.py`, `kpi_bridge.py`
+
+---
+
+### 4. 🚀 Auto-Trigger Clarity
+
+**Problem:** Toast said "Auto-triggered daily pipeline (data was stale)" but users didn't know to wait for pipeline to complete.
+
+**Fix:** Toast now says "Auto-triggered daily pipeline (data was stale) — refresh in ~5 min for updated numbers"
+
+**Files Changed:** `app.py`
+
+---
+
+## Files Modified
+
+| File | Changes |
+|------|---------|
+| `app.py` | Combined Sources smart dedup, Stripe date priority in Method 2 + override delta, auto-trigger toast |
+| `process_data.py` | `categorize_stripe()` 3-tier acceptance + Payment Count support |
+| `daily_counts.py` | Stripe date field = "First payment", fallback = "Created" |
+| `reporting_engine.py` | Stripe date priority: First payment → row_date_used → Created |
+| `kpi_bridge.py` | `fetch_paid_details()` date priority: First payment → row_date_used → Created |
+| `scrape_stripe.py` | Added `Payment Count` to COLUMN_MAP |
+
+---
+
+## Pipeline Auto-Run Verification
+
+The GitHub Actions workflow (`daily_pipeline.yml`) runs:
+- **0:00 UTC daily** — captures previous day's data
+- **12:00 UTC daily** — end-of-day capture (AoE standard, all timezones completed)
+- **Auto-trigger** from dashboard when data is stale (via `GITHUB_TOKEN` secret)
+
+### ⚠️ MANDATORY: Enable the workflow
+1. Go to: https://github.com/fozayelibnayaz/eagle3d-kpi-automation/actions
+2. If you see "Workflows aren't being run on this repository" → Click **"I understand my workflows, go ahead and enable them"**
+3. The "Daily KPI Pipeline" workflow must show as **active** (not disabled)
+4. If it's been 60 days without a run, GitHub auto-disables it
+
+### GitHub Secrets Required
+
+| Secret | Purpose | How to Get |
+|--------|---------|------------|
+| `GOOGLE_CREDS_JSON` | Google Sheets API | Service account JSON key |
+| `MASTER_SHEET_URL` | Master spreadsheet URL | Already set |
+| `KPI_EMAIL` | KPI dashboard login | Already set |
+| `KPI_PASSWORD` | KPI dashboard login | Already set |
+| `STRIPE_COOKIES_JSON` | Stripe dashboard access | Export cookies from browser as JSON array |
+| `TELEGRAM_BOT_TOKEN` | Telegram notifications | Already set |
+| `TELEGRAM_CHAT_ID` | Telegram chat | Already set |
+| `YOUTUBE_API_KEY` | YouTube Data API | Google Cloud Console |
+| `YOUTUBE_CHANNEL_ID` | YouTube channel | Already set |
+| `LINKEDIN_COMPANY_PAGE` | LinkedIn company URL | Already set |
+| `GITHUB_TOKEN` | Auto-trigger pipeline | GitHub PAT with `repo` scope |
+
+---
+
+## Deploy Instructions
 
 ```bash
 cd eagle3d-kpi-automation
-python3 deploy_v7.py
+git pull --rebase origin main
+git add -A
+git commit -m "v7.1: Fix Combined Sources dedup + Stripe paid count + date priority"
+git push origin main
 ```
 
-6 files written, force-pushed to GitHub. Streamlit Cloud updates in ~60-90 seconds.
+Or use: `bash deploy_v71_fixes.sh`
+
+Then:
+1. ✅ Verify GitHub Actions workflow is enabled
+2. ✅ Manually trigger once to test
+3. ✅ Check Stripe paid count increases
+4. ✅ Check Combined Sources shows deduplicated rows

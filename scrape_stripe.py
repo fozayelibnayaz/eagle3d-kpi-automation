@@ -39,6 +39,7 @@ COLUMN_MAP = {
     "first_payment": "First payment",
     "description":   "Description",
     "country":       "Country",
+    "payment_count": "Payment Count",
 }
 
 
