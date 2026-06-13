@@ -524,6 +524,76 @@ def extract_table_full(page) -> dict:
     """)
 
 
+# ─── EXTRACT APP URLS ──────────────────────────────────
+def extract_app_urls(page) -> dict:
+    """Extract App Name -> URL mapping from the current table view.
+    The KPI Dashboard has clickable App Name links pointing to
+    connector.eagle3dstreaming.com project URLs.
+    """
+    try:
+        urls = page.evaluate("""() => {
+            const result = {};
+            const grid = document.querySelector('[role="grid"]') ||
+                         document.querySelector('[class*="MuiDataGrid"]');
+            if (!grid) return result;
+            
+            // Find the App Name column index
+            const hEls = grid.querySelectorAll('[role="columnheader"], th');
+            let appIdx = -1;
+            for (let i = 0; i < hEls.length; i++) {
+                const txt = (hEls[i].innerText || '').trim().toLowerCase();
+                if (txt === 'app name' || txt === 'app' || txt === 'project' || txt === 'project name') {
+                    appIdx = i;
+                    break;
+                }
+            }
+            if (appIdx < 0) return result;
+            
+            // Extract links from App Name cells
+            const rows = grid.querySelectorAll('[role="row"][data-id]');
+            for (const row of rows) {
+                const cells = row.querySelectorAll('[role="cell"], [role="gridcell"]');
+                if (appIdx < cells.length) {
+                    const cell = cells[appIdx];
+                    const links = cell.querySelectorAll('a[href]');
+                    if (links.length > 0) {
+                        const href = links[0].getAttribute('href');
+                        const text = links[0].innerText.trim() || cell.innerText.trim();
+                        if (href && text && href.startsWith('http')) {
+                            result[text] = href;
+                        }
+                    }
+                }
+            }
+            
+            // Also try without data-id rows
+            if (Object.keys(result).length === 0) {
+                const allRows = grid.querySelectorAll('[role="row"], tr');
+                for (const row of allRows) {
+                    const cells = row.querySelectorAll('[role="cell"], [role="gridcell"], td');
+                    if (appIdx < cells.length) {
+                        const cell = cells[appIdx];
+                        const links = cell.querySelectorAll('a[href]');
+                        if (links.length > 0) {
+                            const href = links[0].getAttribute('href');
+                            const text = links[0].innerText.trim() || cell.innerText.trim();
+                            if (href && text && href.startsWith('http')) {
+                                result[text] = href;
+                            }
+                        }
+                    }
+                }
+            }
+            return result;
+        }""")
+        if urls:
+            log(f"  Extracted {len(urls)} App URLs")
+        return urls
+    except Exception as e:
+        log(f"  App URL extraction failed: {e}")
+        return {}
+
+
 # ─── PAGINATE ──────────────────────────────────────────
 def paginate_all(page, tab_label: str) -> tuple:
     log(f"\nPagination: {tab_label}")
@@ -725,6 +795,16 @@ def main():
                     summary[tab_key] = 0
                     continue
 
+                # Extract App URLs from the KPI Dashboard (project hyperlinks)
+                app_url_map = {}
+                if tab_key == "FIRST_UPLOAD":
+                    try:
+                        app_url_map = extract_app_urls(page)
+                        if app_url_map:
+                            log(f"  App URLs: {len(app_url_map)} project links found")
+                    except Exception as e:
+                        log(f"  App URL extraction skipped: {e}")
+
                 enriched = []
                 for r in raw_rows:
                     d = {headers[i]: r[i] if i < len(r) else ""
@@ -733,6 +813,11 @@ def main():
                     d["__period__"]      = actual_filter
                     d["__scraped_at__"]  = SCRAPE_TS
                     d["__scrape_date__"] = SCRAPE_DATE
+                    # Add App URL from the extracted mapping
+                    if app_url_map:
+                        _app_name_val = d.get("App Name", d.get("App", d.get("Project", "")))
+                        if _app_name_val and str(_app_name_val).strip() in app_url_map:
+                            d["App URL"] = app_url_map[str(_app_name_val).strip()]
                     enriched.append(d)
 
                 merged = merge_with_existing(f"Raw_{tab_key}", enriched)

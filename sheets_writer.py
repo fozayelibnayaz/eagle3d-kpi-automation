@@ -93,7 +93,42 @@ def _get_client():
         creds_env  = os.environ.get("GOOGLE_CREDS_JSON", "")
         creds_file = "google_creds.json"
 
-        if creds_env:
+        # Try st.secrets fallback (for Streamlit Cloud)
+        if not creds_env:
+            try:
+                import streamlit as st
+                for _sk in ["GOOGLE_CREDS_JSON", "GOOGLE_CREDS"]:
+                    if _sk in st.secrets:
+                        _r = st.secrets[_sk]
+                        _c = json.loads(_r) if isinstance(_r, str) else dict(_r)
+                        if "private_key" in _c:
+                            _c["private_key"] = _c["private_key"].replace("\\n", "\n")
+                        _t = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
+                        json.dump(_c, _t)
+                        _t.close()
+                        creds_file = _t.name
+                        creds_env = "from_secrets"
+                        break
+            except Exception:
+                pass
+
+        # Also try ga4_service_account in secrets
+        if not creds_env:
+            try:
+                import streamlit as st
+                if "ga4_service_account" in st.secrets:
+                    _sa = dict(st.secrets["ga4_service_account"])
+                    if "private_key" in _sa:
+                        _sa["private_key"] = _sa["private_key"].replace("\\n", "\n")
+                    _t = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
+                    json.dump(_sa, _t)
+                    _t.close()
+                    creds_file = _t.name
+                    creds_env = "from_secrets_ga4"
+            except Exception:
+                pass
+
+        if creds_env and creds_env != "from_secrets" and creds_env != "from_secrets_ga4":
             tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
             tmp.write(creds_env)
             tmp.close()
@@ -104,7 +139,18 @@ def _get_client():
 
         creds  = Credentials.from_service_account_file(creds_file, scopes=SCOPES)
         client = gspread.authorize(creds)
-        ss     = client.open_by_url(MASTER_SHEET_URL)
+
+        # Try st.secrets for MASTER_SHEET_URL if env var is missing
+        sheet_url = MASTER_SHEET_URL
+        if not sheet_url or "docs.google.com" not in sheet_url:
+            try:
+                import streamlit as st
+                if "MASTER_SHEET_URL" in st.secrets:
+                    sheet_url = str(st.secrets["MASTER_SHEET_URL"])
+            except Exception:
+                pass
+
+        ss     = client.open_by_url(sheet_url)
 
         _client = client
         _ss     = ss

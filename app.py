@@ -2728,12 +2728,13 @@ elif page == "🔍 Browse Data":
             # Show project links for First Uploads tab
             if _lb == "First Uploads" and not fl.empty:
                 # Find all URL/App columns
-                _proj_cols = [c for c in fl.columns if any(k in c.lower() for k in ["project", "url", "link", "scene", "upload_url", "app name", "app_url"])]
+                _app_url_col = next((c for c in fl.columns if c.lower().strip() == "app url"), None)
                 _app_name_col = next((c for c in fl.columns if c.lower().strip() == "app name"), None)
+                _proj_cols = [c for c in fl.columns if any(k in c.lower() for k in ["project", "url", "link", "scene", "upload_url"]) and c.lower().strip() not in ("app url", "app name")]
                 _email_col_bd = next((c for c in fl.columns if "email" in c.lower()), None)
                 _date_col_bd = next((c for c in fl.columns if "date" in c.lower() and "upload" in c.lower()), None) or next((c for c in fl.columns if "row_date" in c.lower()), None)
                 
-                if _proj_cols or _app_name_col or _email_col_bd:
+                if _app_url_col or _app_name_col or _proj_cols or _email_col_bd:
                     with st.expander("🔗 Project Links", expanded=True):
                         _display_rows = fl.head(100)
                         for _, _pr in _display_rows.iterrows():
@@ -2741,13 +2742,17 @@ elif page == "🔍 Browse Data":
                             _dt = str(_pr.get(_date_col_bd, "")) if _date_col_bd else ""
                             _links = []
                             
-                            # Build project URL from App Name column
-                            if _app_name_col:
-                                _app_name = str(_pr.get(_app_name_col, "")).strip()
-                                if _app_name and _app_name not in ("nan", "None", "", "-"):
-                                    _base_url = "https://connector.eagle3dstreaming.com/v5/eagle-ats/"
-                                    _proj_url = f"{_base_url}{_app_name}/default"
-                                    _links.append(f'[🔗 {_app_name}]({_proj_url})')
+                            # Use the actual App URL from scraped data (hyperlink from KPI Dashboard)
+                            _app_name_val = str(_pr.get(_app_name_col, "")).strip() if _app_name_col else ""
+                            _app_url_val = str(_pr.get(_app_url_col, "")).strip() if _app_url_col else ""
+                            
+                            if _app_url_val and _app_url_val not in ("nan", "None", "", "-") and _app_url_val.startswith("http"):
+                                # We have the real URL from the KPI Dashboard
+                                _display = _app_name_val if _app_name_val and _app_name_val not in ("nan", "None", "") else "🔗 Project"
+                                _links.append(f'[🔗 {_display}]({_app_url_val})')
+                            elif _app_name_val and _app_name_val not in ("nan", "None", "", "-"):
+                                # No URL but have App Name — show name only
+                                _links.append(f"📱 {_app_name_val}")
                             
                             # Check other URL/project columns
                             for _pc_col in _proj_cols:
@@ -2765,7 +2770,13 @@ elif page == "🔍 Browse Data":
                             elif _em:
                                 st.markdown(f"📤 **{_em}** ({_dt})")
 
-            _df(fl.head(mr), height=450)
+            # Make App URL column clickable hyperlinks in the table
+            _display_fl = fl.head(mr).copy()
+            if "App URL" in _display_fl.columns:
+                _display_fl["App URL"] = _display_fl["App URL"].apply(
+                    lambda x: f"[🔗 Open]({x})" if str(x).startswith("http") else str(x)
+                )
+            _df(_display_fl, height=450)
             st.download_button(
                 "⬇️ Download",
                 data=fl.to_csv(index=False).encode("utf-8"),
