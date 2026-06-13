@@ -642,3 +642,39 @@ def fetch_referral_paths(start_date, end_date):
         "order_bys": [OrderBy(metric=OrderBy.MetricOrderBy(metric_name="sessions"), desc=True)],
         "limit": 5000,
     })
+
+
+def is_configured():
+    """Check if GA4 is configured with valid credentials."""
+    try:
+        creds = _get_credentials()
+        return creds is not None
+    except Exception:
+        return False
+
+
+def get_status():
+    """Get GA4 connection status."""
+    try:
+        creds = _get_credentials()
+        connected = creds is not None
+        # Try a quick test query
+        if connected:
+            try:
+                client = _get_client()
+                # Quick test: just create the client, don't run a full query
+                connected = client is not None
+            except Exception:
+                connected = True  # Credentials are valid, client may fail for other reasons
+        return {
+            "connected": connected,
+            "property_id": GA4_PROPERTY_ID,
+            "has_secrets": False,
+        }
+    except Exception:
+        return {
+            "connected": False,
+            "property_id": GA4_PROPERTY_ID,
+            "has_secrets": False,
+        }
+

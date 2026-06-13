@@ -89,6 +89,21 @@ def send_telegram(message, parse_mode="MarkdownV2"):
     """Send message to Telegram group via Bot API."""
     bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
     chat_id   = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+    
+    # Fallback to st.secrets (for Streamlit Cloud dashboard buttons)
+    if not bot_token or not chat_id:
+        try:
+            import streamlit as st
+            if "TELEGRAM_BOT_TOKEN" in st.secrets:
+                val = st.secrets["TELEGRAM_BOT_TOKEN"]
+                if val and str(val).strip():
+                    bot_token = str(val).strip()
+            if "TELEGRAM_CHAT_ID" in st.secrets:
+                val = st.secrets["TELEGRAM_CHAT_ID"]
+                if val and str(val).strip():
+                    chat_id = str(val).strip()
+        except Exception:
+            pass
 
     if not bot_token or not chat_id:
         log("Telegram skipped: TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not set")
@@ -629,15 +644,29 @@ def build_full_telegram_message(kpi, ga4, yt, li, stripe, health):
 # ═══════════════════════════════════════════════════════════════
 
 def send_subsystem_reports():
-    """Send individual detailed reports for each subsystem."""
+    """Send individual detailed reports for each subsystem + performance alerts."""
     bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
     chat_id   = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+    # Fallback to st.secrets
+    if not bot_token or not chat_id:
+        try:
+            import streamlit as st
+            if "TELEGRAM_BOT_TOKEN" in st.secrets:
+                val = st.secrets["TELEGRAM_BOT_TOKEN"]
+                if val and str(val).strip():
+                    bot_token = str(val).strip()
+            if "TELEGRAM_CHAT_ID" in st.secrets:
+                val = st.secrets["TELEGRAM_CHAT_ID"]
+                if val and str(val).strip():
+                    chat_id = str(val).strip()
+        except Exception:
+            pass
     if not bot_token or not chat_id:
         return
 
     import pandas as pd
 
-    # ── KPI DETAILED ──
+    # ── KPI DETAILED (always send) ──
     try:
         kpi = build_kpi_stats()
         kpi_msg = build_telegram_kpi_section(kpi)
@@ -645,11 +674,11 @@ def send_subsystem_reports():
     except Exception as e:
         log(f"KPI report error: {e}")
 
-    # ── GA4 DETAILED ──
+    # ── GA4 DETAILED (always send, even if not connected) ──
     try:
         ga4 = build_ga4_stats()
+        ga4_msg = build_telegram_ga4_section(ga4)
         if ga4["connected"]:
-            ga4_msg = build_telegram_ga4_section(ga4)
             # Add page-level details
             try:
                 from ga4_connector import fetch_page_performance
@@ -665,67 +694,131 @@ def send_subsystem_reports():
                         ga4_msg += f"  • {escape_md(path)}: `{views}` views\n"
             except Exception:
                 pass
-            send_telegram(ga4_msg)
+        send_telegram(ga4_msg)
     except Exception as e:
         log(f"GA4 report error: {e}")
 
-    # ── YOUTUBE DETAILED ──
+    # ── YOUTUBE DETAILED (always send) ──
     try:
         yt = build_youtube_stats()
-        if yt["connected"]:
-            yt_msg = build_telegram_youtube_section(yt)
-            # Add video performance table
-            if yt["top_videos"]:
-                yt_msg += "\n🎬 *Video Performance:*\n"
-                for i, (title, views, likes) in enumerate(yt["top_videos"], 1):
-                    eng = (likes / views * 100) if views > 0 else 0
-                    yt_msg += f"  {i}\\. {escape_md(title)}\n"
-                    yt_msg += f"     👁 `{views}` 👍 `{likes}` 📊 `{eng:.1f}%`\n"
-            send_telegram(yt_msg)
+        yt_msg = build_telegram_youtube_section(yt)
+        if yt["connected"] and yt["top_videos"]:
+            yt_msg += "\n🎬 *Video Performance:*\n"
+            for i, (title, views, likes) in enumerate(yt["top_videos"], 1):
+                eng = (likes / views * 100) if views > 0 else 0
+                yt_msg += f"  {i}\\. {escape_md(title)}\n"
+                yt_msg += f"     👁 `{views}` 👍 `{likes}` 📊 `{eng:.1f}%`\n"
+        send_telegram(yt_msg)
     except Exception as e:
         log(f"YouTube report error: {e}")
 
-    # ── LINKEDIN DETAILED ──
+    # ── LINKEDIN DETAILED (always send) ──
     try:
         li = build_linkedin_stats()
+        li_msg = build_telegram_linkedin_section(li)
+        # Add daily history summary even if not fully connected
         if li["connected"]:
-            li_msg = build_telegram_linkedin_section(li)
-            send_telegram(li_msg)
+            try:
+                from linkedin_connector import get_manual_history, get_posts
+                hist = get_manual_history()
+                if not hist.empty:
+                    li_msg += f"│ 📅 History: `{len(hist)}` days\n"
+                posts = get_posts()
+                if posts:
+                    total_likes = sum(p.get("likes", 0) for p in posts)
+                    total_comments = sum(p.get("comments", 0) for p in posts)
+                    li_msg += f"│ 📝 Posts: `{len(posts)}` | 👍 `{total_likes}` | 💬 `{total_comments}`\n"
+            except Exception:
+                pass
+        send_telegram(li_msg)
     except Exception as e:
         log(f"LinkedIn report error: {e}")
 
-    # ── STRIPE DETAILED ──
+    # ── STRIPE DETAILED (always send) ──
     try:
         stripe = build_stripe_stats()
-        if stripe["connected"]:
-            stripe_msg = build_telegram_stripe_section(stripe)
-            send_telegram(stripe_msg)
+        stripe_msg = build_telegram_stripe_section(stripe)
+        send_telegram(stripe_msg)
     except Exception as e:
         log(f"Stripe report error: {e}")
 
-    # ── CROSS-PLATFORM ──
+    # ── CROSS-PLATFORM (always send) ──
     try:
         cp = build_cross_platform_stats()
-        if cp["available"]:
-            cp_msg = "🔗 *CROSS-PLATFORM CORRELATION*\n┌────────────────────────\n"
-            if cp["top_correlations"]:
-                for metric, strength in cp["top_correlations"][:5]:
-                    name = escape_md(metric.replace("_", " ").title())
-                    cp_msg += f"│ {name}: `{strength:.2f}`\n"
-            else:
-                cp_msg += "│ No strong correlations found\n"
-            cp_msg += "└────────────────────────\n"
-            send_telegram(cp_msg)
+        cp_msg = "🔗 *CROSS-PLATFORM CORRELATION*\n┌────────────────────────\n"
+        if cp["available"] and cp["top_correlations"]:
+            for metric, strength in cp["top_correlations"][:5]:
+                name = escape_md(metric.replace("_", " ").title())
+                cp_msg += f"│ {name}: `{strength:.2f}`\n"
+        else:
+            cp_msg += "│ Waiting for multi-platform data\n"
+        cp_msg += "└────────────────────────\n"
+        send_telegram(cp_msg)
     except Exception as e:
         log(f"Cross-platform report error: {e}")
 
-    # ── PIPELINE HEALTH ──
+    # ── PIPELINE HEALTH (always send) ──
     try:
         health = build_pipeline_health()
         pipe_msg = build_telegram_pipeline_section(health)
         send_telegram(pipe_msg)
     except Exception as e:
         log(f"Pipeline report error: {e}")
+
+    # ── PERFORMANCE ALERTS (smart anomaly detection) ──
+    try:
+        from pathlib import Path as _P
+        _kpi_path = _P("data_output") / "daily_counts.json"
+        _prev_kpi_path = _P("data_output") / "daily_counts_prev.json"
+        kpi_df = None
+        prev_kpi_df = None
+        if _kpi_path.exists():
+            try:
+                kpi_df = pd.read_json(_kpi_path.read_text())
+            except Exception:
+                pass
+        if _prev_kpi_path.exists():
+            try:
+                prev_kpi_df = pd.read_json(_prev_kpi_path.read_text())
+            except Exception:
+                pass
+
+        if kpi_df is not None and not kpi_df.empty:
+            try:
+                from telegram_alerts import anomaly_alerts
+                alerts = anomaly_alerts(kpi_df, prev_kpi_df)
+                for alert in alerts:
+                    try:
+                        send_telegram(alert["msg"])
+                    except Exception:
+                        pass
+            except Exception as e:
+                log(f"Anomaly alerts error: {e}")
+    except Exception as e:
+        log(f"Performance alerts error: {e}")
+
+    # ── MONTHLY GOALS PROGRESS ──
+    try:
+        _goals_path = Path("monthly_goals.json")
+        if _goals_path.exists():
+            _goals = json.loads(_goals_path.read_text())
+            if _goals:
+                _gmsg = "🎯 *MONTHLY GOALS PROGRESS*\n┌────────────────────────\n"
+                for _goal_name, _goal_data in _goals.items():
+                    if isinstance(_goal_data, dict) and "target" in _goal_data:
+                        _current = _goal_data.get("current", 0)
+                        _target = _goal_data.get("target", 0)
+                        _pct = (_current / _target * 100) if _target > 0 else 0
+                        _bar_len = 15
+                        _filled = int(_pct / 100 * _bar_len)
+                        _bar = "█" * _filled + "░" * (_bar_len - _filled)
+                        _icon = "🟢" if _pct >= 100 else ("🟡" if _pct >= 50 else "🔴")
+                        _gmsg += f"│ {_icon} {escape_md(_goal_name)}: `{_current}`/`{_target}` ({_pct:.0f}%)\n"
+                        _gmsg += f"│   `{_bar}`\n"
+                _gmsg += "└────────────────────────\n"
+                send_telegram(_gmsg)
+    except Exception as e:
+        log(f"Monthly goals report error: {e}")
 
 
 def build_text_report(kpi, ga4, yt, li, stripe, health):

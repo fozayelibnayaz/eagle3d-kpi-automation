@@ -46,10 +46,8 @@ st.set_page_config(
 # ═══════════════════════════════════════════════════════════════
 # THEME ENGINE
 # ═══════════════════════════════════════════════════════════════
-if "theme_mode" not in st.session_state:
-    st.session_state["theme_mode"] = "dark"
-
-IS_DARK = st.session_state.get("theme_mode", "dark") == "dark"
+# Theme: Dark mode only (no light mode switcher)
+IS_DARK = True
 
 
 def _theme_colors():
@@ -85,105 +83,7 @@ T = _theme_colors()
 
 
 def _css():
-    """Inject comprehensive CSS for both dark and light modes."""
-    light_fixes = ""
-    if not IS_DARK:
-        light_fixes = f"""
-    /* ═══ LIGHT MODE: Force visibility on ALL native Streamlit widgets ═══ */
-    .stApp > div > div > div > div p,
-    .stApp > div > div > div > div span,
-    .stApp > div > div > div > div label,
-    .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6 {{
-        color: {T["text"]} !important;
-    }}
-    [data-testid="stMetricLabel"] {{ color: {T["muted"]} !important; }}
-    [data-testid="stMetricValue"] {{ color: {T["text"]} !important; }}
-    [data-testid="stMetricDelta"] {{ color: {T["text_sec"]} !important; }}
-    [data-testid="stMetric"] {{
-        background: {T["card"]}; border: 1px solid {T["border"]};
-        border-radius: 10px; padding: 10px 14px;
-    }}
-    .stApp [data-testid="stCaption"] {{ color: {T["muted"]} !important; }}
-    .stApp div[data-testid="stText"] {{ color: {T["text"]} !important; }}
-    .stApp div[data-testid="stMarkdownContainer"] {{ color: {T["text"]} !important; }}
-
-    /* Inputs */
-    .stApp input[type="text"],
-    .stApp input[type="number"],
-    .stApp input[type="date"],
-    .stApp textarea,
-    .stApp div[data-baseweb="select"] > div > div,
-    .stApp div[data-baseweb="input"] > div > div {{
-        background: {T["input_bg"]} !important;
-        color: {T["input_text"]} !important;
-        border-color: {T["border"]} !important;
-    }}
-
-    /* Buttons */
-    .stApp button[kind="header"] {{ color: {T["text"]} !important; }}
-    .stApp button:not([kind="primary"]) {{
-        color: {T["text"]} !important;
-        border-color: {T["border"]} !important;
-        background: {T["card"]} !important;
-    }}
-    .stApp button[kind="primary"] {{
-        color: #FFFFFF !important;
-        background: {T["accent"]} !important;
-        border-color: {T["accent"]} !important;
-    }}
-
-    /* Tabs */
-    .stApp .stTabs [role="tab"] {{ color: {T["muted"]} !important; }}
-    .stApp .stTabs [role="tab"][aria-selected="true"],
-    .stApp .stTabs [role="tab"][aria-selected="true"] p {{
-        color: {T["accent"]} !important;
-    }}
-    .stApp .stTabs [role="tablist"] {{
-        border-bottom: 2px solid {T["border"]};
-    }}
-
-    /* Dataframes */
-    .stApp .stDataFrame {{
-        background: {T["card"]} !important;
-    }}
-    .stApp [data-testid="stDataFrameResizable"] {{
-        background: {T["card"]} !important;
-    }}
-
-    /* Alerts */
-    .stApp [data-testid="stAlert"],
-    .stApp [data-testid="stAlert"] p,
-    .stApp [data-testid="stAlert"] span,
-    .stApp [data-testid="stAlert"] div {{
-        color: {T["text"]} !important;
-    }}
-
-    /* Sidebar */
-    [data-testid="stSidebar"] p,
-    [data-testid="stSidebar"] span:not([class*="badge"]),
-    [data-testid="stSidebar"] label,
-    [data-testid="stSidebar"] .stCaption,
-    [data-testid="stSidebar"] .stMarkdown {{
-        color: {T["text"]} !important;
-    }}
-    [data-testid="stSidebar"] input,
-    [data-testid="stSidebar"] div[data-baseweb="select"] > div > div {{
-        background: {T["card_alt"]} !important;
-        color: {T["text"]} !important;
-        border-color: {T["border"]} !important;
-    }}
-
-    /* Code blocks */
-    .stApp code, .stApp pre {{
-        color: {T["text"]} !important;
-        background: {T["card_alt"]} !important;
-    }}
-
-    /* Expander */
-    .stApp .streamlit-expanderHeader {{
-        color: {T["text"]} !important;
-    }}
-    """
+    """Inject comprehensive CSS for dark mode."""
 
     st.markdown(f"""
     <style>
@@ -324,9 +224,6 @@ def _css():
     /* ═══ CLEANUP ═══ */
     #MainMenu {{ visibility: hidden; }}
     footer {{ visibility: hidden; }}
-
-    /* ═══ LIGHT MODE OVERRIDES ═══ */
-    {light_fixes}
     </style>
     """, unsafe_allow_html=True)
 
@@ -356,10 +253,15 @@ def _check_auth():
     if st.session_state["authenticated"]:
         return True
     # Login screen
-    st.markdown("""
+    _login_logo = ""
+    if LOGO_B64:
+        _login_logo = f'<img src="data:image/png;base64,{LOGO_B64}" style="width:80px;height:auto;border-radius:12px;margin-bottom:0.5rem;">'
+    else:
+        _login_logo = '<div style="font-size:3rem;">🦅</div>'
+    st.markdown(f"""
     <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;
                 min-height:60vh;text-align:center;">
-        <div style="font-size:3rem;margin-bottom:0.5rem;">🦅</div>
+        {_login_logo}
         <div style="font-size:1.6rem;font-weight:800;color:var(--accent);margin-bottom:0.3rem;">
             Eagle Analytics Hub</div>
         <div style="font-size:0.9rem;color:var(--text-sec, #94A3C1);margin-bottom:2rem;">
@@ -770,16 +672,6 @@ with st.sidebar:
         "</div>",
         unsafe_allow_html=True,
     )
-
-    # Theme toggle
-    _dark = st.toggle(
-        "🌙 Dark Mode",
-        value=(st.session_state.get("theme_mode", "dark") == "dark"),
-    )
-    _new_mode = "dark" if _dark else "light"
-    if _new_mode != st.session_state.get("theme_mode", "dark"):
-        st.session_state["theme_mode"] = _new_mode
-        st.rerun()
 
     st.markdown("---")
 
@@ -3683,6 +3575,7 @@ elif page == "💼 LinkedIn":
             save_manual_entry, import_csv_data, get_status,
             scrape_with_playwright, get_posts, save_posts,
             calculate_post_score, get_score_label, get_aggregate_stats,
+            _get_company_page, has_cookies,
         )
     except Exception as e:
         st.error(f"LinkedIn connector not loaded: {e}")
@@ -4116,7 +4009,7 @@ elif page == "💼 LinkedIn":
 
         _co_url = st.text_input(
             "Company Page URL",
-            value=_get_company_page() if callable(_get_company_page) else os.environ.get("LINKEDIN_COMPANY_PAGE", ""),
+            value=_get_company_page() or os.environ.get("LINKEDIN_COMPANY_PAGE", ""),
             help="e.g., https://www.linkedin.com/company/eagle-3d-streaming/",
         )
 
