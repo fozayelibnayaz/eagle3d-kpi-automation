@@ -1474,6 +1474,44 @@ if page == "📊 Dashboard":
                 )
                 st.markdown(result["answer"])
 
+    # ── KPI Quick Alert ──
+    st.markdown("---")
+    st.markdown("### 📨 KPI System Alert")
+    _kpi_tg_bot = get_secret("TELEGRAM_BOT_TOKEN", "")
+    _kpi_tg_chat = get_secret("TELEGRAM_CHAT_ID", "")
+    if not _kpi_tg_bot or not _kpi_tg_chat:
+        st.warning("⚠️ Add `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` to secrets to enable alerts.")
+    else:
+        _kpi_alert_c1, _kpi_alert_c2 = st.columns(2)
+        with _kpi_alert_c1:
+            if st.button("📤 Send KPI Report", use_container_width=True, key="dash_kpi_alert"):
+                with st.spinner("Sending KPI report..."):
+                    try:
+                        from reporting_engine import build_kpi_stats, build_telegram_kpi_section, send_telegram
+                        _kpi_data = build_kpi_stats()
+                        _msg = build_telegram_kpi_section(_kpi_data)
+                        _ok = send_telegram(_msg)
+                        if _ok:
+                            st.success("✅ KPI report sent to Telegram!")
+                        else:
+                            st.error("❌ Telegram send failed. Check bot token in secrets.")
+                    except Exception as _e:
+                        st.error(f"❌ Error: {_e}")
+        with _kpi_alert_c2:
+            if st.button("📤 Send Stripe Report", use_container_width=True, key="dash_stripe_alert"):
+                with st.spinner("Sending Stripe report..."):
+                    try:
+                        from reporting_engine import build_stripe_stats, build_telegram_stripe_section, send_telegram
+                        _stripe_data = build_stripe_stats()
+                        _msg = build_telegram_stripe_section(_stripe_data)
+                        _ok = send_telegram(_msg)
+                        if _ok:
+                            st.success("✅ Stripe report sent!")
+                        else:
+                            st.error("❌ Telegram send failed.")
+                    except Exception as _e:
+                        st.error(f"❌ Error: {_e}")
+
 # ═══════════════════════════════════════════════════════════════
 # PAGE: 🚦 TRAFFIC INTEL
 # ═══════════════════════════════════════════════════════════════
@@ -1529,6 +1567,28 @@ elif page == "🚦 Traffic Intel":
             _df(agg)
         else:
             st.info("No GA4 traffic data available. Configure GA4 connector in Settings.")
+
+    # ── GA4 Quick Alert ──
+    st.markdown("---")
+    st.markdown("### 📨 GA4 Analytics Alert")
+    _ga4_tg_bot = get_secret("TELEGRAM_BOT_TOKEN", "")
+    _ga4_tg_chat = get_secret("TELEGRAM_CHAT_ID", "")
+    if not _ga4_tg_bot or not _ga4_tg_chat:
+        st.warning("⚠️ Add Telegram secrets to enable alerts.")
+    else:
+        if st.button("📤 Send GA4 Report", use_container_width=True, key="ga4_alert"):
+            with st.spinner("Sending GA4 report..."):
+                try:
+                    from reporting_engine import build_ga4_stats, build_telegram_ga4_section, send_telegram
+                    _ga4_data = build_ga4_stats()
+                    _msg = build_telegram_ga4_section(_ga4_data)
+                    _ok = send_telegram(_msg)
+                    if _ok:
+                        st.success("✅ GA4 report sent to Telegram!")
+                    else:
+                        st.error("❌ Send failed. Check bot token.")
+                except Exception as _e:
+                    st.error(f"❌ Error: {_e}")
 
 # ═══════════════════════════════════════════════════════════════
 # PAGE: 🤖 ASK AI — Chat System
@@ -3559,6 +3619,27 @@ Provide specific, actionable advice based on the data. Include numbers and speci
                 _resp = _ai_mod.ask(_full_prompt)
                 st.markdown(_resp)
 
+    # ── YouTube Quick Alert ──
+    st.markdown("---")
+    st.markdown("### 📨 YouTube Alert")
+    _yt_tg_bot = get_secret("TELEGRAM_BOT_TOKEN", "")
+    _yt_tg_chat = get_secret("TELEGRAM_CHAT_ID", "")
+    if not _yt_tg_bot or not _yt_tg_chat:
+        st.warning("⚠️ Add Telegram secrets to enable alerts.")
+    else:
+        if st.button("📤 Send YouTube Report", use_container_width=True, key="yt_alert"):
+            with st.spinner("Sending YouTube report..."):
+                try:
+                    from reporting_engine import build_youtube_stats, build_telegram_youtube_section, send_telegram
+                    _yt_data = build_youtube_stats()
+                    _msg = build_telegram_youtube_section(_yt_data)
+                    _ok = send_telegram(_msg)
+                    if _ok:
+                        st.success("✅ YouTube report sent to Telegram!")
+                    else:
+                        st.error("❌ Send failed. Check bot token.")
+                except Exception as _e:
+                    st.error(f"❌ Error: {_e}")
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -3571,7 +3652,7 @@ elif page == "💼 LinkedIn":
     )
     try:
         from linkedin_connector import (
-            scrape_public_metrics, get_cached_metrics, get_manual_history,
+            scrape_public_metrics, scrape_with_cookies, get_cached_metrics, get_manual_history,
             save_manual_entry, import_csv_data, get_status,
             scrape_with_playwright, get_posts, save_posts,
             calculate_post_score, get_score_label, get_aggregate_stats,
@@ -3756,7 +3837,10 @@ elif page == "💼 LinkedIn":
             if _li_status["cookies"]:
                 if st.button("🔐 Deep Scrape (Authenticated)", use_container_width=True):
                     with st.spinner("Running authenticated scrape..."):
-                        _result = scrape_with_playwright()
+                        try:
+                            _result = scrape_with_playwright()
+                        except Exception:
+                            _result = scrape_with_cookies()
                         if _result.get("error"):
                             st.error(f"Scrape failed: {_result['error']}")
                         else:
@@ -4054,6 +4138,68 @@ elif page == "💼 LinkedIn":
             if not _h.empty:
                 with st.expander("📋 Recent Daily Data"):
                     _df(_h.tail(14))
+
+    # ── LinkedIn Quick Alert ──
+    st.markdown("---")
+    st.markdown("### 📨 LinkedIn Alert")
+    _li_tg_bot = get_secret("TELEGRAM_BOT_TOKEN", "")
+    _li_tg_chat = get_secret("TELEGRAM_CHAT_ID", "")
+    if not _li_tg_bot or not _li_tg_chat:
+        st.warning("⚠️ Add Telegram secrets to enable alerts.")
+    else:
+        _li_alert_c1, _li_alert_c2 = st.columns(2)
+        with _li_alert_c1:
+            if st.button("📤 Send LinkedIn Report", use_container_width=True, key="li_alert"):
+                with st.spinner("Sending LinkedIn report..."):
+                    try:
+                        from reporting_engine import build_linkedin_stats, build_telegram_linkedin_section, send_telegram
+                        _li_data = build_linkedin_stats()
+                        _msg = build_telegram_linkedin_section(_li_data)
+                        _ok = send_telegram(_msg)
+                        if _ok:
+                            st.success("✅ LinkedIn report sent to Telegram!")
+                        else:
+                            st.error("❌ Send failed. Check bot token.")
+                    except Exception as _e:
+                        st.error(f"❌ Error: {_e}")
+        with _li_alert_c2:
+            if st.button("📤 Trigger LinkedIn Scrape", use_container_width=True, key="li_scrape_alert"):
+                with st.spinner("Scraping LinkedIn data..."):
+                    try:
+                        # Use authenticated scrape if cookies available, else public
+                        if has_cookies():
+                            _scrape_result = scrape_with_cookies()
+                            _method = "authenticated"
+                        else:
+                            _scrape_result = scrape_public_metrics()
+                            _method = "public"
+                        if _scrape_result.get("error"):
+                            st.warning(f"⚠️ {_scrape_result['error']}")
+                        else:
+                            _f = _scrape_result.get("followers", 0)
+                            _p = len(_scrape_result.get("posts", []))
+                            st.success(f"✅ Scraped ({_method}): {_f:,} followers, {_p} posts")
+                            # Auto-save the scraped data
+                            _entry = {
+                                "followers": _scrape_result.get("followers", 0),
+                                "company_name": _scrape_result.get("company_name", ""),
+                                "employees": _scrape_result.get("employees", ""),
+                                "industry": _scrape_result.get("industry", ""),
+                                "scraped_at": datetime.now().isoformat(),
+                            }
+                            # Add analytics data
+                            for _k in ("impressionCount", "uniqueVisitors", "totalPageViews",
+                                       "likeCount", "commentCount", "shareCount", "clickCount"):
+                                if _scrape_result.get(_k):
+                                    _entry[_k] = _scrape_result[_k]
+                            save_manual_entry(_entry)
+                            # Save posts if available
+                            _posts = _scrape_result.get("posts", [])
+                            if _posts:
+                                save_posts(_posts)
+                            st.toast("LinkedIn data scraped & saved!", icon="💼")
+                    except Exception as _e:
+                        st.error(f"❌ Scrape error: {_e}")
 
 
 # PAGE: 🔗 CROSS-PLATFORM CORRELATION

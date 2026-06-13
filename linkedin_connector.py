@@ -397,6 +397,129 @@ def scrape_via_api() -> Dict[str, Any]:
 
 
 # ═══════════════════════════════════════════════════════════════
+# METHOD 3: Cookie-based authenticated urllib scrape (no Playwright)
+# Works on Streamlit Cloud where Playwright is not available
+# ═══════════════════════════════════════════════════════════════
+
+def scrape_with_cookies() -> Dict[str, Any]:
+    """Scrape LinkedIn using cookies via urllib (no Playwright needed).
+    Gets company page data, follower count, and basic analytics.
+    Works on Streamlit Cloud and in GitHub Actions."""
+    cookies_json = _get_cookies()
+    company_page = _get_company_page()
+    if not company_page:
+        return {"error": "LINKEDIN_COMPANY_PAGE not configured", "demo": True}
+
+    result = {"scraped_at": datetime.now().isoformat(), "demo": False}
+
+    # Parse cookies into a cookie string
+    cookie_str = ""
+    if cookies_json:
+        try:
+            cookies = json.loads(cookies_json) if isinstance(cookies_json, str) else cookies_json
+            cookie_str = "; ".join(f"{c['name']}={c['value']}" for c in cookies if c.get("name") and c.get("value"))
+        except Exception:
+            pass
+
+    # First try public scrape for basics
+    pub = scrape_public_metrics()
+    if not pub.get("error"):
+        result.update(pub)
+
+    # If we have cookies, try to get authenticated data
+    if cookie_str:
+        import urllib.request
+        import urllib.error
+
+        # Try company analytics API endpoint
+        try:
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "Cookie": cookie_str,
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.9",
+                "Referer": company_page,
+            }
+            # Try the company admin analytics page
+            analytics_url = company_page.rstrip("/") + "/admin/analytics/visitors/"
+            req = urllib.request.Request(analytics_url, headers=headers)
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                html = resp.read().decode("utf-8", errors="replace")
+                analytics = _extract_analytics_from_page(html)
+                if analytics:
+                    result.update(analytics)
+        except Exception as e:
+            print(f"[LinkedIn] Cookie-based analytics scrape: {e}")
+
+        # Try followers page
+        try:
+            headers["Referer"] = company_page.rstrip("/") + "/admin/analytics/"
+            follower_url = company_page.rstrip("/") + "/admin/followers/"
+            req = urllib.request.Request(follower_url, headers=headers)
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                html = resp.read().decode("utf-8", errors="replace")
+                followers = _extract_followers_from_page(html)
+                if followers:
+                    result.update(followers)
+                    if "totalFollowers" in followers:
+                        result["followers"] = followers["totalFollowers"]
+                    elif "followerCount" in followers:
+                        result["followers"] = followers["followerCount"]
+        except Exception as e:
+            print(f"[LinkedIn] Cookie-based followers scrape: {e}")
+
+        # Try posts page
+        try:
+            posts_url = company_page.rstrip("/") + "/admin/posts/"
+            req = urllib.request.Request(posts_url, headers=headers)
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                html = resp.read().decode("utf-8", errors="replace")
+                posts = _extract_posts_from_html(html)
+                if posts:
+                    result["posts"] = posts
+                    result["post_count"] = len(posts)
+                    print(f"[LinkedIn] Cookie scrape: got {len(posts)} posts")
+        except Exception as e:
+            print(f"[LinkedIn] Cookie-based posts scrape: {e}")
+
+        result["authenticated"] = True
+
+    _save_json(LI_METRICS_CACHE, result)
+    return result
+
+
+def _extract_posts_from_html(html: str) -> List[Dict[str, Any]]:
+    """Extract post data from LinkedIn HTML (non-JS, server-rendered content)."""
+    posts = []
+    try:
+        # LinkedIn embeds post data in JSON inside script tags
+        # Look for post URN patterns
+        urn_pattern = re.compile(r'urn:li:activity:(\d+)')
+        urns = urn_pattern.findall(html)
+        
+        # Look for engagement data patterns
+        like_patterns = re.findall(r'(\d[\d,]*)\s*likes?', html, re.IGNORECASE)
+        comment_patterns = re.findall(r'(\d[\d,]*)\s*comments?', html, re.IGNORECASE)
+        repost_patterns = re.findall(r'(\d[\d,]*)\s*reposts?', html, re.IGNORECASE)
+        impression_patterns = re.findall(r'(\d[\d,]*)\s*impressions?', html, re.IGNORECASE)
+        
+        # If we found URNs, create posts from them
+        for i, urn in enumerate(urns[:50]):
+            post = {
+                "urn": f"urn:li:activity:{urn}",
+                "title": f"Post {i+1}",
+                "likes": int(like_patterns[i].replace(",", "")) if i < len(like_patterns) else 0,
+                "comments": int(comment_patterns[i].replace(",", "")) if i < len(comment_patterns) else 0,
+                "reposts": int(repost_patterns[i].replace(",", "")) if i < len(repost_patterns) else 0,
+                "impressions": int(impression_patterns[i].replace(",", "")) if i < len(impression_patterns) else 0,
+            }
+            posts.append(post)
+    except Exception as e:
+        print(f"[LinkedIn] HTML post extraction error: {e}")
+    return posts
+
+
+# ═══════════════════════════════════════════════════════════════
 # POST-LEVEL DATA
 # ═══════════════════════════════════════════════════════════════
 

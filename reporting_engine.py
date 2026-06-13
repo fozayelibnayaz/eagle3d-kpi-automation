@@ -24,10 +24,13 @@ def log(msg):
     print(f"[{datetime.now().strftime('%H:%M:%S')}] [Report] {msg}", flush=True)
 
 
+def escape_html(text):
+    """Escape special chars for Telegram HTML parse mode (reliable, unlike MarkdownV2)."""
+    return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+# Keep escape_md as alias for backward compat
 def escape_md(text):
-    """Escape special chars for Telegram MarkdownV2."""
-    special = r"\_*[]()~`>#+-=|{}.!"
-    return re.sub(f"([{re.escape(special)}])", r"\\\1", str(text))
+    return escape_html(text)
 
 
 def si(v):
@@ -85,8 +88,8 @@ def fmt_num(n):
         return str(n)
 
 
-def send_telegram(message, parse_mode="MarkdownV2"):
-    """Send message to Telegram group via Bot API."""
+def send_telegram(message, parse_mode="HTML"):
+    """Send message to Telegram group via Bot API. Uses HTML (reliable)."""
     bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
     chat_id   = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
     
@@ -198,6 +201,16 @@ def build_kpi_stats():
     cur_month_str = datetime.now().strftime("%Y-%m")
 
     rows = read_tab_data("Daily_Counts")
+
+    # Fallback to local JSON if Sheets returned empty
+    if not rows:
+        try:
+            _dc_path = Path("data_output") / "daily_counts.json"
+            if _dc_path.exists():
+                rows = json.loads(_dc_path.read_text())
+                log(f"KPI stats: using local JSON fallback ({len(rows)} rows)")
+        except Exception:
+            pass
     today_row  = next((r for r in rows if r.get("Date") == today_str), {})
     month_rows = [r for r in rows if str(r.get("Date", "")).startswith(cur_month_str)]
 
@@ -378,15 +391,39 @@ def build_linkedin_stats():
     result = {"connected": False, "followers": 0, "company_name": "",
               "employees": "", "industry": ""}
     try:
-        from linkedin_connector import is_configured, get_cached_metrics
+        from linkedin_connector import is_configured, get_cached_metrics, get_manual_history, get_posts
         if not is_configured():
-            return result
-        result["connected"] = True
+            # Still try to read cached data
+            pass
+        else:
+            result["connected"] = True
         metrics = get_cached_metrics()
-        result["followers"] = si(metrics.get("followers", 0))
-        result["company_name"] = metrics.get("company_name", "")
-        result["employees"] = metrics.get("employees", "")
-        result["industry"] = metrics.get("industry", "")
+        if metrics and not metrics.get("error"):
+            result["followers"] = si(metrics.get("followers", 0))
+            result["company_name"] = metrics.get("company_name", "")
+            result["employees"] = metrics.get("employees", "")
+            result["industry"] = metrics.get("industry", "")
+            result["connected"] = True
+        # Fallback: try daily history for latest follower count
+        if result["followers"] == 0:
+            try:
+                hist = get_manual_history()
+                if not hist.empty and "followers" in hist.columns:
+                    latest = hist.dropna(subset=["followers"]).tail(1)
+                    if not latest.empty:
+                        result["followers"] = si(latest["followers"].iloc[0])
+                        result["connected"] = True
+            except Exception:
+                pass
+        # Add posts summary
+        try:
+            posts = get_posts()
+            if posts:
+                result["post_count"] = len(posts)
+                result["total_likes"] = sum(p.get("likes", 0) for p in posts)
+                result["total_comments"] = sum(p.get("comments", 0) for p in posts)
+        except Exception:
+            pass
     except Exception as e:
         log(f"LinkedIn stats error: {e}")
     return result
@@ -479,9 +516,9 @@ def build_pipeline_health():
 # ═══════════════════════════════════════════════════════════════
 
 def build_telegram_kpi_section(stats):
-    """Build KPI section for Telegram."""
-    today = escape_md(stats["today_str"])
-    month = escape_md(stats["month_str"])
+    """Build KPI section for Telegram (HTML parse mode)."""
+    today = escape_html(stats["today_str"])
+    month = escape_html(stats["month_str"])
 
     # Use override counts if available (more accurate)
     s_all = stats.get("signups_all_override", stats["signups_all"])
@@ -496,136 +533,146 @@ def build_telegram_kpi_section(stats):
     s2p = (p_all / s_all * 100) if s_all > 0 else 0
 
     section = (
-        f"🦅 *EAGLE3D KPI — {today}*\n"
+        f"🦅 <b>EAGLE3D KPI — {today}</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n"
         f"\n"
-        f"📊 *KPI SYSTEM*\n"
+        f"📊 <b>KPI SYSTEM</b>\n"
         f"┌────────────────────────\n"
-        f"│ 📅 *Today*\n"
-        f"│ ✅ Sign\\\\-ups: `{stats['signups_today']}`\n"
-        f"│ 📤 Uploads:  `{stats['uploads_today']}`\n"
-        f"│ 💳 Paid:     `{stats['paid_today']}`\n"
+        f"│ 📅 <b>Today</b>\n"
+        f"│ ✅ Sign-ups: <code>{stats['signups_today']}</code>\n"
+        f"│ 📤 Uploads:  <code>{stats['uploads_today']}</code>\n"
+        f"│ 💳 Paid:     <code>{stats['paid_today']}</code>\n"
         f"├────────────────────────\n"
-        f"│ 📆 *Month \\\\({month}\\\\)*\n"
-        f"│ ✅ Sign\\\\-ups: `{s_month}`\n"
-        f"│ 📤 Uploads:  `{u_month}`\n"
-        f"│ 💳 Paid:     `{p_month}`\n"
+        f"│ 📆 <b>Month ({month})</b>\n"
+        f"│ ✅ Sign-ups: <code>{s_month}</code>\n"
+        f"│ 📤 Uploads:  <code>{u_month}</code>\n"
+        f"│ 💳 Paid:     <code>{p_month}</code>\n"
         f"├────────────────────────\n"
-        f"│ 🏆 *All Time*\n"
-        f"│ ✅ Sign\\\\-ups: `{s_all}`\n"
-        f"│ 📤 Uploads:  `{u_all}`\n"
-        f"│ 💳 Paid:     `{p_all}`\n"
+        f"│ 🏆 <b>All Time</b>\n"
+        f"│ ✅ Sign-ups: <code>{s_all}</code>\n"
+        f"│ 📤 Uploads:  <code>{u_all}</code>\n"
+        f"│ 💳 Paid:     <code>{p_all}</code>\n"
         f"├────────────────────────\n"
-        f"│ 🔄 *Conversion Rates*\n"
-        f"│ S→U: `{s2u:.1f}%` | U→P: `{u2p:.1f}%` | S→P: `{s2p:.1f}%`\n"
+        f"│ 🔄 <b>Conversion Rates</b>\n"
+        f"│ S→U: <code>{s2u:.1f}%</code> | U→P: <code>{u2p:.1f}%</code> | S→P: <code>{s2p:.1f}%</code>\n"
         f"└────────────────────────\n"
     )
     if stats.get("total_overrides", 0) > 0:
-        section += f"│ ✏️ Active Overrides: `{stats['total_overrides']}`\n"
+        section += f"│ ✏️ Active Overrides: <code>{stats['total_overrides']}</code>\n"
     return section
 
 
 def build_telegram_ga4_section(ga4):
-    """Build GA4 section."""
+    """Build GA4 section (HTML)."""
     if not ga4["connected"]:
-        return "🌐 *GA4 ANALYTICS* — Not connected\n"
+        return "🌐 <b>GA4 ANALYTICS</b> — Not connected\n"
     section = (
-        f"\n🌐 *GA4 ANALYTICS* ✅\n"
+        f"\n🌐 <b>GA4 ANALYTICS</b> ✅\n"
         f"┌────────────────────────\n"
-        f"│ 👥 Users \\(30d\\): `{ga4['month_users']}`\n"
-        f"│ 📊 Sessions \\(30d\\): `{ga4['month_sessions']}`\n"
+        f"│ 👥 Users (30d): <code>{ga4['month_users']}</code>\n"
+        f"│ 📊 Sessions (30d): <code>{ga4['month_sessions']}</code>\n"
     )
     if ga4["top_sources"]:
-        section += "│ 📈 *Top Sources:*\n"
+        section += "│ 📈 <b>Top Sources:</b>\n"
         for src, count in ga4["top_sources"][:3]:
-            section += f"│   • {escape_md(src)}: `{count}`\n"
+            section += f"│   • {escape_html(src)}: <code>{count}</code>\n"
     if ga4["top_countries"]:
-        section += "│ 🌍 *Top Countries:*\n"
+        section += "│ 🌍 <b>Top Countries:</b>\n"
         for country, count in ga4["top_countries"][:3]:
-            section += f"│   • {escape_md(country)}: `{count}`\n"
+            section += f"│   • {escape_html(country)}: <code>{count}</code>\n"
     section += "└────────────────────────\n"
     return section
 
 
 def build_telegram_youtube_section(yt):
-    """Build YouTube section."""
+    """Build YouTube section (HTML)."""
     if not yt["connected"]:
-        return "📺 *YOUTUBE* — Not connected\n"
+        return "📺 <b>YOUTUBE</b> — Not connected\n"
     section = (
-        f"\n📺 *YOUTUBE* ✅\n"
+        f"\n📺 <b>YOUTUBE</b> ✅\n"
         f"┌────────────────────────\n"
-        f"│ 👥 Subscribers: `{yt['subscribers']}`\n"
-        f"│ 👁 Total Views: `{yt['total_views']}`\n"
-        f"│ 🎬 Videos: `{yt['video_count']}`\n"
+        f"│ 👥 Subscribers: <code>{yt['subscribers']}</code>\n"
+        f"│ 👁 Total Views: <code>{yt['total_views']}</code>\n"
+        f"│ 🎬 Videos: <code>{yt['video_count']}</code>\n"
     )
     if yt["has_analytics"]:
         section += (
             f"│ ─── 30d Analytics ───\n"
-            f"│ 👁 Views: `{yt['period_views']}`\n"
-            f"│ ⏱ Watch: `{yt['period_watch_hours']}`h\n"
-            f"│ 👤 Subs Gained: `{yt['period_subs_gained']}`\n"
+            f"│ 👁 Views: <code>{yt['period_views']}</code>\n"
+            f"│ ⏱ Watch: <code>{yt['period_watch_hours']}</code>h\n"
+            f"│ 👤 Subs Gained: <code>{yt['period_subs_gained']}</code>\n"
         )
     if yt["top_videos"]:
-        section += "│ 🔥 *Top Videos:*\n"
+        section += "│ 🔥 <b>Top Videos:</b>\n"
         for title, views, likes in yt["top_videos"][:3]:
-            section += f"│   • {escape_md(title)}: `{views}` views\n"
+            section += f"│   • {escape_html(title)}: <code>{views}</code> views\n"
     section += "└────────────────────────\n"
     return section
 
 
 def build_telegram_linkedin_section(li):
-    """Build LinkedIn section."""
+    """Build LinkedIn section (HTML)."""
     if not li["connected"]:
-        return "💼 *LINKEDIN* — Not connected\n"
+        return "💼 <b>LINKEDIN</b> — Not connected\n"
     section = (
-        f"\n💼 *LINKEDIN* ✅\n"
+        f"\n💼 <b>LINKEDIN</b> ✅\n"
         f"┌────────────────────────\n"
-        f"│ 👥 Followers: `{li['followers']}`\n"
+        f"│ 👥 Followers: <code>{li['followers']}</code>\n"
     )
     if li["company_name"]:
-        section += f"│ 🏢 {escape_md(li['company_name'])}\n"
+        section += f"│ 🏢 {escape_html(li['company_name'])}\n"
     if li["employees"]:
-        section += f"│ 👔 Employees: {escape_md(li['employees'])}\n"
+        section += f"│ 👔 Employees: {escape_html(li['employees'])}\n"
     if li["industry"]:
-        section += f"│ 🏭 {escape_md(li['industry'])}\n"
+        section += f"│ 🏭 {escape_html(li['industry'])}\n"
+    # Add posts summary if available
+    try:
+        from linkedin_connector import get_posts
+        _posts = get_posts()
+        if _posts:
+            _total_likes = sum(p.get("likes", 0) for p in _posts)
+            _total_comments = sum(p.get("comments", 0) for p in _posts)
+            section += f"│ 📝 Posts: <code>{len(_posts)}</code> | 👍 <code>{_total_likes}</code> | 💬 <code>{_total_comments}</code>\n"
+    except Exception:
+        pass
     section += "└────────────────────────\n"
     return section
 
 
 def build_telegram_stripe_section(stripe):
-    """Build Stripe section."""
+    """Build Stripe section (HTML)."""
     if not stripe["connected"]:
-        return "💳 *STRIPE* — No data (cookies may be expired)\n"
+        return "💳 <b>STRIPE</b> — No data (cookies may be expired)\n"
     section = (
-        f"\n💳 *STRIPE PAYMENTS*\n"
+        f"\n💳 <b>STRIPE PAYMENTS</b>\n"
         f"┌────────────────────────\n"
-        f"│ 📅 Today: `{stripe['today_paid']}` paid\n"
-        f"│ 📆 Month: `{stripe['month_paid']}` paid\n"
-        f"│ 🏆 All Time: `{stripe['total_paid']}` paid\n"
+        f"│ 📅 Today: <code>{stripe['today_paid']}</code> paid\n"
+        f"│ 📆 Month: <code>{stripe['month_paid']}</code> paid\n"
+        f"│ 🏆 All Time: <code>{stripe['total_paid']}</code> paid\n"
     )
     if stripe.get("month_revenue", 0) > 0:
-        section += f"│ 💰 Month Revenue: `${stripe['month_revenue']:,.2f}`\n"
+        section += f"│ 💰 Month Revenue: <code>${stripe['month_revenue']:,.2f}</code>\n"
     if stripe.get("total_revenue", 0) > 0:
-        section += f"│ 💰 Total Revenue: `${stripe['total_revenue']:,.2f}`\n"
+        section += f"│ 💰 Total Revenue: <code>${stripe['total_revenue']:,.2f}</code>\n"
     section += "└────────────────────────\n"
     return section
 
 
 def build_telegram_pipeline_section(health):
-    """Build pipeline health section."""
+    """Build pipeline health section (HTML)."""
     section = (
-        f"\n⚙️ *PIPELINE HEALTH*\n"
+        f"\n⚙️ <b>PIPELINE HEALTH</b>\n"
         f"┌────────────────────────\n"
-        f"│ 🕐 Last Run: {escape_md(health['last_run'][:19] if health['last_run'] != 'Never' else 'Never')}\n"
-        f"│ ✅ Stages: `{health['stages_passed']}/{health['total_stages']}`\n"
-        f"│ ⏱ Duration: `{health['duration']:.0f}s`\n"
+        f"│ 🕐 Last Run: {escape_html(health['last_run'][:19] if health['last_run'] != 'Never' else 'Never')}\n"
+        f"│ ✅ Stages: <code>{health['stages_passed']}/{health['total_stages']}</code>\n"
+        f"│ ⏱ Duration: <code>{health['duration']:.0f}s</code>\n"
         f"└────────────────────────\n"
     )
     return section
 
 
 def build_full_telegram_message(kpi, ga4, yt, li, stripe, health):
-    """Build the comprehensive multi-section Telegram message."""
+    """Build the comprehensive multi-section Telegram message (HTML)."""
     msg = build_telegram_kpi_section(kpi)
     msg += build_telegram_ga4_section(ga4)
     msg += build_telegram_youtube_section(yt)
@@ -633,8 +680,8 @@ def build_full_telegram_message(kpi, ga4, yt, li, stripe, health):
     msg += build_telegram_stripe_section(stripe)
     msg += build_telegram_pipeline_section(health)
     msg += (
-        f"\n🔗 [Dashboard](https://eagle3d\\\\-kpi\\\\-automation\\\\.streamlit\\\\.app/)\n"
-        f"_Auto\\\\-generated at " + datetime.utcnow().strftime("%H:%M") + " UTC_"
+        f"\n🔗 <a href=\"https://eagle3d-kpi-automation.streamlit.app/\">Dashboard</a>\n"
+        f"<i>Auto-generated at {datetime.utcnow().strftime('%H:%M')} UTC</i>"
     )
     return msg
 

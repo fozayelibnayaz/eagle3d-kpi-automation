@@ -236,6 +236,18 @@ def build_daily_counts_table():
     ok1 = write_tab_data("Daily_Counts", daily_dicts)
     log(f"Daily_Counts write: {'OK' if ok1 else 'FAILED'}")
 
+    # Save local JSON backup for Telegram/alert fallback when Sheets is unavailable
+    try:
+        import json as _json
+        from pathlib import Path as _P
+        _P("data_output").mkdir(exist_ok=True)
+        (_P("data_output") / "daily_counts.json").write_text(
+            _json.dumps(daily_dicts, indent=2, default=str)
+        )
+        log("Local backup: data_output/daily_counts.json saved")
+    except Exception as e:
+        log(f"Local backup failed: {e}")
+
     # Build monthly rollup
     monthly = defaultdict(lambda: {"s": 0, "u": 0, "p": 0})
     for d in daily_dicts:

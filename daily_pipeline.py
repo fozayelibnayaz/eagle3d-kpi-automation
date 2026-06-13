@@ -156,7 +156,7 @@ def main():
     # ── LinkedIn Scrape + Auto-Accumulate (Stage 6) ──
     def s6():
         from linkedin_connector import (
-            scrape_public_metrics, scrape_with_playwright,
+            scrape_public_metrics, scrape_with_playwright, scrape_with_cookies,
             has_cookies, is_configured, get_status,
             save_manual_entry, save_posts, get_manual_history,
         )
@@ -210,10 +210,23 @@ def main():
         log("LinkedIn: Starting daily scrape...")
         result = {}
         if has_cookies():
-            log("LinkedIn: Using authenticated scrape...")
-            result = scrape_with_playwright(historical=False)
+            # Try Playwright first (best data), fall back to cookie-based urllib
+            try:
+                log("LinkedIn: Trying authenticated Playwright scrape...")
+                result = scrape_with_playwright(historical=False)
+                if result.get("error") or not result.get("followers"):
+                    log("LinkedIn: Playwright failed or incomplete — trying cookie-based urllib...")
+                    result = scrape_with_cookies()
+                else:
+                    log("LinkedIn: Playwright scrape successful")
+            except ImportError:
+                log("LinkedIn: Playwright not available — using cookie-based urllib...")
+                result = scrape_with_cookies()
+            except Exception as e:
+                log(f"LinkedIn: Playwright error ({e}) — trying cookie-based urllib...")
+                result = scrape_with_cookies()
         else:
-            log("LinkedIn: Using public page scrape...")
+            log("LinkedIn: No cookies — using public page scrape...")
             result = scrape_public_metrics()
         if result.get("error"):
             log(f"LinkedIn: Scrape issue — {result['error']}")
