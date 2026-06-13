@@ -79,6 +79,11 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "abedaymen680@gmail.com": {
+    "checked_at": "2026-06-13T08:22:30.516143",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
   "abhishek7800746800@gmail.com": {
     "checked_at": "2026-06-12T18:47:40.031314",
     "detail": "smtp_accepted_250",
@@ -836,6 +841,11 @@
   },
   "davidelder85@gmail.com": {
     "checked_at": "2026-06-12T18:48:50.191817",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
+  "davidinlines@gmail.com": {
+    "checked_at": "2026-06-13T08:22:30.151576",
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
