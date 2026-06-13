@@ -1,19 +1,14 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════════════
-# Eagle Analytics Hub v7.2.1 — Deploy Script
+# Eagle Analytics Hub v7.2.2 — Deploy Script
 # ═══════════════════════════════════════════════════════════════
 # Run this on your machine where you have GitHub push access:
 #   bash deploy_v72.sh
-#
-# What this does:
-#   1. Pulls latest from origin/main (includes pipeline auto-commits)
-#   2. Force pushes the v7.2.1 code
-#   3. Streamlit Cloud auto-deploys from GitHub
 # ═══════════════════════════════════════════════════════════════
 
 set -e
 
-echo "🦅 Eagle Analytics Hub v7.2.1 — Deploy"
+echo "🦅 Eagle Analytics Hub v7.2.2 — Deploy"
 echo "========================================"
 
 # Check we're in the right directory
@@ -22,7 +17,7 @@ if [ ! -f "app.py" ]; then
     exit 1
 fi
 
-# Step 1: Verify no secrets (exclude deploy scripts which contain secret-checking patterns)
+# Step 1: Verify no secrets (exclude deploy scripts)
 echo ""
 echo "🔍 Checking for secrets in code..."
 if grep -rn "8743434532\|AAFMy9F\|1003989604195\|sk_live\|ghp_" --include="*.py" --exclude="deploy_*" . 2>/dev/null; then
@@ -56,24 +51,51 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# Step 3: Fetch & rebase
+# Step 3: Stash any unstaged changes BEFORE fetch
 echo ""
-echo "📥 Syncing with remote..."
-git fetch origin main
-git rebase origin/main
+echo "📦 Stashing any local changes..."
+git stash --include-untracked 2>/dev/null || true
+echo "  ✅ Stashed"
 
-# Step 4: Push
+# Step 4: Fetch remote
+echo ""
+echo "📥 Fetching remote..."
+git fetch origin main
+
+# Step 5: Reset to our local HEAD (keep our commits on top)
+echo ""
+echo "🔄 Rebasing onto origin/main..."
+git rebase origin/main 2>/dev/null || {
+    echo "  ⚠️ Rebase had conflicts — using merge instead..."
+    git rebase --abort 2>/dev/null || true
+    git merge origin/main --no-edit 2>/dev/null || true
+}
+
+# Step 6: Pop stash to restore local changes
+echo ""
+echo "📦 Restoring local changes..."
+git stash pop 2>/dev/null || true
+
+# Step 7: Stage + commit any remaining changes
+echo ""
+echo "📦 Staging all changes..."
+git add -A
+git diff --cached --quiet 2>/dev/null || {
+    git commit -m "v7.2.2: Latest fixes [skip ci]"
+}
+
+# Step 8: Force push
 echo ""
 echo "🚀 Force pushing to GitHub..."
-for i in 1 2 3; do
+for i in 1 2 3 4 5; do
     if git push origin main --force; then
         echo "  ✅ Pushed!"
         break
     else
         echo "  ⚠️ Push attempt $i failed, retrying..."
         git fetch origin main
-        git rebase origin/main
-        sleep 3
+        git rebase origin/main 2>/dev/null || git merge origin/main --no-edit 2>/dev/null || true
+        sleep 5
     fi
 done
 
@@ -87,8 +109,8 @@ echo "⏱️  Streamlit Cloud updates in 60-90 seconds"
 echo ""
 echo "📋 After deploy checklist:"
 echo "  1. Login with password: eagleanalytics"
-echo "  2. Check Browse Data → First Uploads (should show data now)"
-echo "  3. Check LinkedIn Command Center loads"
-echo "  4. Check YouTube Command Center loads"
-echo "  5. Trigger pipeline: https://github.com/fozayelibnayaz/eagle3d-kpi-automation/actions"
+echo "  2. Check Browse Data → First Uploads"
+echo "  3. Open 🔧 Data Diagnostics to see column names"
+echo "  4. Check LinkedIn Command Center loads"
+echo "  5. Check YouTube Command Center loads"
 echo "========================================"

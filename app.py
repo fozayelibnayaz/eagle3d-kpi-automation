@@ -2078,6 +2078,42 @@ elif page == "🔔 Alerts":
                         "a": "Check data or spike",
                     })
 
+    # ── Performance Alerts ──
+    if not kpi.empty:
+        # Sign-up rate vs average
+        if cs > 0 and not kpi_all.empty and "signups" in kpi_all.columns:
+            _avg_s = kpi_all["signups"].astype(float).mean()
+            if _avg_s > 0:
+                _s_dev = (cs - _avg_s) / _avg_s * 100
+                if _s_dev > 50:
+                    alerts.append({"sev": "info", "em": "🚀", "t": f"High Sign-up Performance: +{_s_dev:.0f}% above avg", "m": f"Current: {cs} vs Average: {_avg_s:.0f}", "a": "Capitalise on this trend — check traffic sources"})
+                elif _s_dev < -50:
+                    alerts.append({"sev": "warning", "em": "📉", "t": f"Low Sign-up Performance: {_s_dev:.0f}% below avg", "m": f"Current: {cs} vs Average: {_avg_s:.0f}", "a": "Check for technical issues or traffic drops"})
+
+        # Upload conversion rate
+        if cs > 0 and cu > 0:
+            _s2u = cu / cs * 100
+            if _s2u < 10:
+                alerts.append({"sev": "warning", "em": "⚠️", "t": f"Low Upload Rate: {_s2u:.1f}%", "m": f"{cu} uploads from {cs} sign-ups", "a": "Check onboarding UX — users sign up but don't upload"})
+            elif _s2u > 50:
+                alerts.append({"sev": "info", "em": "🔥", "t": f"High Upload Rate: {_s2u:.1f}%", "m": f"{cu} uploads from {cs} sign-ups", "a": "Great conversion! Document what's working"})
+
+        # Paid conversion rate
+        if cu > 0 and cp > 0:
+            _u2p = cp / cu * 100
+            if _u2p < 5:
+                alerts.append({"sev": "warning", "em": "💰", "t": f"Low Paid Conversion: {_u2p:.1f}%", "m": f"{cp} paid from {cu} uploads", "a": "Check pricing, payment flow, or value proposition"})
+            elif _u2p > 30:
+                alerts.append({"sev": "info", "em": "💎", "t": f"High Paid Conversion: {_u2p:.1f}%", "m": f"{cp} paid from {cu} uploads", "a": "Strong monetisation — scale this funnel"})
+
+        # Zero-data alerts
+        if cs == 0:
+            alerts.append({"sev": "critical", "em": "🚨", "t": "Zero Sign-ups This Period", "m": "No sign-ups detected — data may not be loading", "a": "Check Google Sheets connection and pipeline health"})
+        if cu == 0 and cs > 0:
+            alerts.append({"sev": "warning", "em": "📤", "t": "Zero Uploads This Period", "m": f"{cs} sign-ups but 0 uploads", "a": "Check first_upload_logic and upload data"})
+        if cp == 0 and cs > 0:
+            alerts.append({"sev": "info", "em": "💳", "t": "Zero Paid This Period", "m": f"{cs} sign-ups but 0 paid customers", "a": "Check Stripe scraper and cookies"})
+
     if not alerts:
         st.markdown(
             '<div class="alert-card al-ok" style="text-align:center;padding:30px;">'
@@ -2691,23 +2727,39 @@ elif page == "🔍 Browse Data":
 
             # Show project links for First Uploads tab
             if _lb == "First Uploads" and not fl.empty:
-                _proj_cols = [c for c in fl.columns if any(k in c.lower() for k in ["project", "url", "link", "scene", "upload_url"])]
+                # Find all URL/App columns
+                _proj_cols = [c for c in fl.columns if any(k in c.lower() for k in ["project", "url", "link", "scene", "upload_url", "app name", "app_url"])]
+                _app_name_col = next((c for c in fl.columns if c.lower().strip() == "app name"), None)
                 _email_col_bd = next((c for c in fl.columns if "email" in c.lower()), None)
-                if _proj_cols or _email_col_bd:
-                    with st.expander("🔗 Project Links", expanded=False):
-                        _display_rows = fl.head(50)
+                _date_col_bd = next((c for c in fl.columns if "date" in c.lower() and "upload" in c.lower()), None) or next((c for c in fl.columns if "row_date" in c.lower()), None)
+                
+                if _proj_cols or _app_name_col or _email_col_bd:
+                    with st.expander("🔗 Project Links", expanded=True):
+                        _display_rows = fl.head(100)
                         for _, _pr in _display_rows.iterrows():
                             _em = str(_pr.get(_email_col_bd, "")) if _email_col_bd else ""
+                            _dt = str(_pr.get(_date_col_bd, "")) if _date_col_bd else ""
                             _links = []
+                            
+                            # Build project URL from App Name column
+                            if _app_name_col:
+                                _app_name = str(_pr.get(_app_name_col, "")).strip()
+                                if _app_name and _app_name not in ("nan", "None", "", "-"):
+                                    _base_url = "https://connector.eagle3dstreaming.com/v5/eagle-ats/"
+                                    _proj_url = f"{_base_url}{_app_name}/default"
+                                    _links.append(f'[🔗 {_app_name}]({_proj_url})')
+                            
+                            # Check other URL/project columns
                             for _pc_col in _proj_cols:
-                                _pv = str(_pr.get(_pc_col, ""))
-                                if _pv and _pv not in ("nan", "None", ""):
+                                _pv = str(_pr.get(_pc_col, "")).strip()
+                                if _pv and _pv not in ("nan", "None", "", "-"):
                                     if _pv.startswith("http"):
-                                        _links.append(f"([{_pc_col}]({_pv}))")
-                                    else:
-                                        _links.append(f"{_pc_col}: {_pv}")
-                            _date_col = next((c for c in fl.columns if "date" in c.lower() and "upload" in c.lower()), None)
-                            _dt = str(_pr.get(_date_col, "")) if _date_col else ""
+                                        _links.append(f'[🔗 {_pc_col}]({_pv})')
+                                    elif "eagle3d" in _pv.lower() or "connector" in _pv.lower():
+                                        if not _pv.startswith("http"):
+                                            _pv = f"https://{_pv}"
+                                        _links.append(f'[🔗 {_pc_col}]({_pv})')
+                            
                             if _links:
                                 st.markdown(f"📤 **{_em}** ({_dt}) — {' | '.join(_links)}")
                             elif _em:
