@@ -1,7 +1,6 @@
 {
-<<<<<<< Updated upstream
-  "last_run": "2026-06-13T15:01:53.066835",
-  "duration_seconds": 453.8,
+  "last_run": "2026-06-14T07:55:29.830789",
+  "duration_seconds": 778.9,
   "stages_passed": 7,
   "total_stages": 7,
   "results": {
@@ -12,13 +11,5 @@
     "stage5_youtube": "ok",
     "stage6_linkedin": "ok",
     "stage7_report": "ok"
-=======
-  "alerts_sent": {
-    "daily_summary_2026-05-14": "2026-05-14T18:26:07.966714",
-    "daily_summary_2026-05-15": "2026-05-15T05:55:21.957812",
-    "daily_summary_2026-05-16": "2026-05-16T06:24:31.832827",
-    "daily_summary_2026-05-17": "2026-05-17T06:47:13.459506",
-    "daily_summary_2026-05-18": "2026-05-18T04:42:19.882810"
->>>>>>> Stashed changes
   }
 }
