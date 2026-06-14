@@ -960,7 +960,7 @@
     "status": "ok"
   },
   "douglas@dlweb.co": {
-    "checked_at": "2026-06-07T14:00:12.145071",
+    "checked_at": "2026-06-14T14:11:16.006765",
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
@@ -1645,7 +1645,7 @@
     "status": "ok"
   },
   "ismailaljanabi@gmail.com": {
-    "checked_at": "2026-06-07T14:00:19.595375",
+    "checked_at": "2026-06-14T14:11:21.648016",
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
@@ -2680,7 +2680,7 @@
     "status": "ok"
   },
   "ohlsson.simon@gmail.com": {
-    "checked_at": "2026-06-07T14:00:11.610583",
+    "checked_at": "2026-06-14T14:11:15.362477",
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
@@ -2705,7 +2705,7 @@
     "status": "ok"
   },
   "omarnawaz85@gmail.com": {
-    "checked_at": "2026-06-07T14:00:11.080549",
+    "checked_at": "2026-06-14T14:11:14.621253",
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
