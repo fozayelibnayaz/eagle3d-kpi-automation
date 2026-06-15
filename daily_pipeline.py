@@ -318,6 +318,31 @@ def main():
 
     # ── Reporting (Stage 7) ──
     def s7():
+        # Cache GA4 data for reporting engine fallback
+        try:
+            from ga4_connector import is_configured as ga4_ok, fetch_utm_traffic, fetch_geo_traffic
+            if ga4_ok():
+                from datetime import timedelta as _td
+                _end = datetime.now().strftime("%Y-%m-%d")
+                _start = (datetime.now() - _td(days=30)).strftime("%Y-%m-%d")
+                _utm = fetch_utm_traffic(_start, _end)
+                _geo = fetch_geo_traffic(_start, _end)
+                _cache = {"scraped_at": datetime.now().isoformat()}
+                if not _utm.empty:
+                    _cache["total_sessions"] = int(_utm.get("sessions", 0).sum()) if "sessions" in _utm.columns else 0
+                    _cache["total_users"] = int(_utm.get("activeUsers", 0).sum()) if "activeUsers" in _utm.columns else 0
+                    if "sourceMedium" in _utm.columns:
+                        _top = _utm.groupby("sourceMedium")["sessions"].sum().sort_values(ascending=False).head(5)
+                        _cache["top_sources"] = [(s, int(v)) for s, v in _top.items()]
+                if not _geo.empty and "country" in _geo.columns:
+                    _top = _geo.groupby("country")["sessions"].sum().sort_values(ascending=False).head(5)
+                    _cache["top_countries"] = [(c, int(v)) for c, v in _top.items()]
+                import json as _json
+                _P("data_output").mkdir(exist_ok=True)
+                (_P("data_output") / "ga4_traffic_cache.json").write_text(_json.dumps(_cache, default=str, indent=2))
+                log(f"GA4 cache saved: {_cache.get('total_sessions', 0)} sessions")
+        except Exception as e:
+            log(f"GA4 cache error (non-fatal): {e}")
         from reporting_engine import main as run
         run()
     ok7, e7 = run_stage(7, "Reporting + Notifications (Layer 6)", s7)

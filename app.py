@@ -685,7 +685,7 @@ with st.sidebar:
     st.markdown("---")
     if _nav_section == "📊 KPI System":
         page = st.radio("KPI", [
-            "📊 Dashboard", "🔍 Browse Data", "✏️ Manual Override", "⚙️ Settings",
+            "📊 Dashboard", "🔍 Browse Data", "✏️ Manual Override",
         ], label_visibility="collapsed", key="nav_kpi")
     elif _nav_section == "🌐 Analytics":
         page = st.radio("GA", [
@@ -702,6 +702,12 @@ with st.sidebar:
             "💼 LinkedIn", "🔗 Cross-Platform", "🤖 Ask AI",
             "🔮 Predictions", "📋 Reports", "🔔 Alerts",
         ], label_visibility="collapsed", key="nav_li")
+
+    st.markdown("---")
+
+    # Universal Settings page (always accessible)
+    if st.button("⚙️ Settings", use_container_width=True, key="nav_settings"):
+        st.session_state["_go_settings"] = True
 
     st.markdown("---")
 
@@ -1159,6 +1165,11 @@ if "ga4_connector" in MOD:
             pass
 
 period_label = f"{fd(p_start)} to {fd(p_end)}"
+
+# Universal Settings override
+if st.session_state.get("_go_settings"):
+    st.session_state["_go_settings"] = False
+    page = "⚙️ Settings"
 
 # ═══════════════════════════════════════════════════════════════
 # PAGE: 📊 DASHBOARD
@@ -2677,51 +2688,6 @@ elif page == "🔍 Browse Data":
             elif not _mo_engine:
                 st.caption("⚠️ Manual override engine not loaded")
 
-            # Show project links for First Uploads tab
-            if _lb == "First Uploads" and not fl.empty:
-                # Find all URL/App columns
-                _app_url_col = next((c for c in fl.columns if c.lower().strip() == "app url"), None)
-                _app_name_col = next((c for c in fl.columns if c.lower().strip() == "app name"), None)
-                _proj_cols = [c for c in fl.columns if any(k in c.lower() for k in ["project", "url", "link", "scene", "upload_url"]) and c.lower().strip() not in ("app url", "app name")]
-                _email_col_bd = next((c for c in fl.columns if "email" in c.lower()), None)
-                _date_col_bd = next((c for c in fl.columns if "date" in c.lower() and "upload" in c.lower()), None) or next((c for c in fl.columns if "row_date" in c.lower()), None)
-                
-                if _app_url_col or _app_name_col or _proj_cols or _email_col_bd:
-                    with st.expander("🔗 Project Links", expanded=True):
-                        _display_rows = fl.head(100)
-                        for _, _pr in _display_rows.iterrows():
-                            _em = str(_pr.get(_email_col_bd, "")) if _email_col_bd else ""
-                            _dt = str(_pr.get(_date_col_bd, "")) if _date_col_bd else ""
-                            _links = []
-                            
-                            # Use the actual App URL from scraped data (hyperlink from KPI Dashboard)
-                            _app_name_val = str(_pr.get(_app_name_col, "")).strip() if _app_name_col else ""
-                            _app_url_val = str(_pr.get(_app_url_col, "")).strip() if _app_url_col else ""
-                            
-                            if _app_url_val and _app_url_val not in ("nan", "None", "", "-") and _app_url_val.startswith("http"):
-                                # We have the real URL from the KPI Dashboard
-                                _display = _app_name_val if _app_name_val and _app_name_val not in ("nan", "None", "") else "🔗 Project"
-                                _links.append(f'[🔗 {_display}]({_app_url_val})')
-                            elif _app_name_val and _app_name_val not in ("nan", "None", "", "-"):
-                                # No URL but have App Name — show name only
-                                _links.append(f"📱 {_app_name_val}")
-                            
-                            # Check other URL/project columns
-                            for _pc_col in _proj_cols:
-                                _pv = str(_pr.get(_pc_col, "")).strip()
-                                if _pv and _pv not in ("nan", "None", "", "-"):
-                                    if _pv.startswith("http"):
-                                        _links.append(f'[🔗 {_pc_col}]({_pv})')
-                                    elif "eagle3d" in _pv.lower() or "connector" in _pv.lower():
-                                        if not _pv.startswith("http"):
-                                            _pv = f"https://{_pv}"
-                                        _links.append(f'[🔗 {_pc_col}]({_pv})')
-                            
-                            if _links:
-                                st.markdown(f"📤 **{_em}** ({_dt}) — {' | '.join(_links)}")
-                            elif _em:
-                                st.markdown(f"📤 **{_em}** ({_dt})")
-
             # Make App URL column clickable hyperlinks in the table
             _display_fl = fl.head(mr).copy()
             if "App URL" in _display_fl.columns:
@@ -3822,32 +3788,12 @@ elif page == "💼 LinkedIn":
         else:
             st.info("📊 No historical data yet. Data will auto-accumulate when the pipeline runs daily, or add data via Manual Entry.")
 
-        # Scrape buttons
-        _sbc1, _sbc2 = st.columns(2)
-        with _sbc1:
-            if st.button("🌐 Scrape Public Page", use_container_width=True):
-                with st.spinner("Scraping LinkedIn public page..."):
-                    _result = scrape_public_metrics()
-                    if _result.get("error"):
-                        st.error(f"Scrape failed: {_result['error']}")
-                    else:
-                        st.success("✅ Public metrics scraped!")
-                        st.rerun()
-        with _sbc2:
-            if _li_status["cookies"]:
-                if st.button("🔐 Deep Scrape (Authenticated)", use_container_width=True):
-                    with st.spinner("Running authenticated scrape..."):
-                        try:
-                            _result = scrape_with_playwright()
-                        except Exception:
-                            _result = scrape_with_cookies()
-                        if _result.get("error"):
-                            st.error(f"Scrape failed: {_result['error']}")
-                        else:
-                            st.success("✅ Deep metrics scraped!")
-                            st.rerun()
-            else:
-                st.info("💡 Add `LINKEDIN_COOKIES_JSON` to secrets for deep scraping + post data.")
+        # LinkedIn data is fetched by the daily pipeline (like KPI & Stripe)
+        st.info("🔄 LinkedIn data is automatically scraped by the daily pipeline. Data refreshes every 12 hours (00:00 & 12:00 UTC).")
+        if _li_status["cookies"]:
+            st.success("✅ Authenticated — full analytics + posts available")
+        else:
+            st.warning("⚠️ Public mode only — add `LINKEDIN_COOKIES_JSON` to secrets for full analytics")
 
     # ══════════════════════════════════════════════
     # TAB 2: All Posts (like YouTube All Videos)
@@ -4147,59 +4093,19 @@ elif page == "💼 LinkedIn":
     if not _li_tg_bot or not _li_tg_chat:
         st.warning("⚠️ Add Telegram secrets to enable alerts.")
     else:
-        _li_alert_c1, _li_alert_c2 = st.columns(2)
-        with _li_alert_c1:
-            if st.button("📤 Send LinkedIn Report", use_container_width=True, key="li_alert"):
-                with st.spinner("Sending LinkedIn report..."):
-                    try:
-                        from reporting_engine import build_linkedin_stats, build_telegram_linkedin_section, send_telegram
-                        _li_data = build_linkedin_stats()
-                        _msg = build_telegram_linkedin_section(_li_data)
-                        _ok = send_telegram(_msg)
-                        if _ok:
-                            st.success("✅ LinkedIn report sent to Telegram!")
-                        else:
-                            st.error("❌ Send failed. Check bot token.")
-                    except Exception as _e:
-                        st.error(f"❌ Error: {_e}")
-        with _li_alert_c2:
-            if st.button("📤 Trigger LinkedIn Scrape", use_container_width=True, key="li_scrape_alert"):
-                with st.spinner("Scraping LinkedIn data..."):
-                    try:
-                        # Use authenticated scrape if cookies available, else public
-                        if has_cookies():
-                            _scrape_result = scrape_with_cookies()
-                            _method = "authenticated"
-                        else:
-                            _scrape_result = scrape_public_metrics()
-                            _method = "public"
-                        if _scrape_result.get("error"):
-                            st.warning(f"⚠️ {_scrape_result['error']}")
-                        else:
-                            _f = _scrape_result.get("followers", 0)
-                            _p = len(_scrape_result.get("posts", []))
-                            st.success(f"✅ Scraped ({_method}): {_f:,} followers, {_p} posts")
-                            # Auto-save the scraped data
-                            _entry = {
-                                "followers": _scrape_result.get("followers", 0),
-                                "company_name": _scrape_result.get("company_name", ""),
-                                "employees": _scrape_result.get("employees", ""),
-                                "industry": _scrape_result.get("industry", ""),
-                                "scraped_at": datetime.now().isoformat(),
-                            }
-                            # Add analytics data
-                            for _k in ("impressionCount", "uniqueVisitors", "totalPageViews",
-                                       "likeCount", "commentCount", "shareCount", "clickCount"):
-                                if _scrape_result.get(_k):
-                                    _entry[_k] = _scrape_result[_k]
-                            save_manual_entry(_entry)
-                            # Save posts if available
-                            _posts = _scrape_result.get("posts", [])
-                            if _posts:
-                                save_posts(_posts)
-                            st.toast("LinkedIn data scraped & saved!", icon="💼")
-                    except Exception as _e:
-                        st.error(f"❌ Scrape error: {_e}")
+        if st.button("📤 Send LinkedIn Report", use_container_width=True, key="li_alert"):
+            with st.spinner("Sending LinkedIn report..."):
+                try:
+                    from reporting_engine import build_linkedin_stats, build_telegram_linkedin_section, send_telegram
+                    _li_data = build_linkedin_stats()
+                    _msg = build_telegram_linkedin_section(_li_data)
+                    _ok = send_telegram(_msg)
+                    if _ok:
+                        st.success("✅ LinkedIn report sent to Telegram!")
+                    else:
+                        st.error("❌ Send failed. Check bot token.")
+                except Exception as _e:
+                    st.error(f"❌ Error: {_e}")
 
 
 # PAGE: 🔗 CROSS-PLATFORM CORRELATION

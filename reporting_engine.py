@@ -304,85 +304,119 @@ def build_kpi_stats():
 
 
 def build_ga4_stats():
-    """GA4 traffic summary."""
+    """GA4 traffic summary — tries API, then cached files."""
     import pandas as pd
     result = {"connected": False, "today_users": 0, "month_users": 0,
               "month_sessions": 0, "month_pageviews": 0, "top_sources": [],
               "top_pages": [], "top_countries": []}
+
+    # Try API first
     try:
         from ga4_connector import get_status
         status = get_status()
-        result["connected"] = status.get("connected", False)
-        if not result["connected"]:
-            return result
-    except Exception:
-        return result
-
-    try:
-        from ga4_connector import fetch_utm_traffic, fetch_geo_traffic
-        end = datetime.now().strftime("%Y-%m-%d")
-        start = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
-
-        utm = fetch_utm_traffic(start, end)
-        if not utm.empty:
-            result["month_sessions"] = si(utm.get("sessions", pd.Series([0])).sum())
-            result["month_users"] = si(utm.get("activeUsers", pd.Series([0])).sum())
-            if "sourceMedium" in utm.columns:
-                top = utm.groupby("sourceMedium")["sessions"].sum().sort_values(ascending=False).head(5)
-                result["top_sources"] = [(s, int(v)) for s, v in top.items()]
-
-        geo = fetch_geo_traffic(start, end)
-        if not geo.empty and "country" in geo.columns:
-            top = geo.groupby("country")["sessions"].sum().sort_values(ascending=False).head(5)
-            result["top_countries"] = [(c, int(v)) for c, v in top.items()]
+        if status.get("connected"):
+            from ga4_connector import fetch_utm_traffic, fetch_geo_traffic
+            end = datetime.now().strftime("%Y-%m-%d")
+            start = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+            utm = fetch_utm_traffic(start, end)
+            if not utm.empty:
+                result["connected"] = True
+                result["month_sessions"] = si(utm.get("sessions", pd.Series([0])).sum())
+                result["month_users"] = si(utm.get("activeUsers", pd.Series([0])).sum())
+                if "sourceMedium" in utm.columns:
+                    top = utm.groupby("sourceMedium")["sessions"].sum().sort_values(ascending=False).head(5)
+                    result["top_sources"] = [(s, int(v)) for s, v in top.items()]
+            geo = fetch_geo_traffic(start, end)
+            if not geo.empty and "country" in geo.columns:
+                top = geo.groupby("country")["sessions"].sum().sort_values(ascending=False).head(5)
+                result["top_countries"] = [(c, int(v)) for c, v in top.items()]
+            if result["connected"]:
+                return result
     except Exception as e:
-        log(f"GA4 stats error: {e}")
+        log(f"GA4 API error: {e}")
+
+    # Fallback: read cached GA4 data from pipeline
+    try:
+        _ga4_cache = DATA_DIR / "ga4_traffic_cache.json"
+        if _ga4_cache.exists():
+            _data = json.loads(_ga4_cache.read_text())
+            if _data:
+                result["connected"] = True
+                result["month_sessions"] = si(_data.get("total_sessions", 0))
+                result["month_users"] = si(_data.get("total_users", 0))
+                if _data.get("top_sources"):
+                    result["top_sources"] = _data["top_sources"][:5]
+                if _data.get("top_countries"):
+                    result["top_countries"] = _data["top_countries"][:5]
+                log("GA4 stats: using cached data")
+    except Exception as e:
+        log(f"GA4 cache error: {e}")
     return result
 
 
 def build_youtube_stats():
-    """YouTube channel summary."""
+    """YouTube channel summary — tries API, then cached files."""
     import pandas as pd
     result = {"connected": False, "subscribers": 0, "total_views": 0,
               "video_count": 0, "top_videos": [], "period_views": 0,
               "period_subs_gained": 0, "period_watch_hours": 0,
               "has_analytics": False}
+
+    # Try API first
     try:
-        from youtube_connector import is_configured, get_status
-        if not is_configured():
-            return result
-        result["connected"] = True
-    except Exception:
-        return result
-
-    try:
-        from youtube_connector import get_channel_info, get_channel_videos, has_analytics_access
-        ch = get_channel_info()
-        result["subscribers"] = si(ch.get("subscribers", 0))
-        result["total_views"] = si(ch.get("total_views", 0))
-        result["video_count"] = si(ch.get("video_count", 0))
-
-        vids = get_channel_videos(max_videos=200)
-        if vids:
-            top = sorted(vids, key=lambda v: v.get("views", 0), reverse=True)[:5]
-            result["top_videos"] = [
-                (v.get("title", "Untitled")[:40], si(v.get("views", 0)), si(v.get("likes", 0)))
-                for v in top
-            ]
-
-        if has_analytics_access():
-            result["has_analytics"] = True
-            from youtube_connector import get_daily_analytics
-            end = datetime.now().strftime("%Y-%m-%d")
-            start = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
-            daily = get_daily_analytics(start, end)
-            if not daily.empty:
-                result["period_views"] = si(daily.get("views", pd.Series([0])).sum())
-                result["period_subs_gained"] = si(daily.get("subscribersGained", pd.Series([0])).sum())
-                watch_min = sf(daily.get("estimatedMinutesWatched", pd.Series([0])).sum())
-                result["period_watch_hours"] = round(watch_min / 60, 1)
+        from youtube_connector import is_configured
+        if is_configured():
+            from youtube_connector import get_channel_info, get_channel_videos, has_analytics_access
+            result["connected"] = True
+            ch = get_channel_info()
+            result["subscribers"] = si(ch.get("subscribers", 0))
+            result["total_views"] = si(ch.get("total_views", 0))
+            result["video_count"] = si(ch.get("video_count", 0))
+            vids = get_channel_videos(max_videos=200)
+            if vids:
+                top = sorted(vids, key=lambda v: v.get("views", 0), reverse=True)[:5]
+                result["top_videos"] = [
+                    (v.get("title", "Untitled")[:40], si(v.get("views", 0)), si(v.get("likes", 0)))
+                    for v in top
+                ]
+            if has_analytics_access():
+                result["has_analytics"] = True
+                from youtube_connector import get_daily_analytics
+                end = datetime.now().strftime("%Y-%m-%d")
+                start = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+                daily = get_daily_analytics(start, end)
+                if not daily.empty:
+                    result["period_views"] = si(daily.get("views", pd.Series([0])).sum())
+                    result["period_subs_gained"] = si(daily.get("subscribersGained", pd.Series([0])).sum())
+                    watch_min = sf(daily.get("estimatedMinutesWatched", pd.Series([0])).sum())
+                    result["period_watch_hours"] = round(watch_min / 60, 1)
+            if result["connected"]:
+                return result
     except Exception as e:
-        log(f"YouTube stats error: {e}")
+        log(f"YouTube API error: {e}")
+
+    # Fallback: read cached YouTube data from pipeline
+    try:
+        _yt_ch = DATA_DIR / "youtube_channel.json"
+        if _yt_ch.exists():
+            _ch = json.loads(_yt_ch.read_text())
+            result["connected"] = True
+            result["subscribers"] = si(_ch.get("subscribers", 0))
+            result["total_views"] = si(_ch.get("total_views", 0))
+            result["video_count"] = si(_ch.get("video_count", 0))
+        _yt_vids = DATA_DIR / "youtube_videos.json"
+        if _yt_vids.exists():
+            _vids = json.loads(_yt_vids.read_text())
+            if _vids:
+                top = sorted(_vids, key=lambda v: v.get("views", 0), reverse=True)[:5]
+                result["top_videos"] = [
+                    (v.get("title", "Untitled")[:40], si(v.get("views", 0)), si(v.get("likes", 0)))
+                    for v in top
+                ]
+        if result.get("connected"):
+            log("YouTube stats: using cached data")
+    except Exception as e:
+        log(f"YouTube cache error: {e}")
     return result
 
 
@@ -430,9 +464,10 @@ def build_linkedin_stats():
 
 
 def build_cross_platform_stats():
-    """Cross-platform correlation summary."""
+    """Cross-platform correlation summary — builds from all available data."""
     result = {"available": False, "metrics": [], "top_correlations": []}
     try:
+        # Try cached data first
         cp_path = DATA_DIR / "cross_platform_cache.json"
         if cp_path.exists():
             with open(cp_path) as f:
@@ -446,6 +481,63 @@ def build_cross_platform_stats():
                         key=lambda x: x[1], reverse=True
                     )[:5]
                     result["top_correlations"] = sorted_corrs
+
+        # If no cache, build from available data sources
+        if not result["available"]:
+            import pandas as pd
+            from cross_platform_engine import build_unified_timeline, compute_correlations
+            # Get KPI data
+            _kpi_df = pd.DataFrame()
+            try:
+                _dc_path = DATA_DIR / "daily_counts.json"
+                if _dc_path.exists():
+                    _kpi_df = pd.read_json(str(_dc_path))
+            except Exception:
+                pass
+            # Get YouTube data
+            _yt_df = pd.DataFrame()
+            try:
+                _yt_path = DATA_DIR / "youtube_daily.json"
+                if _yt_path.exists():
+                    _yt_data = json.loads(_yt_path.read_text())
+                    _yt_rows = [{"date": d, **v} for d, v in _yt_data.items()]
+                    _yt_df = pd.DataFrame(_yt_rows)
+            except Exception:
+                pass
+            # Get LinkedIn data
+            _li_df = pd.DataFrame()
+            try:
+                from linkedin_connector import get_manual_history
+                _li_df = get_manual_history()
+            except Exception:
+                pass
+            # Get GA4 data
+            _ga4_df = pd.DataFrame()
+            try:
+                _ga4_cache = DATA_DIR / "ga4_traffic_cache.json"
+                if _ga4_cache.exists():
+                    _ga4_data = json.loads(_ga4_cache.read_text())
+                    if _ga4_data.get("daily"):
+                        _ga4_df = pd.DataFrame(_ga4_data["daily"])
+            except Exception:
+                pass
+
+            if not _kpi_df.empty or not _yt_df.empty or not _li_df.empty:
+                _unified = build_unified_timeline(
+                    kpi_df=_kpi_df, ga4_df=_ga4_df,
+                    youtube_daily=_yt_df, linkedin_daily=_li_df,
+                )
+                if not _unified.empty:
+                    _corrs = compute_correlations(_unified)
+                    result["available"] = True
+                    _num_cols = [c for c in _unified.columns if c != "date" and pd.api.types.is_numeric_dtype(_unified[c])]
+                    result["metrics"] = _num_cols[:10]
+                    if _corrs:
+                        sorted_corrs = sorted(
+                            [(k, abs(v)) for k, v in _corrs.items() if abs(v) > 0.1],
+                            key=lambda x: x[1], reverse=True
+                        )[:5]
+                        result["top_correlations"] = sorted_corrs
     except Exception as e:
         log(f"Cross-platform stats error: {e}")
     return result
@@ -529,8 +621,8 @@ def build_telegram_kpi_section(stats):
     p_month = stats.get("paid_month_override", stats["paid_month"])
 
     s2u = (u_all / s_all * 100) if s_all > 0 else 0
-    u2p = (p_all / u_all * 100) if u_all > 0 else 0
     s2p = (p_all / s_all * 100) if s_all > 0 else 0
+    u2p = (p_all / u_all * 100) if u_all > 0 else 0
 
     section = (
         f"🦅 <b>EAGLE3D KPI — {today}</b>\n"
@@ -554,7 +646,7 @@ def build_telegram_kpi_section(stats):
         f"│ 💳 Paid:     <code>{p_all}</code>\n"
         f"├────────────────────────\n"
         f"│ 🔄 <b>Conversion Rates</b>\n"
-        f"│ S→U: <code>{s2u:.1f}%</code> | U→P: <code>{u2p:.1f}%</code> | S→P: <code>{s2p:.1f}%</code>\n"
+        f"│ Sign→Upload: <code>{s2u:.1f}%</code> | Sign→Paid: <code>{s2p:.1f}%</code>\n"
         f"└────────────────────────\n"
     )
     if stats.get("total_overrides", 0) > 0:
@@ -850,20 +942,32 @@ def send_subsystem_reports():
         if _goals_path.exists():
             _goals = json.loads(_goals_path.read_text())
             if _goals:
-                _gmsg = "🎯 *MONTHLY GOALS PROGRESS*\n┌────────────────────────\n"
-                for _goal_name, _goal_data in _goals.items():
-                    if isinstance(_goal_data, dict) and "target" in _goal_data:
-                        _current = _goal_data.get("current", 0)
-                        _target = _goal_data.get("target", 0)
-                        _pct = (_current / _target * 100) if _target > 0 else 0
-                        _bar_len = 15
-                        _filled = int(_pct / 100 * _bar_len)
-                        _bar = "█" * _filled + "░" * (_bar_len - _filled)
-                        _icon = "🟢" if _pct >= 100 else ("🟡" if _pct >= 50 else "🔴")
-                        _gmsg += f"│ {_icon} {escape_md(_goal_name)}: `{_current}`/`{_target}` ({_pct:.0f}%)\n"
-                        _gmsg += f"│   `{_bar}`\n"
-                _gmsg += "└────────────────────────\n"
-                send_telegram(_gmsg)
+                _cur_month = datetime.now().strftime("%Y-%m")
+                _cur_goals = _goals.get(_cur_month, {})
+                if _cur_goals:
+                    _gmsg = f"🎯 <b>MONTHLY GOALS — {_cur_month}</b>\n┌────────────────────────\n"
+                    # Get actual KPI data for comparison
+                    _kpi = {}
+                    try:
+                        _kpi = build_kpi_stats()
+                    except Exception:
+                        pass
+                    _s_month = _kpi.get("signups_month_override", _kpi.get("signups_month", 0))
+                    _u_month = _kpi.get("uploads_month_override", _kpi.get("uploads_month", 0))
+                    _p_month = _kpi.get("paid_month_override", _kpi.get("paid_month", 0))
+                    _goal_map = {
+                        "SignUps": ("✅ Sign-ups", _s_month),
+                        "FirstUploads": ("📤 Uploads", _u_month),
+                        "Paid": ("💳 Paid", _p_month),
+                    }
+                    for _gk, _gv in _cur_goals.items():
+                        if _gv > 0:
+                            _label, _actual = _goal_map.get(_gk, (_gk, 0))
+                            _pct = (_actual / _gv * 100) if _gv > 0 else 0
+                            _icon = "🟢" if _pct >= 100 else ("🟡" if _pct >= 50 else "🔴")
+                            _gmsg += f"│ {_icon} {escape_html(_label)}: <code>{_actual}</code>/<code>{_gv}</code> ({_pct:.0f}%)\n"
+                    _gmsg += "└────────────────────────\n"
+                    send_telegram(_gmsg)
     except Exception as e:
         log(f"Monthly goals report error: {e}")
 
