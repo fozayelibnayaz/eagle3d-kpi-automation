@@ -2489,6 +2489,11 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "mrpipisterrr@gmail.com": {
+    "checked_at": "2026-06-15T14:40:37.446014",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
   "mrsagor949@gmail.com": {
     "checked_at": "2026-06-14T08:07:52.059712",
     "detail": "smtp_accepted_250",
