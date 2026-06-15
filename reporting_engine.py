@@ -304,11 +304,19 @@ def build_kpi_stats():
 
 
 def build_ga4_stats():
-    """GA4 traffic summary — tries API, then cached files."""
+    """GA4 traffic summary — tries API, then cached files. Returns today/month/all-time."""
     import pandas as pd
-    result = {"connected": False, "today_users": 0, "month_users": 0,
-              "month_sessions": 0, "month_pageviews": 0, "top_sources": [],
-              "top_pages": [], "top_countries": []}
+    result = {
+        "connected": False, "today_users": 0, "today_sessions": 0,
+        "month_users": 0, "month_sessions": 0,
+        "all_time_users": 0, "all_time_sessions": 0,
+        "top_sources": [], "top_pages": [], "top_countries": [],
+        "prev_month_users": 0, "prev_month_sessions": 0,
+    }
+
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    cur_month_str = datetime.now().strftime("%Y-%m")
+    prev_month_str = (datetime.now().replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
 
     # Try API first
     try:
@@ -316,13 +324,30 @@ def build_ga4_stats():
         status = get_status()
         if status.get("connected"):
             from ga4_connector import fetch_utm_traffic, fetch_geo_traffic
+            # Fetch 60 days for month-over-month comparison
             end = datetime.now().strftime("%Y-%m-%d")
-            start = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+            start = (datetime.now() - timedelta(days=60)).strftime("%Y-%m-%d")
             utm = fetch_utm_traffic(start, end)
             if not utm.empty:
                 result["connected"] = True
-                result["month_sessions"] = si(utm.get("sessions", pd.Series([0])).sum())
-                result["month_users"] = si(utm.get("activeUsers", pd.Series([0])).sum())
+                # Ensure date column
+                if "date" in utm.columns:
+                    utm["date"] = pd.to_datetime(utm["date"], errors="coerce")
+                    # Today
+                    today_utm = utm[utm["date"].dt.strftime("%Y-%m-%d") == today_str]
+                    result["today_sessions"] = si(today_utm.get("sessions", pd.Series([0])).sum())
+                    result["today_users"] = si(today_utm.get("activeUsers", pd.Series([0])).sum())
+                    # This month
+                    month_utm = utm[utm["date"].dt.strftime("%Y-%m") == cur_month_str]
+                    result["month_sessions"] = si(month_utm.get("sessions", pd.Series([0])).sum())
+                    result["month_users"] = si(month_utm.get("activeUsers", pd.Series([0])).sum())
+                    # Previous month
+                    prev_utm = utm[utm["date"].dt.strftime("%Y-%m") == prev_month_str]
+                    result["prev_month_sessions"] = si(prev_utm.get("sessions", pd.Series([0])).sum())
+                    result["prev_month_users"] = si(prev_utm.get("activeUsers", pd.Series([0])).sum())
+                # All time (what we have)
+                result["all_time_sessions"] = si(utm.get("sessions", pd.Series([0])).sum())
+                result["all_time_users"] = si(utm.get("activeUsers", pd.Series([0])).sum())
                 if "sourceMedium" in utm.columns:
                     top = utm.groupby("sourceMedium")["sessions"].sum().sort_values(ascending=False).head(5)
                     result["top_sources"] = [(s, int(v)) for s, v in top.items()]
@@ -344,6 +369,8 @@ def build_ga4_stats():
                 result["connected"] = True
                 result["month_sessions"] = si(_data.get("total_sessions", 0))
                 result["month_users"] = si(_data.get("total_users", 0))
+                result["all_time_sessions"] = result["month_sessions"]
+                result["all_time_users"] = result["month_users"]
                 if _data.get("top_sources"):
                     result["top_sources"] = _data["top_sources"][:5]
                 if _data.get("top_countries"):
@@ -355,12 +382,23 @@ def build_ga4_stats():
 
 
 def build_youtube_stats():
-    """YouTube channel summary — tries API, then cached files."""
+    """YouTube channel summary — tries API, then cached files. Returns today/month/all-time."""
     import pandas as pd
-    result = {"connected": False, "subscribers": 0, "total_views": 0,
-              "video_count": 0, "top_videos": [], "period_views": 0,
-              "period_subs_gained": 0, "period_watch_hours": 0,
-              "has_analytics": False}
+    result = {
+        "connected": False, "subscribers": 0, "total_views": 0,
+        "video_count": 0, "top_videos": [],
+        "today_views": 0, "today_subs_gained": 0, "today_watch_hours": 0,
+        "month_views": 0, "month_subs_gained": 0, "month_watch_hours": 0,
+        "prev_month_views": 0, "prev_month_subs_gained": 0,
+        "has_analytics": False, "dead_videos": [], "fastest_growing": None,
+        "days_since_upload": 0, "total_likes": 0, "total_comments": 0,
+        "channel_health": "❓", "avg_engagement": 0.0,
+        "uploaded_today": 0, "low_engagement_count": 0, "dead_video_count": 0,
+    }
+
+    cur_month_str = datetime.now().strftime("%Y-%m")
+    prev_month_str = (datetime.now().replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
+    today_str = datetime.now().strftime("%Y-%m-%d")
 
     # Try API first
     try:
@@ -372,24 +410,120 @@ def build_youtube_stats():
             result["subscribers"] = si(ch.get("subscribers", 0))
             result["total_views"] = si(ch.get("total_views", 0))
             result["video_count"] = si(ch.get("video_count", 0))
-            vids = get_channel_videos(max_videos=200)
+
+            vids = get_channel_videos(max_videos=500)
             if vids:
                 top = sorted(vids, key=lambda v: v.get("views", 0), reverse=True)[:5]
                 result["top_videos"] = [
                     (v.get("title", "Untitled")[:40], si(v.get("views", 0)), si(v.get("likes", 0)))
                     for v in top
                 ]
+                # Compute channel health metrics
+                total_likes = sum(v.get("likes", 0) for v in vids)
+                total_comments = sum(v.get("comments", 0) for v in vids)
+                total_views = sum(v.get("views", 0) for v in vids)
+                result["total_likes"] = total_likes
+                result["total_comments"] = total_comments
+                result["avg_engagement"] = ((total_likes + total_comments) / total_views * 100) if total_views > 0 else 0
+
+                # Dead videos (< 1 view/day after 30+ days)
+                dead = []
+                for v in vids:
+                    vdate = v.get("published_at", "")
+                    views = v.get("views", 0)
+                    if vdate and views is not None:
+                        try:
+                            age_days = (datetime.now() - datetime.fromisoformat(vdate.replace("Z", ""))).days
+                            if age_days > 30:
+                                vpd = views / age_days
+                                if vpd < 1:
+                                    dead.append({
+                                        "title": v.get("title", "?")[:50],
+                                        "views_per_day": round(vpd, 2),
+                                        "age_days": age_days,
+                                        "views": views,
+                                    })
+                        except Exception:
+                            pass
+                result["dead_videos"] = sorted(dead, key=lambda x: x["views_per_day"])[:5]
+                result["dead_video_count"] = len(dead)
+
+                # Fastest growing video
+                fastest = None
+                for v in vids:
+                    vdate = v.get("published_at", "")
+                    views = v.get("views", 0)
+                    if vdate and views and views > 100:
+                        try:
+                            age_days = max(1, (datetime.now() - datetime.fromisoformat(vdate.replace("Z", ""))).days)
+                            vpd = views / age_days
+                            if not fastest or vpd > fastest["views_per_day"]:
+                                fastest = {
+                                    "title": v.get("title", "?")[:50],
+                                    "views_per_day": round(vpd),
+                                    "views": views,
+                                }
+                        except Exception:
+                            pass
+                result["fastest_growing"] = fastest
+
+                # Days since last upload
+                upload_dates = []
+                for v in vids:
+                    vdate = v.get("published_at", "")
+                    if vdate:
+                        try:
+                            upload_dates.append(datetime.fromisoformat(vdate.replace("Z", "")))
+                        except Exception:
+                            pass
+                if upload_dates:
+                    result["days_since_upload"] = (datetime.now() - max(upload_dates)).days
+                    result["uploaded_today"] = sum(1 for d in upload_dates if d.strftime("%Y-%m-%d") == today_str)
+
+                # Channel health score
+                eng = result["avg_engagement"]
+                if result["days_since_upload"] > 30 or eng < 0.5:
+                    result["channel_health"] = "🔴 Critical"
+                elif result["days_since_upload"] > 14 or eng < 1.0:
+                    result["channel_health"] = "🟡 Needs Attention"
+                else:
+                    result["channel_health"] = "🟢 Healthy"
+
+                # Low engagement videos (< 0.5% ER with 100+ views)
+                low_eng = 0
+                for v in vids:
+                    views = v.get("views", 0)
+                    likes = v.get("likes", 0)
+                    if views >= 100 and (likes / views * 100) < 0.5:
+                        low_eng += 1
+                result["low_engagement_count"] = low_eng
+
             if has_analytics_access():
                 result["has_analytics"] = True
                 from youtube_connector import get_daily_analytics
                 end = datetime.now().strftime("%Y-%m-%d")
-                start = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+                # Fetch 60 days for month comparison
+                start = (datetime.now() - timedelta(days=60)).strftime("%Y-%m-%d")
                 daily = get_daily_analytics(start, end)
                 if not daily.empty:
-                    result["period_views"] = si(daily.get("views", pd.Series([0])).sum())
-                    result["period_subs_gained"] = si(daily.get("subscribersGained", pd.Series([0])).sum())
-                    watch_min = sf(daily.get("estimatedMinutesWatched", pd.Series([0])).sum())
-                    result["period_watch_hours"] = round(watch_min / 60, 1)
+                    # Today
+                    if "date" in daily.columns:
+                        daily["date"] = pd.to_datetime(daily["date"], errors="coerce")
+                        today_data = daily[daily["date"].dt.strftime("%Y-%m-%d") == today_str]
+                        result["today_views"] = si(today_data.get("views", pd.Series([0])).sum())
+                        result["today_subs_gained"] = si(today_data.get("subscribersGained", pd.Series([0])).sum())
+                        watch_min_today = sf(today_data.get("estimatedMinutesWatched", pd.Series([0])).sum())
+                        result["today_watch_hours"] = round(watch_min_today / 60, 1)
+                        # This month
+                        month_data = daily[daily["date"].dt.strftime("%Y-%m") == cur_month_str]
+                        result["month_views"] = si(month_data.get("views", pd.Series([0])).sum())
+                        result["month_subs_gained"] = si(month_data.get("subscribersGained", pd.Series([0])).sum())
+                        watch_min_month = sf(month_data.get("estimatedMinutesWatched", pd.Series([0])).sum())
+                        result["month_watch_hours"] = round(watch_min_month / 60, 1)
+                        # Previous month
+                        prev_data = daily[daily["date"].dt.strftime("%Y-%m") == prev_month_str]
+                        result["prev_month_views"] = si(prev_data.get("views", pd.Series([0])).sum())
+                        result["prev_month_subs_gained"] = si(prev_data.get("subscribersGained", pd.Series([0])).sum())
             if result["connected"]:
                 return result
     except Exception as e:
@@ -413,6 +547,53 @@ def build_youtube_stats():
                     (v.get("title", "Untitled")[:40], si(v.get("views", 0)), si(v.get("likes", 0)))
                     for v in top
                 ]
+                # Dead videos from cache
+                dead = []
+                for v in _vids:
+                    vdate = v.get("published_at", "")
+                    views = v.get("views", 0)
+                    if vdate and views is not None:
+                        try:
+                            age_days = (datetime.now() - datetime.fromisoformat(vdate.replace("Z", ""))).days
+                            if age_days > 30:
+                                vpd = views / age_days
+                                if vpd < 1:
+                                    dead.append({
+                                        "title": v.get("title", "?")[:50],
+                                        "views_per_day": round(vpd, 2),
+                                        "age_days": age_days,
+                                        "views": views,
+                                    })
+                        except Exception:
+                            pass
+                result["dead_videos"] = sorted(dead, key=lambda x: x["views_per_day"])[:5]
+                result["dead_video_count"] = len(dead)
+                # Total likes/comments
+                result["total_likes"] = sum(v.get("likes", 0) for v in _vids)
+                result["total_comments"] = sum(v.get("comments", 0) for v in _vids)
+                total_views = sum(v.get("views", 0) for v in _vids)
+                result["avg_engagement"] = ((result["total_likes"] + result["total_comments"]) / total_views * 100) if total_views > 0 else 0
+                # Channel health
+                if result["avg_engagement"] < 0.5:
+                    result["channel_health"] = "🔴 Critical"
+                elif result["avg_engagement"] < 1.0:
+                    result["channel_health"] = "🟡 Needs Attention"
+                else:
+                    result["channel_health"] = "🟢 Healthy"
+                # Fastest growing
+                fastest = None
+                for v in _vids:
+                    vdate = v.get("published_at", "")
+                    views = v.get("views", 0)
+                    if vdate and views and views > 100:
+                        try:
+                            age_days = max(1, (datetime.now() - datetime.fromisoformat(vdate.replace("Z", ""))).days)
+                            vpd = views / age_days
+                            if not fastest or vpd > fastest["views_per_day"]:
+                                fastest = {"title": v.get("title", "?")[:50], "views_per_day": round(vpd), "views": views}
+                        except Exception:
+                            pass
+                result["fastest_growing"] = fastest
         if result.get("connected"):
             log("YouTube stats: using cached data")
     except Exception as e:
@@ -421,9 +602,18 @@ def build_youtube_stats():
 
 
 def build_linkedin_stats():
-    """LinkedIn company page summary."""
-    result = {"connected": False, "followers": 0, "company_name": "",
-              "employees": "", "industry": ""}
+    """LinkedIn company page summary — daily/monthly/all-time with MoM comparison."""
+    result = {
+        "connected": False, "followers": 0, "company_name": "",
+        "employees": "", "industry": "",
+        "today_followers_delta": 0, "month_followers_delta": 0,
+        "prev_month_followers_delta": 0,
+        "post_count": 0, "total_likes": 0, "total_comments": 0,
+        "total_impressions": 0, "top_posts": [],
+        "history_days": 0, "prev_month_followers": 0,
+    }
+    cur_month_str = datetime.now().strftime("%Y-%m")
+    prev_month_str = (datetime.now().replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
     try:
         from linkedin_connector import is_configured, get_cached_metrics, get_manual_history, get_posts
         if not is_configured():
@@ -438,17 +628,45 @@ def build_linkedin_stats():
             result["employees"] = metrics.get("employees", "")
             result["industry"] = metrics.get("industry", "")
             result["connected"] = True
-        # Fallback: try daily history for latest follower count
-        if result["followers"] == 0:
-            try:
-                hist = get_manual_history()
-                if not hist.empty and "followers" in hist.columns:
-                    latest = hist.dropna(subset=["followers"]).tail(1)
+            # Add analytics data
+            result["total_impressions"] = si(metrics.get("impressionCount", 0))
+        # Get follower history for delta calculations
+        try:
+            hist = get_manual_history()
+            if not hist.empty and "followers" in hist.columns:
+                result["history_days"] = len(hist)
+                # Today's delta
+                if "date" in hist.columns:
+                    import pandas as pd
+                    hist["date"] = pd.to_datetime(hist["date"], errors="coerce")
+                    hist_sorted = hist.dropna(subset=["followers"]).sort_values("date")
+                    if len(hist_sorted) >= 2:
+                        today_followers = hist_sorted.iloc[-1]["followers"]
+                        prev_followers = hist_sorted.iloc[-2]["followers"]
+                        result["today_followers_delta"] = si(today_followers) - si(prev_followers)
+                    # This month's delta (latest - first of month)
+                    month_data = hist_sorted[hist_sorted["date"].dt.strftime("%Y-%m") == cur_month_str]
+                    if len(month_data) >= 2:
+                        result["month_followers_delta"] = si(month_data.iloc[-1]["followers"]) - si(month_data.iloc[0]["followers"])
+                    elif len(month_data) == 1 and len(hist_sorted) > 1:
+                        # Compare with last entry before this month
+                        before_month = hist_sorted[hist_sorted["date"].dt.strftime("%Y-%m") < cur_month_str]
+                        if not before_month.empty:
+                            result["month_followers_delta"] = si(month_data.iloc[-1]["followers"]) - si(before_month.iloc[-1]["followers"])
+                    # Previous month
+                    prev_month_data = hist_sorted[hist_sorted["date"].dt.strftime("%Y-%m") == prev_month_str]
+                    if len(prev_month_data) >= 2:
+                        result["prev_month_followers_delta"] = si(prev_month_data.iloc[-1]["followers"]) - si(prev_month_data.iloc[0]["followers"])
+                    # Latest followers
+                    latest = hist_sorted.tail(1)
                     if not latest.empty:
                         result["followers"] = si(latest["followers"].iloc[0])
                         result["connected"] = True
-            except Exception:
-                pass
+                    # Previous month end followers
+                    if not prev_month_data.empty:
+                        result["prev_month_followers"] = si(prev_month_data.iloc[-1]["followers"])
+        except Exception as e:
+            log(f"LinkedIn history error: {e}")
         # Add posts summary
         try:
             posts = get_posts()
@@ -456,6 +674,17 @@ def build_linkedin_stats():
                 result["post_count"] = len(posts)
                 result["total_likes"] = sum(p.get("likes", 0) for p in posts)
                 result["total_comments"] = sum(p.get("comments", 0) for p in posts)
+                result["total_impressions"] = max(result["total_impressions"],
+                    sum(p.get("impressions", 0) for p in posts))
+                # Top posts by engagement
+                scored = []
+                for p in posts:
+                    imp = p.get("impressions", 0) or 1
+                    likes = p.get("likes", 0)
+                    comments = p.get("comments", 0)
+                    er = (likes + comments) / imp * 100 if imp > 0 else 0
+                    scored.append({"title": p.get("title", p.get("text", "?"))[:50], "er": round(er, 2), "likes": likes, "comments": comments})
+                result["top_posts"] = sorted(scored, key=lambda x: x["er"], reverse=True)[:3]
         except Exception:
             pass
     except Exception as e:
@@ -607,12 +836,28 @@ def build_pipeline_health():
 # MESSAGE BUILDERS
 # ═══════════════════════════════════════════════════════════════
 
+def _mom_arrow(current, previous):
+    """Return MoM comparison string with arrow."""
+    if previous == 0:
+        return "🆕" if current > 0 else ""
+    delta = current - previous
+    pct = (delta / previous * 100) if previous > 0 else 0
+    if pct > 10:
+        return f"📈+{pct:.0f}%"
+    elif pct > 0:
+        return f"⬆+{pct:.0f}%"
+    elif pct < -10:
+        return f"📉{pct:.0f}%"
+    elif pct < 0:
+        return f"⬇{pct:.0f}%"
+    return "➡0%"
+
+
 def build_telegram_kpi_section(stats):
-    """Build KPI section for Telegram (HTML parse mode)."""
+    """Build KPI section for Telegram (HTML parse mode) — daily/monthly/all-time + MoM."""
     today = escape_html(stats["today_str"])
     month = escape_html(stats["month_str"])
 
-    # Use override counts if available (more accurate)
     s_all = stats.get("signups_all_override", stats["signups_all"])
     u_all = stats.get("uploads_all_override", stats["uploads_all"])
     p_all = stats.get("paid_all_override", stats["paid_all"])
@@ -622,7 +867,6 @@ def build_telegram_kpi_section(stats):
 
     s2u = (u_all / s_all * 100) if s_all > 0 else 0
     s2p = (p_all / s_all * 100) if s_all > 0 else 0
-    u2p = (p_all / u_all * 100) if u_all > 0 else 0
 
     section = (
         f"🦅 <b>EAGLE3D KPI — {today}</b>\n"
@@ -647,22 +891,42 @@ def build_telegram_kpi_section(stats):
         f"├────────────────────────\n"
         f"│ 🔄 <b>Conversion Rates</b>\n"
         f"│ Sign→Upload: <code>{s2u:.1f}%</code> | Sign→Paid: <code>{s2p:.1f}%</code>\n"
-        f"└────────────────────────\n"
     )
     if stats.get("total_overrides", 0) > 0:
-        section += f"│ ✏️ Active Overrides: <code>{stats['total_overrides']}</code>\n"
+        section += f"│ ✏️ Overrides: <code>{stats['total_overrides']}</code>\n"
+    section += "└────────────────────────\n"
     return section
 
 
 def build_telegram_ga4_section(ga4):
-    """Build GA4 section (HTML)."""
+    """Build GA4 section (HTML) — daily/monthly/all-time + MoM."""
     if not ga4["connected"]:
         return "🌐 <b>GA4 ANALYTICS</b> — Not connected\n"
+    today_s = ga4.get("today_sessions", 0)
+    today_u = ga4.get("today_users", 0)
+    month_s = ga4.get("month_sessions", 0)
+    month_u = ga4.get("month_users", 0)
+    prev_s = ga4.get("prev_month_sessions", 0)
+    prev_u = ga4.get("prev_month_users", 0)
+    all_s = ga4.get("all_time_sessions", 0)
+    all_u = ga4.get("all_time_users", 0)
+    mom_s = _mom_arrow(month_s, prev_s)
+    mom_u = _mom_arrow(month_u, prev_u)
+
     section = (
         f"\n🌐 <b>GA4 ANALYTICS</b> ✅\n"
         f"┌────────────────────────\n"
-        f"│ 👥 Users (30d): <code>{ga4['month_users']}</code>\n"
-        f"│ 📊 Sessions (30d): <code>{ga4['month_sessions']}</code>\n"
+        f"│ 📅 <b>Today</b>\n"
+        f"│ 👥 Users: <code>{today_u}</code>\n"
+        f"│ 📊 Sessions: <code>{today_s}</code>\n"
+        f"├────────────────────────\n"
+        f"│ 📆 <b>This Month</b>\n"
+        f"│ 👥 Users: <code>{month_u}</code> {mom_u}\n"
+        f"│ 📊 Sessions: <code>{month_s}</code> {mom_s}\n"
+        f"├────────────────────────\n"
+        f"│ 🏆 <b>All Time</b>\n"
+        f"│ 👥 Users: <code>{all_u}</code>\n"
+        f"│ 📊 Sessions: <code>{all_s}</code>\n"
     )
     if ga4["top_sources"]:
         section += "│ 📈 <b>Top Sources:</b>\n"
@@ -677,39 +941,72 @@ def build_telegram_ga4_section(ga4):
 
 
 def build_telegram_youtube_section(yt):
-    """Build YouTube section (HTML)."""
+    """Build YouTube section (HTML) — channel snapshot + daily/month/all-time + health."""
     if not yt["connected"]:
         return "📺 <b>YOUTUBE</b> — Not connected\n"
+    today_str = datetime.now().strftime("%A, %B %d")
     section = (
-        f"\n📺 <b>YOUTUBE</b> ✅\n"
+        f"\n📈 📺 <b>YouTube — {today_str}</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"│ 📋 <b>Channel Snapshot</b>\n"
         f"┌────────────────────────\n"
-        f"│ 👥 Subscribers: <code>{yt['subscribers']}</code>\n"
-        f"│ 👁 Total Views: <code>{yt['total_views']}</code>\n"
-        f"│ 🎬 Videos: <code>{yt['video_count']}</code>\n"
+        f"│ 👥 Subscribers: <code>{yt['subscribers']:,}</code>\n"
+        f"│ 👁 Total Views: <code>{yt['total_views']:,}</code>\n"
+        f"│ 👍 Total Likes: <code>{yt.get('total_likes', 0):,}</code>\n"
+        f"│ 💬 Total Comments: <code>{yt.get('total_comments', 0):,}</code>\n"
+        f"│ 📊 Avg Engagement: <code>{yt.get('avg_engagement', 0):.2f}%</code>\n"
+        f"│ ⭐ Channel Health: <code>{yt.get('channel_health', '❓')}</code>\n"
+        f"│ 📹 Total Videos: <code>{yt['video_count']}</code>\n"
+        f"│ 🆕 Uploaded Today: <code>{yt.get('uploaded_today', 0)}</code>\n"
+        f"│ 🪦 Dead Videos: <code>{yt.get('dead_video_count', 0)}</code>\n"
+        f"│ ❌ Low Engagement: <code>{yt.get('low_engagement_count', 0)}</code>\n"
+        f"│ 📅 Days Since Upload: <code>{yt.get('days_since_upload', 0)}</code>\n"
     )
-    if yt["has_analytics"]:
-        section += (
-            f"│ ─── 30d Analytics ───\n"
-            f"│ 👁 Views: <code>{yt['period_views']}</code>\n"
-            f"│ ⏱ Watch: <code>{yt['period_watch_hours']}</code>h\n"
-            f"│ 👤 Subs Gained: <code>{yt['period_subs_gained']}</code>\n"
-        )
+    # Top video
     if yt["top_videos"]:
-        section += "│ 🔥 <b>Top Videos:</b>\n"
-        for title, views, likes in yt["top_videos"][:3]:
-            section += f"│   • {escape_html(title)}: <code>{views}</code> views\n"
+        top = yt["top_videos"][0]
+        section += f"│ 🥇 Top Video: {escape_html(top[0])}\n"
+        section += f"│ 🥇 Top Views: <code>{top[1]:,}</code>\n"
+        section += f"│ 🥇 Top Likes: <code>{top[2]:,}</code>\n"
+    # Fastest growing
+    fg = yt.get("fastest_growing")
+    if fg:
+        section += f"│ 🚀 Fastest Growing: {escape_html(fg['title'])}\n"
+        section += f"│ 🚀 Views/Day: <code>{fg['views_per_day']}</code>\n"
+    section += "├────────────────────────\n"
+    # Daily/Monthly analytics
+    section += (
+        f"│ 📅 <b>Today</b>\n"
+        f"│ 👁 Views: <code>{yt.get('today_views', 0):,}</code>\n"
+        f"│ ⏱ Watch: <code>{yt.get('today_watch_hours', 0)}h</code>\n"
+        f"│ 👤 Subs Gained: <code>{yt.get('today_subs_gained', 0)}</code>\n"
+        f"├────────────────────────\n"
+        f"│ 📆 <b>This Month</b>\n"
+        f"│ 👁 Views: <code>{yt.get('month_views', 0):,}</code> {_mom_arrow(yt.get('month_views', 0), yt.get('prev_month_views', 0))}\n"
+        f"│ ⏱ Watch: <code>{yt.get('month_watch_hours', 0)}h</code>\n"
+        f"│ 👤 Subs Gained: <code>{yt.get('month_subs_gained', 0)}</code> {_mom_arrow(yt.get('month_subs_gained', 0), yt.get('prev_month_subs_gained', 0))}\n"
+    )
     section += "└────────────────────────\n"
     return section
 
 
 def build_telegram_linkedin_section(li):
-    """Build LinkedIn section (HTML)."""
+    """Build LinkedIn section (HTML) — daily/monthly/all-time + MoM."""
     if not li["connected"]:
         return "💼 <b>LINKEDIN</b> — Not connected\n"
+    today_delta = li.get("today_followers_delta", 0)
+    month_delta = li.get("month_followers_delta", 0)
+    prev_delta = li.get("prev_month_followers_delta", 0)
+    mom = _mom_arrow(month_delta, prev_delta) if prev_delta != 0 else ""
+
     section = (
         f"\n💼 <b>LINKEDIN</b> ✅\n"
         f"┌────────────────────────\n"
-        f"│ 👥 Followers: <code>{li['followers']}</code>\n"
+        f"│ 📅 <b>Today</b>\n"
+        f"│ 👥 Followers: <code>{li['followers']:,}</code> ({'+' if today_delta >= 0 else ''}{today_delta})\n"
+        f"├────────────────────────\n"
+        f"│ 📆 <b>This Month</b>\n"
+        f"│ 👥 Gained: <code>{'+' if month_delta >= 0 else ''}{month_delta}</code> {mom}\n"
     )
     if li["company_name"]:
         section += f"│ 🏢 {escape_html(li['company_name'])}\n"
@@ -717,16 +1014,16 @@ def build_telegram_linkedin_section(li):
         section += f"│ 👔 Employees: {escape_html(li['employees'])}\n"
     if li["industry"]:
         section += f"│ 🏭 {escape_html(li['industry'])}\n"
-    # Add posts summary if available
-    try:
-        from linkedin_connector import get_posts
-        _posts = get_posts()
-        if _posts:
-            _total_likes = sum(p.get("likes", 0) for p in _posts)
-            _total_comments = sum(p.get("comments", 0) for p in _posts)
-            section += f"│ 📝 Posts: <code>{len(_posts)}</code> | 👍 <code>{_total_likes}</code> | 💬 <code>{_total_comments}</code>\n"
-    except Exception:
-        pass
+    if li.get("total_impressions", 0) > 0:
+        section += f"│ 👁 Impressions: <code>{li['total_impressions']:,}</code>\n"
+    if li.get("post_count", 0) > 0:
+        section += f"│ 📝 Posts: <code>{li['post_count']}</code> | 👍 <code>{li.get('total_likes', 0):,}</code> | 💬 <code>{li.get('total_comments', 0):,}</code>\n"
+    if li.get("top_posts"):
+        section += "│ 🔥 <b>Top Posts:</b>\n"
+        for p in li["top_posts"][:3]:
+            section += f"│   • {escape_html(p['title'])}: ER <code>{p['er']:.1f}%</code>\n"
+    if li.get("history_days", 0) > 0:
+        section += f"│ 📅 History: <code>{li['history_days']}</code> days\n"
     section += "└────────────────────────\n"
     return section
 
@@ -778,12 +1075,190 @@ def build_full_telegram_message(kpi, ga4, yt, li, stripe, health):
     return msg
 
 
+def build_youtube_dead_video_alerts(yt):
+    """Build per-video dead video alerts (like the user's reference format)."""
+    alerts = []
+    for dv in yt.get("dead_videos", []):
+        msg = (
+            f"⚠️ 🪦 <b>DEAD VIDEO</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"Dead video: {dv['views_per_day']} views/day after {dv['age_days']} days\n"
+            f"📋 <b>Details</b>\n"
+            f"• Video: {escape_html(dv['title'])}\n"
+            f"• Views/Day: <code>{dv['views_per_day']}</code>\n"
+            f"• Age: <code>{dv['age_days']}</code> days\n"
+            f"• Views: <code>{dv['views']:,}</code>\n"
+            f"⏰ {datetime.utcnow().strftime('%b %d, %Y, %I:%M %p')} UTC"
+        )
+        alerts.append(msg)
+    return alerts
+
+
+def build_smart_anomaly_alerts(kpi_stats, ga4_stats, yt_stats, li_stats):
+    """Detect spikes, flatlines, and anomalies across ALL systems.
+    Includes cross-platform correlation: if sign-ups spike, check WHY by looking at GA4/YouTube/LinkedIn.
+    """
+    alerts = []
+    ts = datetime.utcnow().strftime('%b %d, %Y, %I:%M %p UTC')
+
+    # ── KPI Anomalies ──
+    s_today = kpi_stats.get("signups_today", 0)
+    u_today = kpi_stats.get("uploads_today", 0)
+    p_today = kpi_stats.get("paid_today", 0)
+    s_month = kpi_stats.get("signups_month_override", kpi_stats.get("signups_month", 0))
+    p_month = kpi_stats.get("paid_month_override", kpi_stats.get("paid_month", 0))
+    u_month = kpi_stats.get("uploads_month_override", kpi_stats.get("uploads_month", 0))
+
+    if s_today == 0:
+        alerts.append("🔴 <b>KPI ALERT</b>\n━━━━━━━━━━━━━━━━━━━━━━\n⚠️ <b>Zero sign-ups today!</b> No new users registered.\n\n🔍 Possible causes:\n• Website down or tracking broken\n• No marketing activity today\n• Check GA4 for traffic data\n⏰ " + ts)
+    if u_today == 0 and s_today > 0:
+        alerts.append("🟡 <b>KPI ALERT</b>\n━━━━━━━━━━━━━━━━━━━━━━\n⚠️ <b>Sign-ups but zero uploads.</b> Users registering but not converting to uploads.\n\n📊 Sign-ups today: " + str(s_today) + "\n🔍 Check onboarding flow or documentation gaps\n⏰ " + ts)
+    if p_today > 3:
+        # Cross-platform: why did paid spike?
+        reasons = []
+        if ga4_stats.get("today_sessions", 0) > 200:
+            reasons.append(f"• GA4 traffic high: {ga4_stats.get('today_sessions', 0):,} sessions")
+        if yt_stats.get("today_views", 0) > 100:
+            reasons.append(f"• YouTube views high: {yt_stats.get('today_views', 0):,} views")
+        if li_stats.get("today_followers_delta", 0) > 5:
+            reasons.append(f"• LinkedIn growing: +{li_stats.get('today_followers_delta', 0)} followers")
+        reason_text = "\n".join(reasons) if reasons else "• No clear cross-platform driver found"
+        alerts.append(f"🚀 <b>KPI SPIKE — DATA ACCELERATED</b>\n━━━━━━━━━━━━━━━━━━━━━━\n🔥 <b>{p_today} paid customers today!</b>\n\n📊 Today: {s_today} sign-ups, {u_today} uploads, {p_today} paid\n🔍 <b>Why this spike?</b>\n{reason_text}\n⏰ " + ts)
+    if s_today > 20:
+        # Cross-platform: why did sign-ups spike?
+        reasons = []
+        if ga4_stats.get("today_sessions", 0) > 300:
+            reasons.append(f"• GA4 traffic surge: {ga4_stats.get('today_sessions', 0):,} sessions")
+        if ga4_stats.get("connected") and ga4_stats.get("top_sources"):
+            top_src = ga4_stats["top_sources"][0]
+            reasons.append(f"• Top traffic source: {escape_html(top_src[0])} ({top_src[1]} sessions)")
+        if yt_stats.get("today_views", 0) > 200:
+            reasons.append(f"• YouTube active: {yt_stats.get('today_views', 0):,} views today")
+            if yt_stats.get("uploaded_today", 0) > 0:
+                reasons.append(f"• New video uploaded today!")
+        if li_stats.get("today_followers_delta", 0) > 3:
+            reasons.append(f"• LinkedIn growing: +{li_stats.get('today_followers_delta', 0)} followers")
+        reason_text = "\n".join(reasons) if reasons else "• No clear cross-platform driver — possibly email/direct traffic"
+        alerts.append(f"🚀 <b>SIGN-UP SPIKE — DATA ACCELERATED</b>\n━━━━━━━━━━━━━━━━━━━━━━\n🔥 <b>{s_today} sign-ups today!</b> Unusually high registration.\n\n🔍 <b>Why this spike?</b>\n{reason_text}\n⏰ " + ts)
+
+    # ── Sign-up drop / stagnation ──
+    if 0 < s_today <= 3:
+        reasons = []
+        if ga4_stats.get("today_sessions", 0) < 50:
+            reasons.append("• GA4 traffic very low — website may be invisible today")
+        if yt_stats.get("days_since_upload", 0) > 14:
+            reasons.append(f"• No YouTube video in {yt_stats.get('days_since_upload', 0)} days — content drought")
+        if li_stats.get("today_followers_delta", 0) < 0:
+            reasons.append(f"• LinkedIn losing followers ({li_stats.get('today_followers_delta', 0)})")
+        reason_text = "\n".join(reasons) if reasons else "• Low visibility across platforms"
+        alerts.append(f"📉 <b>SIGN-UP FLATLINE — DATA HAMPERED</b>\n━━━━━━━━━━━━━━━━━━━━━━\n⚠️ Only <b>{s_today} sign-ups today.</b> Below normal activity.\n\n🔍 <b>Why the slowdown?</b>\n{reason_text}\n⏰ " + ts)
+
+    # ── GA4 Anomalies ──
+    if ga4_stats.get("connected"):
+        today_s = ga4_stats.get("today_sessions", 0)
+        month_s = ga4_stats.get("month_sessions", 0)
+        prev_s = ga4_stats.get("prev_month_sessions", 0)
+        if today_s == 0:
+            alerts.append("🔴 <b>GA4 ALERT</b>\n━━━━━━━━━━━━━━━━━━━━━━\n⚠️ <b>Zero website sessions today!</b>\n\n🔍 Possible causes:\n• GA4 tracking broken\n• Website down\n• DNS/CDN issue\n⏰ " + ts)
+        if prev_s > 0 and month_s > 0:
+            drop_pct = (1 - month_s / prev_s) * 100
+            if drop_pct > 30:
+                # Cross-platform: is the traffic drop reflected in KPI?
+                reasons = []
+                if s_month < kpi_stats.get("signups_month_override", kpi_stats.get("signups_month", 0)) * 0.7:
+                    reasons.append(f"• Sign-ups also dropped — correlated")
+                if yt_stats.get("days_since_upload", 0) > 14:
+                    reasons.append(f"• No new YouTube content in {yt_stats.get('days_since_upload', 0)} days")
+                reason_text = "\n".join(reasons) if reasons else "• Traffic drop may be seasonal or marketing gap"
+                alerts.append(f"📉 <b>GA4 DROP — DATA HAMPERED</b>\n━━━━━━━━━━━━━━━━━━━━━━\n⚠️ <b>Traffic down {drop_pct:.0f}%</b> vs last month ({prev_s:,} → {month_s:,} sessions)\n\n🔍 <b>Impact analysis:</b>\n{reason_text}\n⏰ " + ts)
+            spike_pct = (month_s / prev_s - 1) * 100
+            if spike_pct > 50:
+                # Cross-platform: what drove the traffic?
+                reasons = []
+                if yt_stats.get("uploaded_today", 0) > 0 or yt_stats.get("days_since_upload", 0) < 7:
+                    reasons.append("• Recent YouTube activity — video driving traffic")
+                if li_stats.get("today_followers_delta", 0) > 3:
+                    reasons.append(f"• LinkedIn growth (+{li_stats.get('today_followers_delta', 0)} followers)")
+                if ga4_stats.get("top_sources"):
+                    top_src = ga4_stats["top_sources"][0]
+                    reasons.append(f"• Top source: {escape_html(top_src[0])}")
+                reason_text = "\n".join(reasons) if reasons else "• Possibly SEO improvement or viral content"
+                alerts.append(f"🚀 <b>GA4 SURGE — DATA ACCELERATED</b>\n━━━━━━━━━━━━━━━━━━━━━━\n🔥 <b>Traffic up +{spike_pct:.0f}%</b> vs last month ({prev_s:,} → {month_s:,} sessions)\n\n🔍 <b>What's driving this?</b>\n{reason_text}\n⏰ " + ts)
+
+    # ── YouTube Anomalies ──
+    if yt_stats.get("connected"):
+        days_since = yt_stats.get("days_since_upload", 0)
+        if days_since > 30:
+            alerts.append(f"🔴 <b>YOUTUBE ALERT — DATA HAMPERED</b>\n━━━━━━━━━━━━━━━━━━━━━━\n⚠️ <b>No upload in {days_since} days!</b> Channel inactive.\n\n📊 Impact:\n• YouTube not contributing to sign-up pipeline\n• SEO rankings may decline\n• Subscriber growth stalling\n\n💡 Recommendation: Schedule new content\n⏰ " + ts)
+        if yt_stats.get("dead_video_count", 0) > 10:
+            alerts.append(f"🪦 <b>YOUTUBE — {yt_stats['dead_video_count']} DEAD VIDEOS</b>\n━━━━━━━━━━━━━━━━━━━━━━\n⚠️ <b>{yt_stats['dead_video_count']} videos</b> with &lt;1 view/day.\n\n📊 Channel Health: {escape_html(yt_stats.get('channel_health', '?'))}\n💡 Consider: update titles/thumbnails, create playlists, or unlist\n⏰ " + ts)
+        if yt_stats.get("uploaded_today", 0) > 0:
+            # Cross-platform: does a new video drive sign-ups?
+            reasons = []
+            if s_today > 5:
+                reasons.append(f"• {s_today} sign-ups today — video may be converting!")
+            if ga4_stats.get("today_sessions", 0) > 100:
+                reasons.append(f"• GA4 traffic: {ga4_stats.get('today_sessions', 0):,} sessions — video driving visits")
+            reason_text = "\n".join(reasons) if reasons else "• Tracking impact on sign-ups..."
+            alerts.append(f"🆕 <b>YOUTUBE — NEW VIDEO UPLOADED</b>\n━━━━━━━━━━━━━━━━━━━━━━\n✅ <b>{yt_stats['uploaded_today']} new video(s) today!</b>\n\n🔍 <b>Cross-platform impact:</b>\n{reason_text}\n⏰ " + ts)
+        if yt_stats.get("today_views", 0) > 500:
+            alerts.append(f"🚀 <b>YOUTUBE SPIKE</b>\n━━━━━━━━━━━━━━━━━━━━━━\n🔥 <b>{yt_stats.get('today_views', 0):,} views today!</b>\n\n📊 Sign-ups today: {s_today} | Uploads: {u_today}\n⏰ " + ts)
+
+    # ── LinkedIn Anomalies ──
+    if li_stats.get("connected"):
+        today_delta = li_stats.get("today_followers_delta", 0)
+        month_delta = li_stats.get("month_followers_delta", 0)
+        if today_delta < -5:
+            alerts.append(f"📉 <b>LINKEDIN — DATA HAMPERED</b>\n━━━━━━━━━━━━━━━━━━━━━━\n⚠️ <b>{abs(today_delta)} followers lost today!</b>\n\n🔍 Check:\n• Recent post performance\n• Competitor activity\n• Content relevance\n⏰ " + ts)
+        elif today_delta > 10:
+            reasons = []
+            if s_today > 5:
+                reasons.append(f"• {s_today} sign-ups — LinkedIn driving registrations")
+            if li_stats.get("post_count", 0) > 0:
+                reasons.append(f"• {li_stats.get('post_count', 0)} posts active — content resonating")
+            reason_text = "\n".join(reasons) if reasons else ""
+            alerts.append(f"🚀 <b>LINKEDIN SURGE — DATA ACCELERATED</b>\n━━━━━━━━━━━━━━━━━━━━━━\n🔥 <b>+{today_delta} followers today!</b>\n{reason_text}\n⏰ " + ts)
+        if month_delta < 0:
+            alerts.append(f"📉 <b>LINKEDIN FLATLINE</b>\n━━━━━━━━━━━━━━━━━━━━━━\n⚠️ <b>Net {abs(month_delta)} followers lost this month.</b>\n\n💡 Post more frequently, engage with comments\n⏰ " + ts)
+
+    # ── Cross-Platform Correlation Alerts ──
+    # All platforms up = strong day
+    platforms_up = 0
+    if s_today > 5:
+        platforms_up += 1
+    if ga4_stats.get("today_sessions", 0) > 100:
+        platforms_up += 1
+    if yt_stats.get("today_views", 0) > 100:
+        platforms_up += 1
+    if li_stats.get("today_followers_delta", 0) > 0:
+        platforms_up += 1
+
+    if platforms_up >= 3:
+        alerts.append(f"🌟 <b>ALL SYSTEMS GO — DATA ACCELERATED</b>\n━━━━━━━━━━━━━━━━━━━━━━\n✅ <b>All platforms performing well today!</b>\n\n📊 KPI: {s_today} sign-ups, {u_today} uploads, {p_today} paid\n📊 GA4: {ga4_stats.get('today_sessions', 0):,} sessions\n📺 YouTube: {yt_stats.get('today_views', 0):,} views\n💼 LinkedIn: +{max(0, li_stats.get('today_followers_delta', 0))} followers\n\n💡 Great day — analyze what content drove this and replicate!\n⏰ " + ts)
+
+    # All platforms down = bad day
+    platforms_down = 0
+    if s_today == 0:
+        platforms_down += 1
+    if ga4_stats.get("today_sessions", 0) < 20:
+        platforms_down += 1
+    if yt_stats.get("today_views", 0) == 0:
+        platforms_down += 1
+    if li_stats.get("today_followers_delta", 0) < 0:
+        platforms_down += 1
+
+    if platforms_down >= 3:
+        alerts.append(f"🔴 <b>ALL PLATFORMS SLOW — DATA HAMPERED</b>\n━━━━━━━━━━━━━━━━━━━━━━\n⚠️ <b>All systems showing low activity today!</b>\n\n📊 KPI: {s_today} sign-ups\n📊 GA4: {ga4_stats.get('today_sessions', 0):,} sessions\n📺 YouTube: {yt_stats.get('today_views', 0):,} views\n💼 LinkedIn: {li_stats.get('today_followers_delta', 0)} followers\n\n🔍 This could be:\n• Weekend/holiday effect\n• Tracking outage\n• Content drought\n\n💡 Action: Check website status and tracking\n⏰ " + ts)
+
+    return alerts
+
+
 # ═══════════════════════════════════════════════════════════════
 # INDIVIDUAL SUBSYSTEM TELEGRAM MESSAGES (sent separately for detail)
 # ═══════════════════════════════════════════════════════════════
 
 def send_subsystem_reports():
-    """Send individual detailed reports for each subsystem + performance alerts."""
+    """Send individual detailed reports for each subsystem + smart alerts."""
     bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
     chat_id   = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
     # Fallback to st.secrets
@@ -803,92 +1278,90 @@ def send_subsystem_reports():
     if not bot_token or not chat_id:
         return
 
-    import pandas as pd
-
-    # ── KPI DETAILED (always send) ──
+    # Build all stats once
+    kpi = ga4 = yt = li = stripe = health = None
     try:
         kpi = build_kpi_stats()
-        kpi_msg = build_telegram_kpi_section(kpi)
-        send_telegram(kpi_msg)
     except Exception as e:
-        log(f"KPI report error: {e}")
-
-    # ── GA4 DETAILED (always send, even if not connected) ──
+        log(f"KPI stats error: {e}")
     try:
         ga4 = build_ga4_stats()
-        ga4_msg = build_telegram_ga4_section(ga4)
-        if ga4["connected"]:
-            # Add page-level details
-            try:
-                from ga4_connector import fetch_page_performance
-                end = datetime.now().strftime("%Y-%m-%d")
-                start = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
-                pages = fetch_page_performance(start, end)
-                if not pages.empty and "pagePath" in pages.columns:
-                    top_pages = pages.nlargest(5, "screenPageViews") if "screenPageViews" in pages.columns else pages.head(5)
-                    ga4_msg += "\n📄 *Top Pages:*\n"
-                    for _, r in top_pages.iterrows():
-                        path = str(r.get("pagePath", ""))[:50]
-                        views = si(r.get("screenPageViews", 0))
-                        ga4_msg += f"  • {escape_md(path)}: `{views}` views\n"
-            except Exception:
-                pass
-        send_telegram(ga4_msg)
     except Exception as e:
-        log(f"GA4 report error: {e}")
-
-    # ── YOUTUBE DETAILED (always send) ──
+        log(f"GA4 stats error: {e}")
     try:
         yt = build_youtube_stats()
-        yt_msg = build_telegram_youtube_section(yt)
-        if yt["connected"] and yt["top_videos"]:
-            yt_msg += "\n🎬 *Video Performance:*\n"
-            for i, (title, views, likes) in enumerate(yt["top_videos"], 1):
-                eng = (likes / views * 100) if views > 0 else 0
-                yt_msg += f"  {i}\\. {escape_md(title)}\n"
-                yt_msg += f"     👁 `{views}` 👍 `{likes}` 📊 `{eng:.1f}%`\n"
-        send_telegram(yt_msg)
     except Exception as e:
-        log(f"YouTube report error: {e}")
-
-    # ── LINKEDIN DETAILED (always send) ──
+        log(f"YouTube stats error: {e}")
     try:
         li = build_linkedin_stats()
-        li_msg = build_telegram_linkedin_section(li)
-        # Add daily history summary even if not fully connected
-        if li["connected"]:
-            try:
-                from linkedin_connector import get_manual_history, get_posts
-                hist = get_manual_history()
-                if not hist.empty:
-                    li_msg += f"│ 📅 History: `{len(hist)}` days\n"
-                posts = get_posts()
-                if posts:
-                    total_likes = sum(p.get("likes", 0) for p in posts)
-                    total_comments = sum(p.get("comments", 0) for p in posts)
-                    li_msg += f"│ 📝 Posts: `{len(posts)}` | 👍 `{total_likes}` | 💬 `{total_comments}`\n"
-            except Exception:
-                pass
-        send_telegram(li_msg)
     except Exception as e:
-        log(f"LinkedIn report error: {e}")
-
-    # ── STRIPE DETAILED (always send) ──
+        log(f"LinkedIn stats error: {e}")
     try:
         stripe = build_stripe_stats()
-        stripe_msg = build_telegram_stripe_section(stripe)
-        send_telegram(stripe_msg)
     except Exception as e:
-        log(f"Stripe report error: {e}")
+        log(f"Stripe stats error: {e}")
+    try:
+        health = build_pipeline_health()
+    except Exception as e:
+        log(f"Health stats error: {e}")
+
+    # ── KPI DETAILED (always send) ──
+    if kpi:
+        try:
+            kpi_msg = build_telegram_kpi_section(kpi)
+            send_telegram(kpi_msg)
+        except Exception as e:
+            log(f"KPI report error: {e}")
+
+    # ── GA4 DETAILED (always send) ──
+    if ga4:
+        try:
+            ga4_msg = build_telegram_ga4_section(ga4)
+            send_telegram(ga4_msg)
+        except Exception as e:
+            log(f"GA4 report error: {e}")
+
+    # ── YOUTUBE DETAILED (always send) ──
+    if yt:
+        try:
+            yt_msg = build_telegram_youtube_section(yt)
+            send_telegram(yt_msg)
+        except Exception as e:
+            log(f"YouTube report error: {e}")
+
+    # ── YOUTUBE DEAD VIDEO ALERTS (per-video) ──
+    if yt and yt.get("dead_videos"):
+        try:
+            dead_alerts = build_youtube_dead_video_alerts(yt)
+            for alert in dead_alerts[:5]:  # Max 5 per run
+                send_telegram(alert)
+        except Exception as e:
+            log(f"Dead video alerts error: {e}")
+
+    # ── LINKEDIN DETAILED (always send) ──
+    if li:
+        try:
+            li_msg = build_telegram_linkedin_section(li)
+            send_telegram(li_msg)
+        except Exception as e:
+            log(f"LinkedIn report error: {e}")
+
+    # ── STRIPE DETAILED (always send) ──
+    if stripe:
+        try:
+            stripe_msg = build_telegram_stripe_section(stripe)
+            send_telegram(stripe_msg)
+        except Exception as e:
+            log(f"Stripe report error: {e}")
 
     # ── CROSS-PLATFORM (always send) ──
     try:
         cp = build_cross_platform_stats()
-        cp_msg = "🔗 *CROSS-PLATFORM CORRELATION*\n┌────────────────────────\n"
+        cp_msg = "🔗 <b>CROSS-PLATFORM CORRELATION</b>\n┌────────────────────────\n"
         if cp["available"] and cp["top_correlations"]:
             for metric, strength in cp["top_correlations"][:5]:
-                name = escape_md(metric.replace("_", " ").title())
-                cp_msg += f"│ {name}: `{strength:.2f}`\n"
+                name = escape_html(metric.replace("_", " ").title())
+                cp_msg += f"│ {name}: <code>{strength:.2f}</code>\n"
         else:
             cp_msg += "│ Waiting for multi-platform data\n"
         cp_msg += "└────────────────────────\n"
@@ -904,37 +1377,18 @@ def send_subsystem_reports():
     except Exception as e:
         log(f"Pipeline report error: {e}")
 
-    # ── PERFORMANCE ALERTS (smart anomaly detection) ──
+    # ── SMART ANOMALY ALERTS (spikes, flatlines, anomalies across ALL systems) ──
     try:
-        from pathlib import Path as _P
-        _kpi_path = _P("data_output") / "daily_counts.json"
-        _prev_kpi_path = _P("data_output") / "daily_counts_prev.json"
-        kpi_df = None
-        prev_kpi_df = None
-        if _kpi_path.exists():
+        anomaly_alerts = build_smart_anomaly_alerts(
+            kpi or {}, ga4 or {}, yt or {}, li or {}
+        )
+        for alert in anomaly_alerts:
             try:
-                kpi_df = pd.read_json(_kpi_path.read_text())
+                send_telegram(alert)
             except Exception:
                 pass
-        if _prev_kpi_path.exists():
-            try:
-                prev_kpi_df = pd.read_json(_prev_kpi_path.read_text())
-            except Exception:
-                pass
-
-        if kpi_df is not None and not kpi_df.empty:
-            try:
-                from telegram_alerts import anomaly_alerts
-                alerts = anomaly_alerts(kpi_df, prev_kpi_df)
-                for alert in alerts:
-                    try:
-                        send_telegram(alert["msg"])
-                    except Exception:
-                        pass
-            except Exception as e:
-                log(f"Anomaly alerts error: {e}")
     except Exception as e:
-        log(f"Performance alerts error: {e}")
+        log(f"Smart anomaly alerts error: {e}")
 
     # ── MONTHLY GOALS PROGRESS ──
     try:

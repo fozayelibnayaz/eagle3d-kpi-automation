@@ -1211,11 +1211,10 @@ if page == "📊 Dashboard":
     ps2p = (pp / ps * 100) if ps > 0 else 0
 
     h = '<div class="kpi-grid">'
-    h += kpi_h("Sign-ups", cs, delta_h(cs, ps), "👥")
-    h += kpi_h("First Uploads", cu, delta_h(cu, pu), "📤")
-    h += kpi_h("Paid Customers", cp, delta_h(cp, pp), "💳")
+    h += kpi_h("Sign-ups (Accepted)", cs, delta_h(cs, ps), "👥")
+    h += kpi_h("First Uploads (Accepted)", cu, delta_h(cu, pu), "📤")
+    h += kpi_h("Paid (Accepted)", cp, delta_h(cp, pp), "💳")
     h += kpi_h("S→U Rate", f"{s2u:.1f}%", delta_h(s2u, ps2u), "🔄")
-    h += kpi_h("U→P Rate", f"{u2p:.1f}%", delta_h(u2p, pu2p), "💰")
     h += kpi_h("S→P Rate", f"{s2p:.1f}%", delta_h(s2p, ps2p), "🎯")
     h += "</div>"
     st.markdown(h, unsafe_allow_html=True)
@@ -3801,8 +3800,8 @@ elif page == "💼 LinkedIn":
     with _li_tabs[1]:
         _li_posts = get_posts()
         if not _li_posts:
-            st.info("📝 No post data yet. Run an authenticated scrape or import CSV to see posts.")
-            st.caption("💡 LinkedIn posts are scraped during the daily pipeline when LINKEDIN_COOKIES_JSON is configured.")
+            st.info("📝 LinkedIn post data will appear after the pipeline runs with authenticated cookies.")
+            st.caption("💡 LinkedIn posts and analytics are scraped during the daily pipeline when `LINKEDIN_COOKIES_JSON` is configured. Data refreshes automatically every 12 hours.")
         else:
             # Score all posts
             for p in _li_posts:

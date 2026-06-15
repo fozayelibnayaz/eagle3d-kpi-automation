@@ -1,21 +1,4 @@
 {
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-  "last_run": "2026-06-15T14:34:01.097886",
-  "duration_seconds": 425.9,
-  "stages_passed": 7,
-  "total_stages": 7,
-  "results": {
-    "stage1_kpi": "ok",
-    "stage2_stripe": "ok",
-    "stage3_process": "ok",
-    "stage4_counts": "ok",
-    "stage5_youtube": "ok",
-    "stage6_linkedin": "ok",
-    "stage7_report": "ok"
-=======
-=======
->>>>>>> Stashed changes
   "alerts_sent": {
     "daily_summary_2026-05-14": "2026-05-14T18:26:07.966714",
     "daily_summary_2026-05-15": "2026-05-15T05:55:21.957812",

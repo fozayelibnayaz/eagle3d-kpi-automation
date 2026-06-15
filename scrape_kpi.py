@@ -529,8 +529,51 @@ def extract_app_urls(page) -> dict:
     """Extract App Name -> URL mapping from the current table view.
     The KPI Dashboard has clickable App Name links pointing to
     connector.eagle3dstreaming.com project URLs.
+    Scrolls through all pages to get ALL URLs.
     """
     try:
+        # First, scroll through all grid pages to load all rows
+        page.evaluate("""async () => {
+            const grid = document.querySelector('[role="grid"]') ||
+                         document.querySelector('[class*="MuiDataGrid"]');
+            if (!grid) return;
+            
+            // Try to set page size to maximum (shows all rows)
+            const pageSizeSelectors = [
+                'select[class*="PageSize"]',
+                '[class*="pageSize"]',
+                'input[class*="PageSize"]',
+            ];
+            for (const sel of pageSizeSelectors) {
+                const el = document.querySelector(sel);
+                if (el) {
+                    el.value = '100';
+                    el.dispatchEvent(new Event('change', { bubbles: true }));
+                    break;
+                }
+            }
+            
+            // Wait a moment for grid to update
+            await new Promise(r => setTimeout(r, 500));
+            
+            // Also scroll the grid container to trigger virtualization
+            const gridContainer = grid.querySelector('[class*="virtualScroller"]') ||
+                                  grid.querySelector('[class*="VirtualScroller"]') ||
+                                  grid.querySelector('[role="rowgroup"]') ||
+                                  grid;
+            if (gridContainer) {
+                const maxScroll = gridContainer.scrollHeight || 50000;
+                for (let pos = 0; pos < maxScroll; pos += 500) {
+                    gridContainer.scrollTop = pos;
+                    await new Promise(r => setTimeout(r, 50));
+                }
+                // Scroll back to top
+                gridContainer.scrollTop = 0;
+                await new Promise(r => setTimeout(r, 300));
+            }
+        }""")
+        
+        # Now extract all visible URLs
         urls = page.evaluate("""() => {
             const result = {};
             const grid = document.querySelector('[role="grid"]') ||

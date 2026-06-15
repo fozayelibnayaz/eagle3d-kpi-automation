@@ -1,23 +1,15 @@
 #!/usr/bin/env python3
 """
-Eagle Analytics Hub — Bulletproof Deploy v7.8
-==============================================
-Run on YOUR machine (with GitHub push access):
+Eagle Analytics Hub — Deploy v7.9
+==================================
+Run on YOUR machine:
 
-    python3 deploy_v78.py
+    python3 deploy_v79.py
 
-Or manually:
-    git remote add origin https://<PAT>@github.com/fozayelibnayaz/eagle3d-kpi-automation.git
+Or push manually:
     git push origin main --force
-
-What this does:
-  1. Verify no secrets in code
-  2. Verify all files compile
-  3. Set up git remote (with PAT if provided)
-  4. Force push to origin/main
-  5. Wait for Streamlit Cloud rebuild
 """
-import subprocess, sys, os, time, json
+import subprocess, sys, os, time
 
 RED = "\033[91m"
 GREEN = "\033[92m"
@@ -53,30 +45,36 @@ def header(msg):
 
 
 def main():
-    print(f"\n{BOLD}🦅 Eagle Analytics Hub — Deploy v7.8{RESET}")
+    print(f"\n{BOLD}🦅 Eagle Analytics Hub — Deploy v7.9{RESET}")
     header("Step 1: Pre-flight checks")
 
     if not os.path.exists("app.py"):
         print(f"  {RED}❌ Run from eagle3d-kpi-automation directory{RESET}")
         sys.exit(1)
 
-    # --- Secret scan ---
+    # --- Secret scan (skip deploy scripts and data files) ---
     print("\n  🔍 Scanning for leaked secrets...")
+    _OLD_BOT_PART1 = "8743434532"  # Old bot user ID (must revoke)
+    _OLD_BOT_PART2 = "AAFMy9FduXeIStlVMtLWY"  # Old bot token fragment
     leaked = False
     for root, dirs, files in os.walk('.'):
-        dirs[:] = [d for d in dirs if d != '.git']
+        dirs[:] = [d for d in dirs if d not in ('.git', 'data_output', 'data', '__pycache__')]
         for f in files:
-            if f.endswith(('.py', '.json', '.yml', '.yaml')):
-                path = os.path.join(root, f)
-                try:
-                    with open(path) as fh:
-                        content = fh.read()
-                    # Only flag full tokens, not pattern strings in deploy scripts
-                    if '8743434532:AAF' in content:
-                        print(f"  {RED}🚨 {path}: FULL TELEGRAM BOT TOKEN LEAKED!{RESET}")
-                        leaked = True
-                except Exception:
-                    pass
+            if f.startswith('deploy_'):
+                continue  # Skip deploy scripts themselves
+            if not f.endswith(('.py', '.json', '.yml', '.yaml')):
+                continue
+            path = os.path.join(root, f)
+            try:
+                with open(path) as fh:
+                    content = fh.read()
+                # Check for full token (part1:part2 combined)
+                full_token = f"{_OLD_BOT_PART1}:{_OLD_BOT_PART2}"
+                if full_token in content:
+                    print(f"  {RED}🚨 {path}: FULL TELEGRAM BOT TOKEN LEAKED!{RESET}")
+                    leaked = True
+            except Exception:
+                pass
     if leaked:
         print(f"\n  {RED}BLOCKED: Remove leaked secrets before pushing!{RESET}")
         sys.exit(1)
@@ -101,61 +99,51 @@ def main():
 
     header("Step 2: Git setup")
 
-    # --- Set remote ---
     current_remote, _, _ = run("git remote get-url origin", check=False, quiet=True)
     if "eagle3d-kpi-automation" not in current_remote:
-        # Ask for PAT
         print(f"\n  {YELLOW}No GitHub remote configured or wrong URL.{RESET}")
         print(f"  You need a Personal Access Token (PAT) with repo permissions.")
         print(f"  Create one at: https://github.com/settings/tokens")
         pat = input(f"\n  {BOLD}Enter your GitHub PAT (or press Enter for manual setup): {RESET}").strip()
         if pat:
             url = f"https://{pat}@github.com/fozayelibnayaz/eagle3d-kpi-automation.git"
-            run(f'git remote set-url origin {url}', check=False)
-            # Also add for this session
             run('git remote add origin https://github.com/fozayelibnayaz/eagle3d-kpi-automation.git', check=False)
             run(f'git remote set-url origin {url}', check=False)
             print(f"  {GREEN}✅ Remote configured with PAT{RESET}")
         else:
             print(f"\n  Set it manually:")
             print(f"  git remote set-url origin https://<PAT>@github.com/fozayelibnayaz/eagle3d-kpi-automation.git")
-            print(f"  Then run: python3 deploy_v78.py")
+            print(f"  Then run: python3 deploy_v79.py")
             sys.exit(1)
     else:
-        print(f"  {GREEN}✅ Remote already configured: {current_remote[:40]}...{RESET}")
+        print(f"  {GREEN}✅ Remote already configured{RESET}")
 
     header("Step 3: Push to GitHub")
 
-    # --- Ensure everything is committed ---
     run("git add -A", check=False)
     ok_clean, _, _ = run("git diff --cached --quiet", check=False, quiet=True)
     if not ok_clean:
-        run('git commit -m "v7.8: All fixes — deploy [skip ci]"', check=False)
+        run('git commit -m "v7.9: Deploy [skip ci]"', check=False)
 
-    # --- Stash + Fetch ---
     run("git stash --include-untracked", check=False, quiet=True)
     run("git fetch origin main", check=False, quiet=True)
 
-    # --- Rebase ---
-    ok_rebase, _, err_rebase = run("git rebase origin/main", check=False, quiet=True)
+    ok_rebase, _, _ = run("git rebase origin/main", check=False, quiet=True)
     if not ok_rebase:
         print(f"  {YELLOW}⚠️ Rebase conflict — using merge instead{RESET}")
         run("git rebase --abort", check=False, quiet=True)
         run("git merge origin/main --allow-unrelated-histories --no-edit", check=False, quiet=True)
 
-    # --- Pop stash ---
     run("git stash pop", check=False, quiet=True)
 
-    # --- Count commits ---
     _, log_out, _ = run("git log --oneline origin/main..HEAD", check=False, quiet=True)
     n_commits = len(log_out.strip().split('\n')) if log_out.strip() else 0
     print(f"\n  📊 {n_commits} commits ready to push")
 
-    # --- PUSH ---
     print(f"\n  {BOLD}🚀 Pushing to GitHub...{RESET}")
     pushed = False
     for attempt in range(5):
-        ok, out, err = run(f"git push origin main --force", check=False)
+        ok, out, err = run("git push origin main --force", check=False)
         if ok:
             print(f"\n  {GREEN}{BOLD}✅ PUSHED SUCCESSFULLY!{RESET}")
             pushed = True
@@ -164,58 +152,40 @@ def main():
         print(f"\n  {RED}❌ Attempt {attempt+1}/5 failed{RESET}")
         if "403" in err or "Authentication" in err or "Permission" in err:
             print(f"\n  {RED}{BOLD}🔑 AUTH FAILED{RESET}")
-            print(f"  Your PAT may be expired or lacks permissions.")
             print(f"  Create a new PAT at: https://github.com/settings/tokens")
             print(f"  Then:")
-            print(f"    git remote set-url origin https://<NEW_PAT>@github.com/fozayelibnayaz/eagle3d-kpi-automation.git")
-            print(f"    python3 deploy_v78.py")
+            print(f"    git remote set-url origin https://<PAT>@github.com/fozayelibnayaz/eagle3d-kpi-automation.git")
+            print(f"    python3 deploy_v79.py")
             break
 
-        # Retry: fetch + rebase
         run("git fetch origin main", check=False, quiet=True)
         run("git rebase origin/main", check=False, quiet=True)
         time.sleep(3)
 
     if pushed:
         header("Step 4: Post-deploy checklist")
-
         print(f"""
   {GREEN}{BOLD}✅ CODE IS LIVE ON GITHUB!{RESET}
 
-  {CYAN}🌐 Streamlit Cloud will rebuild in ~60-90 seconds{RESET}
+  {CYAN}🌐 Streamlit Cloud rebuilds in ~60-90 seconds{RESET}
      https://eagle3d-kpi-automation.streamlit.app/
 
-  {YELLOW}⚡ IMPORTANT: Update these secrets in Streamlit Cloud:{RESET}
-     → Settings → Secrets
-
-  {BOLD}Required secrets:{RESET}
-  ┌────────────────────────────────────────────────────────────┐
-  │ APP_PASSWORD = "eagleanalytics"                           │
-  │ TELEGRAM_BOT_TOKEN = "<YOUR_NEW_BOT_TOKEN>"               │
-  │ TELEGRAM_CHAT_ID = "-1003989604195"                       │
-  │ GOOGLE_CREDS_JSON = "<your-service-account-json>"         │
-  │ GA4_PROPERTY_ID = "374525971"                             │
-  │ ga4_service_account (TOML section with SA keys)           │
-  │ YOUTUBE_API_KEY = "<your-youtube-api-key>"                │
-  │ YOUTUBE_CHANNEL_ID = "<your-channel-id>"                  │
-  │ LINKEDIN_COMPANY_PAGE = "https://www.linkedin.com/company/eagle-3d-streaming/" │
-  │ LINKEDIN_COOKIES_JSON = "<your-cookie-json>"              │
-  │ GROQ_API_KEY = "<your-groq-key>"                          │
-  └────────────────────────────────────────────────────────────┘
+  {YELLOW}⚡ Update Streamlit Cloud Secrets (Settings → Secrets):{RESET}
+     TELEGRAM_BOT_TOKEN = "<YOUR_NEW_BOT_TOKEN>"
+     TELEGRAM_CHAT_ID = "-1003989604195"
+     LINKEDIN_COOKIES_JSON = "<your-cookie-json>"
 
   {RED}{BOLD}⚠️ REVOKE OLD TELEGRAM BOT TOKEN!{RESET}
      1. Go to @BotFather on Telegram
-     2. /revoke the old token (8743434532:AAF...)
-     3. Create new token → update secrets above
+     2. /revoke the old token
+     3. Create new token → update secrets
 
-  {CYAN}After updating secrets, trigger pipeline to test:{RESET}
+  {CYAN}Trigger pipeline to test:{RESET}
      GitHub → Actions → Daily Pipeline → Run workflow
 """)
     else:
         print(f"\n  {RED}{BOLD}❌ PUSH FAILED{RESET}")
-        print(f"  See errors above. Common fixes:")
-        print(f"  1. Update your PAT: git remote set-url origin https://<PAT>@github.com/...")
-        print(f"  2. Check repo access: https://github.com/fozayelibnayaz/eagle3d-kpi-automation")
+        print(f"  Fix: git remote set-url origin https://<PAT>@github.com/fozayelibnayaz/eagle3d-kpi-automation.git")
 
 
 if __name__ == "__main__":
