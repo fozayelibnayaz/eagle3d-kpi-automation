@@ -169,41 +169,82 @@ def main():
         # ── FIRST-RUN CHECK: If no historical data, do initial backfill ──
         _li_daily_path = _P("data_output") / "linkedin_daily.json"
         _needs_backfill = False
+        _backfill_days = 0
         if not _li_daily_path.exists():
             _needs_backfill = True
+            _backfill_days = 365
         else:
             try:
                 _ld = _json.loads(_li_daily_path.read_text())
                 _entries = _ld.get("entries", []) if isinstance(_ld, dict) else _ld
-                if len(_entries) < 3:
+                if len(_entries) < 30:
                     _needs_backfill = True
+                    _backfill_days = 365  # Always backfill 365 days on first run
             except Exception:
                 _needs_backfill = True
+                _backfill_days = 365
 
         if _needs_backfill:
-            log("LinkedIn: First-run detected — creating initial historical baseline...")
+            log(f"LinkedIn: First-run detected — backfilling {_backfill_days} days of historical data...")
             try:
-                _baseline = scrape_public_metrics()
+                # Try authenticated scrape first for best baseline
+                _baseline = {}
+                if has_cookies():
+                    try:
+                        log("LinkedIn: Trying authenticated scrape for baseline...")
+                        _baseline = scrape_with_cookies()
+                        if _baseline.get("error") or not _baseline.get("followers"):
+                            log("LinkedIn: Auth baseline failed, trying public...")
+                            _baseline = scrape_public_metrics()
+                        else:
+                            log(f"LinkedIn: Auth baseline OK — {_baseline.get('followers', 0)} followers, {len(_baseline.get('posts', []))} posts")
+                    except Exception as e:
+                        log(f"LinkedIn: Auth baseline error: {e}")
+                        _baseline = scrape_public_metrics()
+                else:
+                    _baseline = scrape_public_metrics()
+
                 if not _baseline.get("error"):
                     _followers = _baseline.get("followers", 0)
                     _company = _baseline.get("company_name", "Eagle 3D Streaming")
                     _industry = _baseline.get("industry", "")
                     _employees = _baseline.get("employees", "")
-                    # Create historical entries for the past 30 days with baseline data
-                    from datetime import timedelta
-                    for _i in range(30, 0, -1):
-                        _d = (datetime.now() - timedelta(days=_i)).strftime("%Y-%m-%d")
+                    # Get analytics data from authenticated scrape
+                    _impression_count = _baseline.get("impressionCount", 0)
+                    _unique_visitors = _baseline.get("uniqueVisitors", 0)
+                    _total_page_views = _baseline.get("totalPageViews", 0)
+                    _like_count = _baseline.get("likeCount", 0)
+                    _comment_count = _baseline.get("commentCount", 0)
+
+                    # Create historical entries for the past 365 days
+                    from datetime import timedelta as _td
+                    # Estimate daily growth rate from current followers
+                    # LinkedIn company pages grow ~1-5 followers/day on average
+                    _daily_growth = max(1, _followers // 1000) if _followers > 0 else 1
+                    for _i in range(_backfill_days, 0, -1):
+                        _d = (datetime.now() - _td(days=_i)).strftime("%Y-%m-%d")
+                        _est_followers = max(0, _followers - (_backfill_days - _i) * _daily_growth)
                         _entry = {
                             "date": _d,
-                            "followers": max(0, _followers - (30 - _i) * 2),  # rough growth curve
+                            "followers": _est_followers,
                             "company_name": _company,
                             "employees": _employees,
                             "industry": _industry,
+                            "impressions": max(0, _impression_count // _backfill_days) if _impression_count else 0,
+                            "unique_visitors": max(0, _unique_visitors // _backfill_days) if _unique_visitors else 0,
                             "scraped_at": f"{_d}T12:00:00",
                             "backfilled": True,
                         }
                         save_manual_entry(_entry)
-                    log(f"LinkedIn: Backfilled 30 days of historical data (baseline: {_followers} followers)")
+                    log(f"LinkedIn: Backfilled {_backfill_days} days (baseline: {_followers} followers)")
+
+                    # Save posts if available from authenticated scrape
+                    _posts = _baseline.get("posts", [])
+                    if _posts:
+                        save_posts(_posts)
+                        log(f"LinkedIn: Saved {len(_posts)} posts from baseline scrape")
+                else:
+                    log(f"LinkedIn: Baseline scrape failed: {_baseline.get('error', 'unknown')}")
             except Exception as e:
                 log(f"LinkedIn: Backfill error: {e}")
 
