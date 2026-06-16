@@ -354,6 +354,59 @@ def main():
                 log(f"LinkedIn: Auto-saved daily entry — followers={_entry.get('followers', 0)}, posts={_entry.get('posts', 0)}")
             except Exception as e:
                 log(f"LinkedIn: Auto-accumulate error: {e}")
+
+            # ── WRITE LINKEDIN DATA TO GOOGLE SHEETS (like KPI/Stripe) ──
+            try:
+                from sheets_writer import write_tab_data
+                _today = datetime.now().strftime("%Y-%m-%d")
+                _li_row = {
+                    "Date": _today,
+                    "Followers": _entry.get("followers", 0),
+                    "Employees": _entry.get("employees", ""),
+                    "Company Name": _entry.get("company_name", ""),
+                    "Industry": _entry.get("industry", ""),
+                    "Impressions": _entry.get("impressions", 0),
+                    "Unique Visitors": _entry.get("unique_visitors", 0),
+                    "Likes": _entry.get("likes", 0),
+                    "Comments": _entry.get("comments", 0),
+                    "Shares": _entry.get("shares", 0),
+                    "Posts": _entry.get("posts", 0),
+                    "Post Likes": _entry.get("post_likes", 0),
+                    "Post Comments": _entry.get("post_comments", 0),
+                    "Engagement Rate": _entry.get("engagement_rate", 0),
+                    "Source": result.get("source", "public" if not has_cookies() else "authenticated"),
+                    "Last Updated": datetime.now().strftime("%Y-%m-%d %H:%M UTC"),
+                }
+                _written = write_tab_data("LinkedIn", [_li_row])
+                if _written:
+                    log("LinkedIn: Data written to Google Sheets ✓")
+                else:
+                    log("LinkedIn: Sheets write skipped (not available)")
+            except Exception as e:
+                log(f"LinkedIn: Sheets write error (non-fatal): {e}")
+
+            # ── WRITE LINKEDIN POSTS TO SHEETS ──
+            if _posts:
+                try:
+                    from sheets_writer import write_tab_data as _wtd
+                    _post_rows = []
+                    for p in _posts[:20]:  # Top 20 posts
+                        _post_rows.append({
+                            "Date": p.get("published_at", "")[:10] if p.get("published_at") else _today,
+                            "Title": (p.get("title", "") or p.get("text", ""))[:100],
+                            "Likes": p.get("likes", 0),
+                            "Comments": p.get("comments", 0),
+                            "Shares": p.get("shares", 0) or p.get("reposts", 0),
+                            "Impressions": p.get("impressions", 0),
+                            "URL": p.get("url", ""),
+                            "Source": p.get("source", "linkedin"),
+                        })
+                    if _post_rows:
+                        _pw = _wtd("LinkedIn_Posts", _post_rows)
+                        if _pw:
+                            log(f"LinkedIn: {len(_post_rows)} posts written to LinkedIn_Posts sheet")
+                except Exception as e:
+                    log(f"LinkedIn: Posts sheet write error (non-fatal): {e}")
     ok6, e6 = run_stage(6, "LinkedIn Scrape + Auto-Accumulate", s6)
     results["stage6_linkedin"] = "ok" if ok6 else f"failed: {e6}"
 

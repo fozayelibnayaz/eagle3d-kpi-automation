@@ -118,7 +118,27 @@ def main():
     else:
         print(f"  {GREEN}✅ Remote already configured{RESET}")
 
-    header("Step 3: Push to GitHub")
+    header("Step 3: Delete daily.yml from GitHub")
+
+    # Delete the old daily.yml workflow file if it exists on remote
+    _, files_out, _ = run("git ls-tree -r origin/main --name-only .github/workflows/", check=False, quiet=True)
+    if "daily.yml" in files_out:
+        print(f"  {YELLOW}⚠️ daily.yml found on remote — will delete it{RESET}")
+        # Fetch the remote version first
+        run("git fetch origin main", check=False, quiet=True)
+        # Check if daily.yml exists locally
+        if os.path.exists(".github/workflows/daily.yml"):
+            run("git rm .github/workflows/daily.yml", check=False)
+        else:
+            # File exists on remote but not locally — need to fetch and remove
+            run("git checkout origin/main -- .github/workflows/daily.yml", check=False, quiet=True)
+            run("git rm .github/workflows/daily.yml", check=False)
+        run('git commit -m "Remove old daily.yml workflow [skip ci]"', check=False)
+        print(f"  {GREEN}✅ daily.yml staged for deletion{RESET}")
+    else:
+        print(f"  {GREEN}✅ daily.yml not on remote (already clean){RESET}")
+
+    header("Step 4: Push to GitHub")
 
     run("git add -A", check=False)
     ok_clean, _, _ = run("git diff --cached --quiet", check=False, quiet=True)
@@ -182,6 +202,8 @@ def main():
      GOOGLE_CREDS_JSON, MASTER_SHEET_URL
      TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
      GITHUB_TOKEN (for pipeline trigger button)
+     GA4_PROPERTY_ID = 374525971
+     [ga4_service_account] (for GA4 analytics)
 
   {CYAN}Trigger pipeline to test:{RESET}
      GitHub → Actions → Daily Pipeline → Run workflow

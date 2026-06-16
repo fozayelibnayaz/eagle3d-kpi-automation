@@ -18,7 +18,7 @@ from google.analytics.data_v1beta.types import (
 )
 from google.oauth2 import service_account
 
-GA4_PROPERTY_ID = "374525971"
+GA4_PROPERTY_ID = os.environ.get("GA4_PROPERTY_ID", "374525971")
 SCOPES = ["https://www.googleapis.com/auth/analytics.readonly"]
 
 

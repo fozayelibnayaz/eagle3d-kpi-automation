@@ -86,7 +86,9 @@ def _get_company_page() -> str:
 # ═══════════════════════════════════════════════════════════════
 
 def scrape_public_metrics() -> Dict[str, Any]:
-    """Scrape public metrics from LinkedIn company page using urllib."""
+    """Scrape public metrics from LinkedIn company page using urllib.
+    BULLETPROOF: Extracts data from JSON-LD structured data + HTML patterns.
+    No cookies or authentication required."""
     import urllib.request
     import urllib.error
 
@@ -101,15 +103,26 @@ def scrape_public_metrics() -> Dict[str, Any]:
         req = urllib.request.Request(
             company_page,
             headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                 "Accept-Language": "en-US,en;q=0.9",
+                "Accept-Encoding": "identity",
+                "Cache-Control": "no-cache",
             },
         )
         with urllib.request.urlopen(req, timeout=30) as resp:
             html = resp.read().decode("utf-8", errors="replace")
 
         result = _extract_public_data(html, company_page)
+        
+        # Also extract posts from JSON-LD
+        posts = _extract_posts_from_jsonld(html)
+        if posts:
+            result["posts"] = posts
+            result["post_count"] = len(posts)
+            result["total_post_likes"] = sum(p.get("likes", 0) for p in posts)
+            result["total_post_comments"] = sum(p.get("comments", 0) for p in posts)
+        
         _save_json(LI_METRICS_CACHE, result)
         return result
 
@@ -118,47 +131,199 @@ def scrape_public_metrics() -> Dict[str, Any]:
         return {"error": str(e), "demo": True}
 
 
+def _extract_posts_from_jsonld(html: str) -> List[Dict]:
+    """Extract recent posts from LinkedIn's JSON-LD structured data.
+    LinkedIn public pages include DiscussionForumPosting entries for recent posts.
+    This is 100% free and requires no authentication."""
+    posts = []
+    
+    # Method 1: Parse the full JSON-LD @graph array
+    try:
+        m = re.search(r'<script type="application/ld\+json"[^>]*>(.*?)</script>', html, re.DOTALL)
+        if m:
+            ld_data = json.loads(m.group(1))
+            graph = ld_data.get("@graph", [])
+            if not graph and isinstance(ld_data, list):
+                graph = ld_data
+            if not graph and ld_data.get("@type") == "DiscussionForumPosting":
+                graph = [ld_data]
+            
+            for item in graph:
+                if not isinstance(item, dict):
+                    continue
+                if item.get("@type") != "DiscussionForumPosting":
+                    continue
+                
+                post = {
+                    "title": item.get("name", ""),
+                    "text": item.get("text", "")[:500],
+                    "url": item.get("mainEntityOfPage", item.get("url", "")),
+                    "published_at": item.get("datePublished", ""),
+                    "author": item.get("author", {}).get("name", ""),
+                    "likes": 0,
+                    "comments": 0,
+                    "shares": 0,
+                    "source": "linkedin_jsonld",
+                }
+                
+                # Extract engagement from interactionStatistic
+                stats = item.get("interactionStatistic", [])
+                if isinstance(stats, dict):
+                    stats = [stats]
+                for stat in stats:
+                    if not isinstance(stat, dict):
+                        continue
+                    stat_type = stat.get("interactionType", "")
+                    count = 0
+                    try:
+                        count = int(stat.get("userInteractionCount", 0))
+                    except (ValueError, TypeError):
+                        pass
+                    if "Like" in str(stat_type) or "like" in str(stat_type).lower():
+                        post["likes"] = count
+                    elif "Comment" in str(stat_type) or "comment" in str(stat_type).lower():
+                        post["comments"] = count
+                    elif "Share" in str(stat_type) or "share" in str(stat_type).lower():
+                        post["shares"] = count
+                
+                posts.append(post)
+    except Exception as e:
+        print(f"[LinkedIn] JSON-LD extraction error: {e}")
+    
+    # Method 2: Regex fallback for posts if JSON-LD didn't work
+    if not posts:
+        try:
+            # Look for activity URLs in the page
+            activity_urls = re.findall(
+                r'https://www\.linkedin\.com/posts/eagle-3d-streaming_[\w-]+-activity-(\d+)-[\w]+',
+                html
+            )
+            if activity_urls:
+                seen = set()
+                for act_id in activity_urls[:10]:
+                    if act_id not in seen:
+                        seen.add(act_id)
+                        posts.append({
+                            "title": "",
+                            "text": "",
+                            "url": f"https://www.linkedin.com/posts/eagle-3d-streaming_activity-{act_id}",
+                            "published_at": "",
+                            "likes": 0,
+                            "comments": 0,
+                            "shares": 0,
+                            "source": "linkedin_regex",
+                        })
+        except Exception:
+            pass
+    
+    return posts
+
+
 def _extract_public_data(html: str, url: str) -> Dict[str, Any]:
-    """Extract metrics from LinkedIn public page HTML."""
+    """Extract metrics from LinkedIn public page HTML.
+    BULLETPROOF: Uses multiple extraction methods — JSON-LD, meta tags, regex patterns."""
     result = {"company_page": url, "scraped_at": datetime.now().isoformat(), "demo": False}
 
-    # Extract follower count
-    for pattern in [
-        r'"followers":(\d+)', r'(\d[\d,]+)\s*followers',
-        r'followerCount["\s:]+(\d+)', r'"totalFollowers":(\d+)',
-        r'"standardizedFollowerCount":(\d+)',
-    ]:
-        m = re.search(pattern, html, re.IGNORECASE)
+    # ── Method 1: Extract from JSON-LD @graph (most reliable) ──
+    try:
+        m = re.search(r'<script type="application/ld\+json"[^>]*>(.*?)</script>', html, re.DOTALL)
         if m:
-            result["followers"] = int(m.group(1).replace(",", ""))
-            break
+            ld_data = json.loads(m.group(1))
+            graph = ld_data.get("@graph", [])
+            if isinstance(ld_data, list):
+                graph = ld_data
+            for item in graph:
+                if not isinstance(item, dict):
+                    continue
+                author = item.get("author", {})
+                if isinstance(author, dict) and author.get("name"):
+                    if not result.get("company_name"):
+                        result["company_name"] = author["name"]
+                    if not result.get("company_url"):
+                        result["company_url"] = author.get("url", "")
+                # Extract follower count from interactionStatistic
+                for stat in item.get("interactionStatistic", []):
+                    if not isinstance(stat, dict):
+                        continue
+                    if "Follow" in str(stat.get("interactionType", "")):
+                        try:
+                            result["followers"] = int(stat.get("userInteractionCount", 0))
+                        except (ValueError, TypeError):
+                            pass
+    except Exception:
+        pass
+
+    # ── Method 2: Regex patterns (fallback) ──
+    # Follower count
+    if not result.get("followers"):
+        for pattern in [
+            r'"followers":(\d+)', r'(\d[\d,]+)\s*followers',
+            r'followerCount["\s:]+(\d+)', r'"totalFollowers":(\d+)',
+            r'"standardizedFollowerCount":(\d+)',
+        ]:
+            m = re.search(pattern, html, re.IGNORECASE)
+            if m:
+                result["followers"] = int(m.group(1).replace(",", ""))
+                break
 
     # Company name
-    for pattern in [
-        r'<title>([^<]+?)(?:\s*\|\s*LinkedIn|\s*-\s*LinkedIn)',
-        r'"name"\s*:\s*"([^"]+)"', r'"companyName"\s*:\s*"([^"]+)"',
-    ]:
-        m = re.search(pattern, html)
-        if m:
-            result["company_name"] = m.group(1).strip()
-            break
+    if not result.get("company_name"):
+        for pattern in [
+            r'<title>([^<]+?)(?:\s*\|\s*LinkedIn|\s*-\s*LinkedIn)',
+            r'"name"\s*:\s*"([^"]+)"', r'"companyName"\s*:\s*"([^"]+)"',
+        ]:
+            m = re.search(pattern, html)
+            if m:
+                result["company_name"] = m.group(1).strip()
+                break
 
     # Employee count
-    for pattern in [r'(\d[\d,+]*)\s*(?:employees|associates)', r'"employeeCountRange"[^}]*?"end"\s*:\s*(\d+)']:
-        m = re.search(pattern, html, re.IGNORECASE)
-        if m:
-            result["employees"] = m.group(1).replace(",", "").replace("+", "")
-            break
+    if not result.get("employees"):
+        for pattern in [
+            r'(\d[\d,+]+)\s*(?:employees|associates|members)',
+            r'"employeeCountRange"[^}]*?"end"\s*:\s*(\d+)',
+            r'"staffCount"\s*:\s*(\d+)',
+        ]:
+            m = re.search(pattern, html, re.IGNORECASE)
+            if m:
+                result["employees"] = m.group(1).replace(",", "").replace("+", "")
+                break
 
     # Industry
-    ind_match = re.search(r'"industry"\s*:\s*"([^"]+)"', html)
-    if ind_match:
-        result["industry"] = ind_match.group(1)
+    if not result.get("industry"):
+        for pattern in [r'"industry"\s*:\s*"([^"]+)"', r'"industryName"\s*:\s*"([^"]+)"']:
+            m = re.search(pattern, html)
+            if m:
+                result["industry"] = m.group(1)
+                break
 
     # Description
-    desc_match = re.search(r'"description"\s*:\s*"([^"]{10,500})"', html)
-    if desc_match:
-        result["description"] = desc_match.group(1)
+    if not result.get("description"):
+        for pattern in [r'"description"\s*:\s*"([^"]{10,500})"', r'"tagline"\s*:\s*"([^"]{10,500})"']:
+            m = re.search(pattern, html)
+            if m:
+                result["description"] = m.group(1)
+                break
+
+    # Website URL
+    if not result.get("website"):
+        for pattern in [r'"website"\s*:\s*"([^"]+)"', r'"companyPageUrl"\s*:\s*"([^"]+)"']:
+            m = re.search(pattern, html)
+            if m:
+                result["website"] = m.group(1)
+                break
+
+    # Company type / size
+    if not result.get("company_size"):
+        m = re.search(r'"companySize"\s*:\s*"([^"]+)"', html)
+        if m:
+            result["company_size"] = m.group(1)
+
+    # Headquarters
+    if not result.get("headquarters"):
+        m = re.search(r'"headquarters"[^}]*?"city"\s*:\s*"([^"]*)"[^}]*?"country"\s*:\s*"([^"]*)"', html)
+        if m:
+            result["headquarters"] = f"{m.group(1)}, {m.group(2)}"
 
     return result
 
@@ -524,16 +689,32 @@ def _extract_posts_from_html(html: str) -> List[Dict[str, Any]]:
 # ═══════════════════════════════════════════════════════════════
 
 def get_posts() -> List[Dict[str, Any]]:
-    """Get cached post data. Returns list of posts with metrics."""
-    if not LI_POSTS_CACHE.exists():
-        return []
+    """Get cached post data. Returns list of posts with metrics.
+    Tries linkedin_posts.json first, then falls back to posts embedded in linkedin_metrics.json.
+    """
+    # Try dedicated posts cache first
+    if LI_POSTS_CACHE.exists():
+        try:
+            data = json.loads(LI_POSTS_CACHE.read_text())
+            if isinstance(data, list):
+                return data
+            posts = data.get("posts", [])
+            if posts:
+                return posts
+        except Exception:
+            pass
+
+    # Fallback: read posts from linkedin_metrics.json (which contains posts from public scrape)
     try:
-        data = json.loads(LI_POSTS_CACHE.read_text())
-        if isinstance(data, list):
-            return data
-        return data.get("posts", [])
+        if LI_METRICS_CACHE.exists():
+            metrics = json.loads(LI_METRICS_CACHE.read_text())
+            posts = metrics.get("posts", [])
+            if posts:
+                return posts
     except Exception:
-        return []
+        pass
+
+    return []
 
 
 def save_posts(posts: List[Dict[str, Any]]) -> bool:
@@ -702,6 +883,15 @@ def has_cookies() -> bool:
 
 
 def get_status() -> Dict[str, Any]:
+    _has_posts = LI_POSTS_CACHE.exists()
+    # Also check linkedin_metrics.json for embedded posts
+    if not _has_posts and LI_METRICS_CACHE.exists():
+        try:
+            _m = json.loads(LI_METRICS_CACHE.read_text())
+            if _m.get("posts"):
+                _has_posts = True
+        except Exception:
+            pass
     return {
         "company_page": bool(_get_company_page()),
         "cookies": bool(_get_cookies()),
@@ -709,7 +899,7 @@ def get_status() -> Dict[str, Any]:
         "authenticated_scrape": bool(_get_cookies() and _get_company_page()),
         "configured": bool(_get_company_page()),
         "cached_data": LI_METRICS_CACHE.exists(),
-        "has_posts": LI_POSTS_CACHE.exists(),
+        "has_posts": _has_posts,
         "has_daily": LI_DAILY_CACHE.exists(),
     }
 
