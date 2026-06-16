@@ -824,8 +824,39 @@ if not st.session_state.get(_auto_trigger_key):
 
 kpi_all = pd.DataFrame()
 
-# ── METHOD 1: Read pre-aggregated Daily_Counts ──
-if not counts_raw.empty:
+# ── METHOD 1: Compute directly from Verified tabs (MOST RELIABLE — always correct) ──
+if not free_raw.empty:
+    from collections import defaultdict as _dd
+    _daily = _dd(lambda: {"signups": 0, "first_uploads": 0, "paid_customers": 0})
+    # Count ACCEPTED signups by date
+    for _, _row in free_raw.iterrows():
+        _st = str(_row.get("final_status", "")).upper()
+        if _st == "ACCEPTED":
+            _d = parse_to_date(_row.get("Account Created On", ""))
+            if _d:
+                _daily[_d.strftime("%Y-%m-%d")]["signups"] += 1
+    # Count ACCEPTED uploads by date
+    if not upload_raw.empty:
+        for _, _row in upload_raw.iterrows():
+            _st = str(_row.get("final_status", "")).upper()
+            if _st == "ACCEPTED":
+                _d = parse_to_date(_row.get("Upload Date", ""))
+                if _d:
+                    _daily[_d.strftime("%Y-%m-%d")]["first_uploads"] += 1
+    # Count ACCEPTED paid by date
+    if not stripe_raw.empty:
+        for _, _row in stripe_raw.iterrows():
+            _st = str(_row.get("final_status", "")).upper()
+            if _st == "ACCEPTED":
+                _d = parse_to_date(_row.get("First payment", "") or _row.get("row_date_used", "") or _row.get("Created", ""))
+                if _d:
+                    _daily[_d.strftime("%Y-%m-%d")]["paid_customers"] += 1
+    _rows = [{"date": _d, **_daily[_d]} for _d in sorted(_daily.keys())]
+    if _rows:
+        kpi_all = pd.DataFrame(_rows)
+
+# ── METHOD 2: Read pre-aggregated Daily_Counts (supplement only — if Method 1 had no data) ──
+if kpi_all.empty and not counts_raw.empty:
     df = counts_raw.copy()
     # Find date column
     dc = next((c for c in df.columns if "date" in c.lower()), None)
@@ -864,38 +895,6 @@ if not counts_raw.empty:
             df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0).astype(int)
         if all(c in df.columns for c in ["date", "signups"]):
             kpi_all = df[["date"] + nc].copy()
-
-# ── METHOD 2: Compute directly from Verified tabs (most reliable) ──
-if kpi_all.empty and not free_raw.empty:
-    from collections import defaultdict as _dd
-    _daily = _dd(lambda: {"signups": 0, "first_uploads": 0, "paid_customers": 0})
-    # Count ACCEPTED signups by date
-    for _, _row in free_raw.iterrows():
-        _st = str(_row.get("final_status", "")).upper()
-        if _st == "ACCEPTED":
-            _d = parse_to_date(_row.get("Account Created On", ""))
-            if _d:
-                _daily[_d.strftime("%Y-%m-%d")]["signups"] += 1
-    # Count ACCEPTED uploads by date
-    if not upload_raw.empty:
-        for _, _row in upload_raw.iterrows():
-            _st = str(_row.get("final_status", "")).upper()
-            if _st == "ACCEPTED":
-                _d = parse_to_date(_row.get("Upload Date", ""))
-                if _d:
-                    _daily[_d.strftime("%Y-%m-%d")]["first_uploads"] += 1
-    # Count ACCEPTED paid by date
-    if not stripe_raw.empty:
-        for _, _row in stripe_raw.iterrows():
-            _st = str(_row.get("final_status", "")).upper()
-            if _st == "ACCEPTED":
-                # Prefer First payment date (most reliable for paid customers), then row_date_used, then Created
-                _d = parse_to_date(_row.get("First payment", "") or _row.get("row_date_used", "") or _row.get("Created", ""))
-                if _d:
-                    _daily[_d.strftime("%Y-%m-%d")]["paid_customers"] += 1
-    _rows = [{"date": _d, **_daily[_d]} for _d in sorted(_daily.keys())]
-    if _rows:
-        kpi_all = pd.DataFrame(_rows)
 
 # ── METHOD 3: Historical JSON fallback ──
 if kpi_all.empty:
@@ -1215,6 +1214,7 @@ if page == "📊 Dashboard":
     h += kpi_h("First Uploads (Accepted)", cu, delta_h(cu, pu), "📤")
     h += kpi_h("Paid (Accepted)", cp, delta_h(cp, pp), "💳")
     h += kpi_h("S→U Rate", f"{s2u:.1f}%", delta_h(s2u, ps2u), "🔄")
+    h += kpi_h("U→P Rate", f"{u2p:.1f}%", delta_h(u2p, pu2p), "💰")
     h += kpi_h("S→P Rate", f"{s2p:.1f}%", delta_h(s2p, ps2p), "🎯")
     h += "</div>"
     st.markdown(h, unsafe_allow_html=True)
@@ -3787,8 +3787,8 @@ elif page == "💼 LinkedIn":
         else:
             st.info("📊 No historical data yet. Data will auto-accumulate when the pipeline runs daily, or add data via Manual Entry.")
 
-        # LinkedIn data is fetched by the daily pipeline (like KPI & Stripe)
-        st.info("🔄 LinkedIn data is automatically scraped by the daily pipeline. Data refreshes every 12 hours (00:00 & 12:00 UTC).")
+        # LinkedIn data source indicator (like KPI & Stripe)
+        st.caption(f"📡 Source: Pipeline auto-scrape | History: {len(_li_hist) if not _li_hist.empty else 0} days | Next refresh: 00:00 or 12:00 UTC")
         if _li_status["cookies"]:
             st.success("✅ Authenticated — full analytics + posts available")
         else:
