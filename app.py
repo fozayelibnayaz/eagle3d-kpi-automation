@@ -2902,16 +2902,16 @@ elif page == "📺 YouTube":
     _ch_info = get_channel_info()
     _has_oauth = has_analytics_access()
 
-    # ── Status bar ──
-    _s1, _s2, _s3, _s4 = st.columns(4)
+    # ── Status bar with channel info ──
+    _s1, _s2, _s3, _s4, _s5 = st.columns(5)
     with _s1:
         st.metric("Subscribers", f"{_ch_info.get('subscribers', 0):,}")
     with _s2:
-        st.metric("Total Views", f"{_ch_info.get('total_views', 0):,}")
+        st.metric("Total Views", format_number(_ch_info.get('total_views', 0)))
     with _s3:
         st.metric("Videos", _ch_info.get('video_count', 0))
     with _s4:
-        # Verify OAuth actually works by checking if we can get analytics
+        # Verify OAuth actually works
         _oauth_works = False
         if _has_oauth:
             try:
@@ -2924,6 +2924,25 @@ elif page == "📺 YouTube":
                 _oauth_works = False
         _data_src = "✅ OAuth" if _oauth_works else "📋 Public API"
         st.metric("Data", _data_src)
+    with _s5:
+        # Channel health score (0-100 based on avg engagement + growth)
+        _health_score = 0
+        if "yt_videos" not in st.session_state:
+            with st.spinner("Loading video library..."):
+                st.session_state["yt_videos"] = get_channel_videos(max_videos=300)
+        _vids = st.session_state.get("yt_videos", [])
+        _subs = _ch_info.get('subscribers', 1000)
+        if _vids:
+            _scores = [calculate_performance_score(
+                views=v["views"], likes=v["likes"], comments=v["comments"],
+                published_at=v.get("published_at", ""), subscribers=_subs,
+            ) for v in _vids]
+            _avg_score = np.mean(_scores)
+            _videos_with_views = [v for v in _vids if v["views"] > 0]
+            _avg_eng = np.mean([v["engagement_rate"] for v in _videos_with_views]) if _videos_with_views else 0
+            _health_score = min(100, round(_avg_score * 0.6 + min(_avg_eng * 10, 40)))
+        _health_color = T["green"] if _health_score >= 60 else T["yellow"] if _health_score >= 35 else T["red"]
+        st.metric("Health", f"{_health_score}/100")
 
     if not _yt_status["configured"]:
         st.warning("⚠️ YouTube not configured. Add `YOUTUBE_API_KEY` and `YOUTUBE_CHANNEL_ID` to secrets.")
@@ -2942,9 +2961,10 @@ elif page == "📺 YouTube":
 
             **For full Analytics (CTR, retention, watch time, revenue):**
             6. Enable **YouTube Analytics API** in Google Cloud Console
-            7. Create **OAuth 2.0 Client ID** credentials (Desktop app)
-            8. Run the OAuth helper script (see YouTube tab in Settings)
-            9. Add `YOUTUBE_OAUTH_TOKEN` and optionally `YOUTUBE_REFRESH_TOKEN`, `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET` to secrets
+            7. Create **OAuth 2.0 Client ID** credentials (Web application)
+            8. Add redirect URI: `http://localhost:8089`
+            9. Run `python3 youtube_oauth_helper.py` to get tokens
+            10. Add `YOUTUBE_OAUTH_TOKEN`, `YOUTUBE_REFRESH_TOKEN`, `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET` to secrets
             """)
         st.stop()
 
@@ -2957,25 +2977,17 @@ elif page == "📺 YouTube":
     _yt_start = (datetime.now() - timedelta(days=_yt_days)).strftime("%Y-%m-%d")
     _yt_end = datetime.now().strftime("%Y-%m-%d")
 
-    # ── Tabs matching Command Center ──
+    # ── Tabs matching Vercel Command Center ──
     _yt_tabs = st.tabs([
         "📊 Dashboard", "🎬 All Videos", "📈 Analytics", "👥 Audience",
         "💰 Revenue", "🔍 Traffic", "🎵 Playlists", "💡 Ask AI",
     ])
 
     # ════════════════════════════════════════════════════════════
-    # TAB 0: DASHBOARD (Overview + Best/Worst + Scored Videos)
+    # TAB 0: DASHBOARD (Overview + Best/Worst + Channel Health + Fastest Growing)
     # ════════════════════════════════════════════════════════════
     with _yt_tabs[0]:
         st.markdown("#### 📊 Channel Dashboard")
-
-        # Load videos
-        if "yt_videos" not in st.session_state:
-            with st.spinner("Loading video library..."):
-                st.session_state["yt_videos"] = get_channel_videos(max_videos=300)
-
-        _vids = st.session_state.get("yt_videos", [])
-        _subs = _ch_info.get("subscribers", 1000)
 
         # Aggregate stats
         _total_views = sum(v["views"] for v in _vids)
@@ -3003,7 +3015,7 @@ elif page == "📺 YouTube":
                 _period_subs_gained = int(_daily_data.get("subscribersGained", pd.Series([0])).sum())
                 _period_subs_lost = int(_daily_data.get("subscribersLost", pd.Series([0])).sum())
 
-        # KPI row
+        # KPI row (matching Vercel: Total Views, Subscribers, Total Likes, Comments, Engagement, Shares)
         _k1, _k2, _k3, _k4, _k5, _k6 = st.columns(6)
         with _k1:
             _views_display = _period_views if _has_oauth and _period_views > 0 else _total_views
@@ -3015,12 +3027,13 @@ elif page == "📺 YouTube":
         with _k4:
             st.metric("Comments", format_number(_total_comments))
         with _k5:
-            st.metric("Avg Engagement", f"{_avg_eng:.1f}%")
+            st.metric("Engagement", f"{_avg_eng:.2f}%")
+            st.caption("real calc", help="Engagement = (likes + comments) / views")
         with _k6:
             if _has_oauth and _period_watch_min > 0:
                 st.metric("Watch Hours", f"{_period_watch_min/60:.0f}")
             else:
-                st.metric("Videos", f"{len(_vids)}")
+                st.metric("Shares", "—")
 
         # Daily views chart
         if _has_oauth and not _daily_data.empty:
@@ -3050,7 +3063,7 @@ elif page == "📺 YouTube":
 
             _scored.sort(key=lambda x: x["score"], reverse=True)
 
-            # Best performing
+            # Best performing with thumbnail
             if _scored:
                 _best = _scored[0]
                 _worst = _scored[-1]
@@ -3059,31 +3072,149 @@ elif page == "📺 YouTube":
                 with _bc:
                     st.markdown("##### 🏆 Best Performing")
                     _b_eng = get_engagement_rating(_best["engagement_rate"])
-                    st.markdown(f"**{_best['title'][:80]}**")
-                    st.caption(f"Views: {format_number(_best['views'])} | Eng: {_best['engagement_rate']:.1f}% | Likes: {_best['likes']} | Score: {_best['score']}/100 {_b_eng['color']}")
-                    if st.button("🔍 Analyze Best", key="analyze_best"):
-                        st.session_state["yt_analyze_vid"] = _best["video_id"]
+                    _b_thumb = f"https://i.ytimg.com/vi/{_best['video_id']}/hqdefault.jpg"
+                    st.markdown(f"""
+                    <div style="display:flex;gap:12px;align-items:flex-start;padding:12px;background:{T['card']};border-radius:12px;border-left:4px solid {T['green']};">
+                        <img src="{_b_thumb}" style="width:120px;border-radius:8px;" onerror="this.style.display='none'">
+                        <div style="flex:1;">
+                            <div style="font-weight:600;color:{T['text']};font-size:14px;">{_best['title'][:80]}</div>
+                            <div style="color:{T['text_sec']};font-size:12px;margin-top:4px;">
+                                Views: {format_number(_best['views'])} · Eng: {_best['engagement_rate']:.1f}% · Likes: {_best['likes']} · Score: {_best['score']}/100 {_b_eng['color']}
+                            </div>
+                            <div style="color:{T['accent']};font-size:11px;margin-top:2px;">{_b_eng['color']} {_b_eng['label']} — {_b_eng['desc']}</div>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    _b_col1, _b_col2 = st.columns(2)
+                    with _b_col1:
+                        if st.button("🔍 Why did this work?", key="analyze_best"):
+                            st.session_state["yt_analyze_vid"] = _best["video_id"]
+                            st.session_state["yt_analyze_type"] = "why_work"
+                    with _b_col2:
+                        st.markdown(f"[▶️ Watch](https://youtube.com/watch?v={_best['video_id']})")
 
                 with _wc:
                     st.markdown("##### 💀 Worst Performing")
                     _w_eng = get_engagement_rating(_worst["engagement_rate"])
-                    st.markdown(f"**{_worst['title'][:80]}**")
-                    st.caption(f"Views: {format_number(_worst['views'])} | Eng: {_worst['engagement_rate']:.1f}% | Likes: {_worst['likes']} | Score: {_worst['score']}/100 {_w_eng['color']}")
-                    if st.button("🔍 Analyze Worst", key="analyze_worst"):
-                        st.session_state["yt_analyze_vid"] = _worst["video_id"]
+                    _w_thumb = f"https://i.ytimg.com/vi/{_worst['video_id']}/hqdefault.jpg"
+                    st.markdown(f"""
+                    <div style="display:flex;gap:12px;align-items:flex-start;padding:12px;background:{T['card']};border-radius:12px;border-left:4px solid {T['red']};">
+                        <img src="{_w_thumb}" style="width:120px;border-radius:8px;" onerror="this.style.display='none'">
+                        <div style="flex:1;">
+                            <div style="font-weight:600;color:{T['text']};font-size:14px;">{_worst['title'][:80]}</div>
+                            <div style="color:{T['text_sec']};font-size:12px;margin-top:4px;">
+                                Views: {format_number(_worst['views'])} · Eng: {_worst['engagement_rate']:.1f}% · Likes: {_worst['likes']} · Score: {_worst['score']}/100 {_w_eng['color']}
+                            </div>
+                            <div style="color:{T['red']};font-size:11px;margin-top:2px;">{_w_eng['color']} {_w_eng['label']} — {_w_eng['desc']}</div>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    _w_col1, _w_col2 = st.columns(2)
+                    with _w_col1:
+                        if st.button("🔍 Why did this fail?", key="analyze_worst"):
+                            st.session_state["yt_analyze_vid"] = _worst["video_id"]
+                            st.session_state["yt_analyze_type"] = "why_fail"
+                    with _w_col2:
+                        st.markdown(f"[▶️ Watch](https://youtube.com/watch?v={_worst['video_id']})")
+
+                # ── Fastest Growing Video ──
+                st.markdown("---")
+                _fastest = None
+                _max_vpd = 0
+                for v in _vids:
+                    if v.get("published_at") and v["views"] > 0:
+                        try:
+                            pub = datetime.fromisoformat(v["published_at"].replace("Z", "+00:00"))
+                            days = max(1, (datetime.now(pub.tzinfo) - pub).total_seconds() / 86400)
+                            if days <= _yt_days:
+                                vpd = v["views"] / days
+                                if vpd > _max_vpd:
+                                    _max_vpd = vpd
+                                    _fastest = v
+                        except Exception:
+                            pass
+                if _fastest:
+                    st.markdown("##### 🚀 Fastest Growing Video")
+                    _fg_thumb = f"https://i.ytimg.com/vi/{_fastest['video_id']}/hqdefault.jpg"
+                    _fg_eng = get_engagement_rating(_fastest["engagement_rate"])
+                    st.markdown(f"""
+                    <div style="display:flex;gap:12px;align-items:flex-start;padding:12px;background:{T['card']};border-radius:12px;border-left:4px solid {T['accent']};">
+                        <img src="{_fg_thumb}" style="width:120px;border-radius:8px;" onerror="this.style.display='none'">
+                        <div style="flex:1;">
+                            <div style="font-weight:600;color:{T['text']};font-size:14px;">{_fastest['title'][:80]}</div>
+                            <div style="color:{T['accent']};font-size:13px;margin-top:4px;">⚡ {format_number(round(_max_vpd))} views/day</div>
+                            <div style="color:{T['text_sec']};font-size:12px;margin-top:2px;">
+                                Total: {format_number(_fastest['views'])} views · Eng: {_fastest['engagement_rate']:.1f}% · Duration: {_fastest['duration_label']}
+                            </div>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+            # ── Handle "Why did this work/fail?" analysis ──
+            _analyze_vid = st.session_state.get("yt_analyze_vid")
+            if _analyze_vid:
+                _vid_to_analyze = None
+                for v in _vids:
+                    if v["video_id"] == _analyze_vid:
+                        _vid_to_analyze = v
+                        break
+                if _vid_to_analyze:
+                    _analyze_type = st.session_state.get("yt_analyze_type", "why_work")
+                    _is_work = _analyze_type == "why_work"
+                    st.markdown("---")
+                    st.markdown(f"##### {'✅ Why did this work?' if _is_work else '❌ Why did this fail?'}")
+                    _issues = diagnose_video(
+                        views=_vid_to_analyze["views"], likes=_vid_to_analyze["likes"],
+                        comments=_vid_to_analyze["comments"],
+                        published_at=_vid_to_analyze.get("published_at", ""),
+                        subscribers=_subs,
+                    )
+                    for issue in _issues:
+                        _sev_colors = {"critical": T["red"], "warning": T["yellow"], "minor": T["accent"], "good": T["green"]}
+                        _c = _sev_colors.get(issue.get("severity", "minor"), T["accent"])
+                        st.markdown(f"""
+                        <div style="padding:8px 12px;margin:4px 0;background:{T['card']};border-radius:8px;border-left:3px solid {_c};">
+                            <b>{issue['issue']}</b><br><span style="color:{T['text_sec']};font-size:13px;">💡 {issue['fix']}</span>
+                        </div>
+                        """, unsafe_allow_html=True)
+
+                    # AI-powered analysis if available
+                    _ai_mod = MOD.get("ai_engine")
+                    if _ai_mod:
+                        _context = f"""Video: {_vid_to_analyze['title']}
+Views: {_vid_to_analyze['views']:,}, Likes: {_vid_to_analyze['likes']}, Comments: {_vid_to_analyze['comments']}
+Engagement: {_vid_to_analyze['engagement_rate']:.1f}%, Duration: {_vid_to_analyze['duration_label']}
+Channel subscribers: {_subs:,}
+Published: {_vid_to_analyze.get('published_at', 'Unknown')}
+Diagnosis issues: {json.dumps(_issues)}"""
+                        _prompt = f"{'Explain why this YouTube video performed well and how to replicate its success.' if _is_work else 'Explain why this YouTube video underperformed and provide specific actionable fixes.'}\n\n{_context}"
+                        with st.spinner("🤖 AI analyzing..."):
+                            try:
+                                _resp = _ai_mod.ask(_prompt)
+                                st.markdown(_resp)
+                            except Exception:
+                                pass
+
+                    if st.button("✕ Close Analysis", key="close_analyze"):
+                        st.session_state.pop("yt_analyze_vid", None)
+                        st.session_state.pop("yt_analyze_type", None)
+                        st.rerun()
 
             st.markdown("---")
 
-            # ── All videos ranked ──
+            # ── All videos ranked (compact table) ──
             st.markdown(f"##### 📋 All Videos ({len(_scored)} videos, ranked by score)")
             _rank_data = []
             for i, v in enumerate(_scored[:50]):
                 _eng_r = get_engagement_rating(v["engagement_rate"])
                 days_pub = ""
+                vpd = 0
                 if v.get("published_at"):
                     try:
                         pub = datetime.fromisoformat(v["published_at"].replace("Z", "+00:00"))
-                        days_pub = f"{(datetime.now(pub.tzinfo) - pub).days}d ago"
+                        d = max(1, (datetime.now(pub.tzinfo) - pub).total_seconds() / 86400)
+                        days_pub = f"{int(d)}d"
+                        vpd = v["views"] / d
                     except Exception:
                         pass
                 _rank_data.append({
@@ -3091,6 +3222,7 @@ elif page == "📺 YouTube":
                     "Title": v["title"][:50],
                     "Score": f"{v['score']}/100",
                     "Views": v["views"],
+                    "Views/Day": f"{vpd:.0f}",
                     "Likes": v["likes"],
                     "Eng%": f"{v['engagement_rate']:.1f}%",
                     "Rating": f"{_eng_r['color']} {_eng_r['label']}",
@@ -3100,330 +3232,388 @@ elif page == "📺 YouTube":
             _df(pd.DataFrame(_rank_data))
 
     # ════════════════════════════════════════════════════════════
-    # TAB 1: ALL VIDEOS (Detailed video cards)
+    # TAB 1: ALL VIDEOS — Video Cards with Thumbnails (like Vercel)
     # ════════════════════════════════════════════════════════════
     with _yt_tabs[1]:
-        st.markdown("#### 🎬 Video Library")
+        st.markdown(f"#### 🎬 All Videos ({len(_vids)} videos)")
 
-        _vids = st.session_state.get("yt_videos", [])
         if not _vids:
-            if st.button("🔄 Load All Videos", use_container_width=True):
-                with st.spinner("Loading..."):
-                    st.session_state["yt_videos"] = get_channel_videos(max_videos=300)
-                    st.rerun()
+            st.info("No videos found.")
         else:
-            # Filters
-            _fc1, _fc2, _fc3 = st.columns(3)
-            with _fc1:
-                _sort_by = st.selectbox("Sort by", ["Score", "Views", "Engagement", "Date", "Duration"], index=0)
-            with _fc2:
-                _vid_search = st.text_input("🔍 Search videos", "")
-            with _fc3:
-                if st.button("🔄 Reload"):
-                    st.session_state.pop("yt_videos", None)
-                    st.rerun()
-
-            _subs = _ch_info.get("subscribers", 1000)
-
-            # Score and sort
-            _scored = []
+            # Score all videos
+            _all_scored = []
             for v in _vids:
                 score = calculate_performance_score(
                     views=v["views"], likes=v["likes"], comments=v["comments"],
                     published_at=v.get("published_at", ""), subscribers=_subs,
                 )
-                _scored.append({**v, "score": score})
+                _all_scored.append({**v, "score": score})
+            _all_scored.sort(key=lambda x: x["score"], reverse=True)
 
-            # Filter
+            # Search / filter
+            _vid_search = st.text_input("🔍 Search videos", key="yt_vid_search")
+            _vid_filter = st.selectbox("Filter by rating", ["All", "Excellent", "Very Good", "Good", "Average", "Below Avg", "Low"], key="yt_vid_filter")
+            _vid_sort = st.selectbox("Sort by", ["Score", "Views", "Engagement", "Newest", "Oldest", "Views/Day"], key="yt_vid_sort")
+
+            # Apply filters
+            _filtered = _all_scored
             if _vid_search:
-                _scored = [v for v in _scored if _vid_search.lower() in v["title"].lower()]
+                _filtered = [v for v in _filtered if _vid_search.lower() in v["title"].lower()]
+            if _vid_filter != "All":
+                _filtered = [v for v in _filtered if get_engagement_rating(v["engagement_rate"])["label"] == _vid_filter]
 
             # Sort
-            if _sort_by == "Views":
-                _scored.sort(key=lambda x: x["views"], reverse=True)
-            elif _sort_by == "Engagement":
-                _scored.sort(key=lambda x: x["engagement_rate"], reverse=True)
-            elif _sort_by == "Date":
-                _scored.sort(key=lambda x: x.get("published_at", ""), reverse=True)
-            elif _sort_by == "Duration":
-                _scored.sort(key=lambda x: x["duration_seconds"], reverse=True)
+            if _vid_sort == "Views":
+                _filtered.sort(key=lambda x: x["views"], reverse=True)
+            elif _vid_sort == "Engagement":
+                _filtered.sort(key=lambda x: x["engagement_rate"], reverse=True)
+            elif _vid_sort == "Newest":
+                _filtered.sort(key=lambda x: x.get("published_at", ""), reverse=True)
+            elif _vid_sort == "Oldest":
+                _filtered.sort(key=lambda x: x.get("published_at", ""))
+            elif _vid_sort == "Views/Day":
+                def _vpd_key(v):
+                    if v.get("published_at"):
+                        try:
+                            pub = datetime.fromisoformat(v["published_at"].replace("Z", "+00:00"))
+                            d = max(1, (datetime.now(pub.tzinfo) - pub).total_seconds() / 86400)
+                            return v["views"] / d
+                        except Exception:
+                            pass
+                    return 0
+                _filtered.sort(key=_vpd_key, reverse=True)
             else:
-                _scored.sort(key=lambda x: x["score"], reverse=True)
+                _filtered.sort(key=lambda x: x["score"], reverse=True)
 
-            st.caption(f"Showing {len(_scored)} videos")
+            # Pagination
+            _VIDS_PER_PAGE = 12
+            _vid_page = st.number_input("Page", min_value=1, max_value=max(1, (len(_filtered) + _VIDS_PER_PAGE - 1) // _VIDS_PER_PAGE), value=1, key="yt_vid_page")
+            _start_idx = (_vid_page - 1) * _VIDS_PER_PAGE
+            _page_vids = _filtered[_start_idx:_start_idx + _VIDS_PER_PAGE]
 
-            # Display as table with expandable details
-            for i, v in enumerate(_scored[:30]):
+            st.caption(f"Showing {len(_page_vids)} of {len(_filtered)} videos (Page {_vid_page})")
+
+            # Video cards with thumbnails
+            for i, v in enumerate(_page_vids):
                 _eng_r = get_engagement_rating(v["engagement_rate"])
-                _score_lbl = get_score_label(v["score"])
+                _thumb_url = f"https://i.ytimg.com/vi/{v['video_id']}/hqdefault.jpg"
+                _score_label = get_score_label(v["score"])
 
-                with st.expander(f"{'🔥' if v['score'] >= 50 else '⚠️' if v['score'] >= 30 else '❌'} {i+1}. {v['title'][:70]} — {v['score']}/100 | {v['views']:,} views | {_eng_r['color']} {_eng_r['label']}"):
-                    _vc1, _vc2, _vc3, _vc4 = st.columns(4)
-                    with _vc1:
-                        st.metric("Views", f"{v['views']:,}")
-                    with _vc2:
-                        st.metric("Likes", f"{v['likes']:,}")
-                    with _vc3:
-                        st.metric("Comments", f"{v['comments']:,}")
-                    with _vc4:
-                        st.metric("Score", f"{v['score']}/100")
+                # Calculate views/day
+                _vpd = 0
+                _days_since = 0
+                if v.get("published_at"):
+                    try:
+                        pub = datetime.fromisoformat(v["published_at"].replace("Z", "+00:00"))
+                        _days_since = max(1, (datetime.now(pub.tzinfo) - pub).total_seconds() / 86400)
+                        _vpd = v["views"] / _days_since
+                    except Exception:
+                        pass
 
-                    _vc5, _vc6, _vc7 = st.columns(3)
-                    with _vc5:
-                        st.metric("Engagement", f"{v['engagement_rate']:.1f}%")
-                    with _vc6:
-                        st.metric("Duration", v["duration_label"])
-                    with _vc7:
-                        st.metric("Published", v.get("published_at", "")[:10])
+                # Engagement color
+                _eng_colors = {
+                    "Excellent": T["green"], "Very Good": "#4ECDC4",
+                    "Good": "#6C5CE7", "Average": T["yellow"],
+                    "Below Avg": "#FF6B6B", "Low": T["red"], "No data": T["muted"],
+                }
+                _eng_color = _eng_colors.get(_eng_r["label"], T["accent"])
 
-                    # Diagnose
-                    _diagnosis = diagnose_video(
-                        views=v["views"], likes=v["likes"], comments=v["comments"],
-                        published_at=v.get("published_at", ""), subscribers=_subs,
-                    )
-                    st.markdown("**Diagnosis:**")
-                    for d in _diagnosis:
-                        _icon = {"critical": "🔴", "warning": "🟡", "minor": "🔵", "good": "🟢"}.get(d["severity"], "⚪")
-                        st.markdown(f"{_icon} **{d['issue']}** — {d['fix']}")
+                # Card HTML
+                st.markdown(f"""
+                <div style="display:flex;gap:16px;align-items:flex-start;padding:16px;margin:8px 0;background:{T['card']};border-radius:12px;border:1px solid {T['border']};">
+                    <div style="position:relative;flex-shrink:0;">
+                        <img src="{_thumb_url}" style="width:160px;height:90px;border-radius:8px;object-fit:cover;" onerror="this.style.display='none'">
+                        <div style="position:absolute;bottom:4px;right:4px;background:rgba(0,0,0,0.8);color:#fff;font-size:11px;padding:2px 6px;border-radius:4px;">{v['duration_label']}</div>
+                    </div>
+                    <div style="flex:1;min-width:0;">
+                        <div style="font-weight:600;color:{T['text']};font-size:15px;margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{v['title'][:80]}</div>
+                        <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">
+                            <span style="background:{_eng_color};color:#fff;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:600;">{v['score']}/100</span>
+                            <span style="color:{T['text_sec']};font-size:12px;">Eng {v['engagement_rate']:.1f}%</span>
+                            <span style="color:{T['accent']};font-size:12px;">⚡{format_number(round(_vpd))}/day</span>
+                        </div>
+                        <div style="display:flex;gap:16px;color:{T['text_sec']};font-size:12px;">
+                            <span>👁 {format_number(v['views'])}</span>
+                            <span>👍 {v['likes']}</span>
+                            <span>💬 {v['comments']}</span>
+                            <span style="color:{_eng_color};">{_eng_r['color']} {_eng_r['label']} — {_eng_r['desc']}</span>
+                        </div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
 
-                    # Links
-                    st.markdown(f"[▶ Watch](https://youtube.com/watch?v={v['video_id']}) | [📊 Studio](https://studio.youtube.com/video/{v['video_id']}/analytics)")
+                # Per-video actions row
+                _act1, _act2, _act3, _act4, _act5 = st.columns([1, 1, 1, 1, 2])
+                with _act1:
+                    st.markdown(f"[▶️ Watch](https://youtube.com/watch?v={v['video_id']})")
+                with _act2:
+                    st.markdown(f"[📊 Studio](https://studio.youtube.com/video/{v['video_id']}/analytics)")
+                with _act3:
+                    if st.button("✅ Why work?", key=f"why_work_{v['video_id']}"):
+                        st.session_state["yt_analyze_vid"] = v["video_id"]
+                        st.session_state["yt_analyze_type"] = "why_work"
+                with _act4:
+                    if st.button("❌ Why fail?", key=f"why_fail_{v['video_id']}"):
+                        st.session_state["yt_analyze_vid"] = v["video_id"]
+                        st.session_state["yt_analyze_type"] = "why_fail"
+                with _act5:
+                    # Per-video period mini-selector for analytics
+                    _mini_periods = ["7d", "28d", "30d", "90d", "180d", "1y", "All"]
+                    st.markdown(f"<span style='color:{T['muted']};font-size:11px;'>Period: {' · '.join(_mini_periods)}</span>", unsafe_allow_html=True)
+
+                # Per-video analytics (if OAuth available)
+                if _has_oauth:
+                    with st.expander(f"📊 Video Analytics — {v['title'][:40]}", key=f"vid_analytics_{v['video_id']}"):
+                        _v_period = st.selectbox("Period", ["7d", "28d", "30d", "90d", "180d", "1y", "All"], index=2, key=f"vper_{v['video_id']}")
+                        _v_days_map = {"7d": 7, "28d": 28, "30d": 30, "90d": 90, "180d": 180, "1y": 365, "All": 3650}
+                        _v_days = _v_days_map.get(_v_period, 30)
+                        _v_start = (datetime.now() - timedelta(days=_v_days)).strftime("%Y-%m-%d")
+                        _v_end = datetime.now().strftime("%Y-%m-%d")
+
+                        try:
+                            _va_dict = get_video_analytics_batch([v["video_id"]], _v_start, _v_end)
+                            _va = _va_dict.get(v["video_id"], {}) if _va_dict else {}
+                            if _va:
+                                _va_views = int(float(_va.get('views', 0)))
+                                _va_likes = int(float(_va.get('likes', 0)))
+                                _va_comments = int(float(_va.get('comments', 0)))
+                                _va_avg_dur = float(_va.get('averageViewDuration', 0))
+                                _va_avg_pct = float(_va.get('averageViewPercentage', 0))
+                                _va_ctr = float(_va.get('ctr', 0))
+                                _vc1, _vc2 = st.columns(2)
+                                with _vc1:
+                                    st.markdown(f"**Views (total)**")
+                                    st.write(f"{_va_views:,}")
+                                    st.markdown(f"**Likes**")
+                                    st.write(f"{_va_likes:,}")
+                                    st.markdown(f"**Comments**")
+                                    st.write(f"{_va_comments:,}")
+                                with _vc2:
+                                    st.markdown(f"**Avg Watch**")
+                                    st.write(f"{format_number(round(_vpd))}/d")
+                                    st.markdown(f"**Retention**")
+                                    if _va_avg_pct > 0:
+                                        st.write(f"{_va_avg_pct:.1f}%")
+                                    elif _va_avg_dur > 0:
+                                        st.write(_format_duration(int(_va_avg_dur)))
+                                    else:
+                                        st.write("No data")
+
+                                # Engagement score card
+                                _eng_pct = v["engagement_rate"]
+                                _eng_label = get_engagement_rating(_eng_pct)
+                                st.markdown(f"""
+                                <div style="padding:10px;background:{T['card_alt']};border-radius:8px;text-align:center;margin-top:8px;">
+                                    <div style="font-size:11px;color:{T['muted']};">Engagement REAL</div>
+                                    <div style="font-size:24px;font-weight:700;color:{_eng_color};">{_eng_pct:.1f}%</div>
+                                    <div style="font-size:13px;color:{_eng_color};">{_eng_label['color']} {_eng_label['label']} — {_eng_label['desc']}</div>
+                                </div>
+                                """, unsafe_allow_html=True)
+                            else:
+                                st.info("No analytics data for this period.")
+                        except Exception as _vae:
+                            st.warning(f"Analytics unavailable: {_vae}")
+
+                        # Retention curve
+                        try:
+                            _ret_list = get_retention_curve(v["video_id"])
+                            if _ret_list:
+                                _ret_df = pd.DataFrame(_ret_list)
+                                st.markdown("**📉 Retention Curve**")
+                                fig = go.Figure()
+                                _x_col = "elapsedVideoTimeRatio" if "elapsedVideoTimeRatio" in _ret_df.columns else "elapsedTime"
+                                _y_col = "audienceWatchRatio" if "audienceWatchRatio" in _ret_df.columns else "retention"
+                                if _x_col in _ret_df.columns and _y_col in _ret_df.columns:
+                                    fig.add_trace(go.Scatter(
+                                        x=_ret_df[_x_col], y=_ret_df[_y_col],
+                                        fill="tozeroy", line=dict(color=T["accent"], width=2),
+                                        fillcolor="rgba(0,212,255,0.08)",
+                                    ))
+                                fig.update_layout(
+                                    height=250, **CT(),
+                                    xaxis_title="Video Progress", yaxis_title="Retention %",
+                                    margin=dict(l=40, r=20, t=20, b=30),
+                                )
+                                _pc(fig)
+                        except Exception:
+                            pass
+
+                st.markdown(f"<div style='border-bottom:1px solid {T['border']};margin:4px 0;'></div>", unsafe_allow_html=True)
 
     # ════════════════════════════════════════════════════════════
-    # TAB 2: ANALYTICS (Daily trends, subscriber growth)
+    # TAB 2: ANALYTICS (Time-series charts)
     # ════════════════════════════════════════════════════════════
     with _yt_tabs[2]:
         st.markdown("#### 📈 Channel Analytics")
 
-        _daily = pd.DataFrame()
-        if _has_oauth:
-            try:
-                _daily = get_daily_analytics(_yt_start, _yt_end)
-            except Exception:
-                _daily = pd.DataFrame()
+        if not _has_oauth:
+            st.warning("⚠️ YouTube Analytics API (OAuth) required for detailed analytics. Showing public data instead.")
+            # Show basic stats from public data
+            if _vids:
+                _top10 = sorted(_vids, key=lambda x: x["views"], reverse=True)[:10]
+                st.markdown("##### 🔥 Top 10 Videos by Views")
+                for i, v in enumerate(_top10, 1):
+                    _thumb = f"https://i.ytimg.com/vi/{v['video_id']}/hqdefault.jpg"
+                    _eng_r = get_engagement_rating(v["engagement_rate"])
+                    st.markdown(f"""
+                    <div style="display:flex;gap:10px;align-items:center;padding:8px;margin:4px 0;background:{T['card']};border-radius:8px;">
+                        <img src="{_thumb}" style="width:80px;border-radius:6px;" onerror="this.style.display='none'">
+                        <div>
+                            <div style="font-weight:600;color:{T['text']};font-size:13px;">{i}. {v['title'][:60]}</div>
+                            <div style="color:{T['text_sec']};font-size:12px;">{format_number(v['views'])} views · {v['likes']} likes · {v['engagement_rate']:.1f}% eng · {_eng_r['color']} {_eng_r['label']}</div>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+        else:
+            # Daily views
+            st.markdown("##### 📊 Daily Views")
+            if not _daily_data.empty:
+                fig = go.Figure()
+                fig.add_trace(go.Bar(x=_daily_data["day"], y=_daily_data["views"], marker_color=T["accent"]))
+                fig.update_layout(height=350, **CT(), margin=dict(l=40, r=20, t=20, b=20))
+                _pc(fig)
+                with st.expander("📋 Daily Data"):
+                    _df(_daily_data)
+            else:
+                st.info("No daily analytics data for this period.")
 
-        if _daily.empty:
-            # Fallback: build analytics from public video data
-            st.caption("📋 OAuth analytics unavailable — computing engagement from public Data API")
-            try:
-                _pub_vids = st.session_state.get("yt_videos", [])
-                if not _pub_vids:
-                    _pub_vids = get_channel_videos(max_videos=500)
-                    st.session_state["yt_videos"] = _pub_vids
-                if _pub_vids:
-                    from collections import defaultdict as _dd_ya
-                    _ya = _dd_ya(lambda: {"views": 0, "likes": 0, "comments": 0, "videos_published": 0})
-                    for _v in _pub_vids:
-                        _vd = _v.get("published_at", "")
-                        if _vd:
-                            _vdate = _vd[:10]
-                            if _yt_start <= _vdate <= _yt_end:
-                                _ya[_vdate]["views"] += _v.get("views", 0)
-                                _ya[_vdate]["likes"] += _v.get("likes", 0)
-                                _ya[_vdate]["comments"] += _v.get("comments", 0)
-                                _ya[_vdate]["videos_published"] += 1
-                    if _ya:
-                        _daily = pd.DataFrame([
-                            {"day": d, **_ya[d]} for d in sorted(_ya.keys())
-                        ])
-            except Exception:
-                pass
-
-        if _daily.empty:
-            st.warning("⚠️ No analytics data available.")
-            st.info("🔑 **To get full analytics (daily views, CTR, watch time, revenue):**\n\nAdd these secrets in Streamlit Cloud → Settings → Secrets:\n- `YOUTUBE_OAUTH_TOKEN` — from running `python3 youtube_oauth_helper.py`\n- `YOUTUBE_REFRESH_TOKEN` — auto-generated by OAuth helper\n- `YOUTUBE_CLIENT_ID` — from Google Cloud Console\n- `YOUTUBE_CLIENT_SECRET` — from Google Cloud Console\n\n📖 [Setup Guide](https://github.com/fozayelibnayaz/eagle3d-kpi-automation/blob/main/youtube_oauth_setup.py)")
-            st.stop()
-
-        # Summary metrics
-        _a1, _a2, _a3, _a4, _a5, _a6 = st.columns(6)
-        with _a1:
-            st.metric("Views", format_number(int(_daily["views"].sum())))
-        with _a2:
-            _wh = float(_daily.get("estimatedMinutesWatched", pd.Series([0])).sum()) / 60
-            st.metric("Watch Hours", f"{_wh:.0f}")
-        with _a3:
-            _ad = float(_daily.get("averageViewDuration", pd.Series([0])).mean())
-            st.metric("Avg Duration", _format_duration(int(_ad)))
-        with _a4:
-            st.metric("Likes", format_number(int(_daily.get("likes", pd.Series([0])).sum())))
-        with _a5:
-            st.metric("Comments", format_number(int(_daily.get("comments", pd.Series([0])).sum())))
-        with _a6:
-            _sg = int(_daily.get("subscribersGained", pd.Series([0])).sum())
-            _sl = int(_daily.get("subscribersLost", pd.Series([0])).sum())
-            st.metric("Net Subs", f"+{_sg}/-{_sl}")
-
-        # Engagement rate
-        _total_v = int(_daily["views"].sum())
-        _total_l = int(_daily.get("likes", pd.Series([0])).sum())
-        _total_c = int(_daily.get("comments", pd.Series([0])).sum())
-        _total_s = int(_daily.get("shares", pd.Series([0])).sum())
-        _eng_rate = ((_total_l + _total_c) / _total_v * 100) if _total_v > 0 else 0
-        st.metric("Engagement Rate", f"{_eng_rate:.2f}%")
-
-        # Daily views chart
-        st.markdown("##### 📊 Daily Views")
-        fig = go.Figure()
-        fig.add_trace(go.Bar(x=_daily["day"], y=_daily["views"], name="Views", marker_color=T["accent"]))
-        fig.update_layout(height=350, **CT(), margin=dict(l=40, r=20, t=20, b=20))
-        _pc(fig)
-
-        # Watch time chart
-        if "estimatedMinutesWatched" in _daily.columns:
+            # Watch time
             st.markdown("##### ⏱️ Watch Time (minutes)")
-            fig2 = go.Figure()
-            fig2.add_trace(go.Scatter(
-                x=_daily["day"], y=_daily["estimatedMinutesWatched"],
-                fill="tozeroy", line=dict(color=T["green"], width=2),
-                fillcolor="rgba(0,230,118,0.08)",
-            ))
-            fig2.update_layout(height=300, **CT(), margin=dict(l=40, r=20, t=20, b=20))
-            _pc(fig2)
-
-        # Subscriber activity
-        if "subscribersGained" in _daily.columns:
-            st.markdown("##### 👥 Subscriber Activity")
-            fig3 = go.Figure()
-            fig3.add_trace(go.Bar(x=_daily["day"], y=_daily["subscribersGained"], name="Gained", marker_color=T["green"]))
-            fig3.add_trace(go.Bar(x=_daily["day"], y=_daily["subscribersLost"], name="Lost", marker_color=T["red"]))
-            fig3.update_layout(height=300, **CT(), barmode="group", margin=dict(l=40, r=20, t=20, b=20))
-            _pc(fig3)
-
-        # CTR chart
-        if "ctr" in _daily.columns and _daily["ctr"].sum() > 0:
-            st.markdown("##### 📌 Click-Through Rate (CTR)")
-            fig4 = go.Figure()
-            fig4.add_trace(go.Scatter(x=_daily["day"], y=_daily["ctr"], line=dict(color=T["accent2"], width=2)))
-            fig4.update_layout(height=250, **CT(), margin=dict(l=40, r=20, t=20, b=20), yaxis=dict(ticksuffix="%"))
-            _pc(fig4)
-
-        # Top videos by views and watch time
-        _t1, _t2 = st.columns(2)
-        with _t1:
-            st.markdown("##### 🏆 Top by Views")
-            _top_v = get_top_videos("views", _yt_start, _yt_end, 5)
-            if not _top_v.empty:
-                _df(_top_v)
+            if not _daily_data.empty and "estimatedMinutesWatched" in _daily_data.columns:
+                fig = go.Figure()
+                fig.add_trace(go.Scatter(
+                    x=_daily_data["day"], y=_daily_data["estimatedMinutesWatched"],
+                    fill="tozeroy", line=dict(color=T["accent2"], width=2),
+                    fillcolor="rgba(108,92,231,0.08)",
+                ))
+                fig.update_layout(height=300, **CT(), margin=dict(l=40, r=20, t=20, b=20))
+                _pc(fig)
             else:
-                st.info("No data")
+                st.info("No watch time data.")
 
-        with _t2:
-            st.markdown("##### ⏱️ Top by Watch Time")
-            _top_w = get_top_videos("estimatedMinutesWatched", _yt_start, _yt_end, 5)
-            if not _top_w.empty:
-                _df(_top_w)
+            # Subscriber growth
+            st.markdown("##### 📈 Subscriber Growth")
+            _sub_growth = get_subscriber_growth(_yt_start, _yt_end)
+            if not _sub_growth.empty:
+                fig = go.Figure()
+                if "subscribersGained" in _sub_growth.columns:
+                    fig.add_trace(go.Bar(x=_sub_growth["day"], y=_sub_growth["subscribersGained"], name="Gained", marker_color=T["green"]))
+                if "subscribersLost" in _sub_growth.columns:
+                    fig.add_trace(go.Bar(x=_sub_growth["day"], y=_sub_growth["subscribersLost"], name="Lost", marker_color=T["red"]))
+                fig.update_layout(height=300, barmode="group", **CT(), margin=dict(l=40, r=20, t=20, b=20))
+                _pc(fig)
             else:
-                st.info("No data")
+                st.info("No subscriber growth data.")
 
-        # Raw data
-        with st.expander("📋 Raw Daily Data"):
-            _df(_daily)
+            # Top videos for period
+            st.markdown("##### 🏆 Top Videos This Period")
+            _top = get_top_videos(_yt_start, _yt_end)
+            if not _top.empty:
+                _df(_top)
+            else:
+                st.info("No top video data for this period.")
 
     # ════════════════════════════════════════════════════════════
     # TAB 3: AUDIENCE (Demographics)
     # ════════════════════════════════════════════════════════════
     with _yt_tabs[3]:
-        st.markdown("#### 👥 Audience Demographics")
+        st.markdown("#### 👥 Audience Insights")
         if not _has_oauth:
-            st.warning("⚠️ Demographics require YouTube Analytics API (OAuth). Current data is from public Data API only.")
-            # Show what we can from public data
-            if not _vids:
-                st.info("No video data available.")
-            else:
-                st.markdown("##### 📊 Video Engagement Distribution")
-                _eng_data = pd.DataFrame([
-                    {"Title": v["title"][:50], "Views": v["views"], "Likes": v["likes"],
-                     "Comments": v["comments"], "Engagement %": f"{v['engagement_rate']:.1f}%"}
-                    for v in sorted(_vids, key=lambda x: x.get("views", 0), reverse=True)[:20]
-                ])
-                _df(_eng_data, height=400)
+            st.warning("⚠️ Audience demographics require YouTube Analytics API (OAuth).")
         else:
             _demo = get_demographics(_yt_start, _yt_end)
-        _dt1, _dt2 = st.columns(2)
+            _has_demo = any(not df.empty for df in _demo.values()) if _demo else False
+            if _has_demo:
+                _dc1, _dc2 = st.columns(2)
+                with _dc1:
+                    st.markdown("##### 👫 Age & Gender")
+                    _age_gender = _demo.get("age_gender", pd.DataFrame())
+                    if not _age_gender.empty:
+                        fig = px.bar(
+                            _age_gender, x="ageGroup", y="viewerPercentage",
+                            color="gender", barmode="group",
+                            color_discrete_sequence=[T["accent"], T["accent2"]],
+                        )
+                        fig.update_layout(height=400, **CT())
+                        _pc(fig)
+                    else:
+                        st.info("No age/gender data.")
 
-        with _dt1:
-            st.markdown("##### 🌍 Top Countries")
-            _geo = _demo.get("geography", pd.DataFrame())
-            if not _geo.empty:
-                fig = px.bar(_geo, x="views", y="country", orientation="h", color_discrete_sequence=[T["accent"]])
-                fig.update_layout(height=400, **CT(), margin=dict(l=0, r=0, t=20, b=0))
-                _pc(fig)
+                with _dc2:
+                    st.markdown("##### 🌍 Geography")
+                    _geo = _demo.get("geography", pd.DataFrame())
+                    if not _geo.empty:
+                        fig = px.bar(_geo, x="views", y="country", orientation="h", color_discrete_sequence=[T["accent"]])
+                        fig.update_layout(height=400, **CT(), margin=dict(l=0, r=0, t=20, b=0))
+                        _pc(fig)
+                    else:
+                        st.info("No geography data.")
+
+                _dd1, _dd2 = st.columns(2)
+                with _dd1:
+                    st.markdown("##### 📱 Devices")
+                    _devices = _demo.get("devices", pd.DataFrame())
+                    if not _devices.empty:
+                        fig = px.pie(_devices, values="views", names="deviceType", color_discrete_sequence=px.colors.qualitative.Set3)
+                        fig.update_layout(height=400, **CT())
+                        _pc(fig)
+                    else:
+                        st.info("No device data.")
+
+                with _dd2:
+                    st.markdown("##### 🔔 Subscribed Status")
+                    _sub_status = _demo.get("subscribed_status", pd.DataFrame())
+                    if not _sub_status.empty:
+                        fig = px.pie(_sub_status, values="views", names="subscribedStatus", color_discrete_sequence=[T["accent"], T["accent2"]])
+                        fig.update_layout(height=400, **CT())
+                        _pc(fig)
+                    else:
+                        st.info("No subscribed status data.")
+
+                with st.expander("📋 Full Demographics Data"):
+                    for _dk, _dv in _demo.items():
+                        if not _dv.empty:
+                            st.markdown(f"**{_dk}**")
+                            _df(_dv)
             else:
-                st.info("No country data.")
-
-        with _dt2:
-            st.markdown("##### 📱 Devices")
-            _dev = _demo.get("devices", pd.DataFrame())
-            if not _dev.empty:
-                fig = px.pie(_dev, values="views", names="deviceType", color_discrete_sequence=px.colors.qualitative.Pastel)
-                fig.update_layout(height=400, **CT())
-                _pc(fig)
-            else:
-                st.info("No device data.")
-
-        _dt3, _dt4 = st.columns(2)
-        with _dt3:
-            st.markdown("##### 🖥️ Operating Systems")
-            _os = _demo.get("os", pd.DataFrame())
-            if not _os.empty:
-                fig = px.bar(_os, x="views", y="operatingSystem", orientation="h", color_discrete_sequence=[T["accent2"]])
-                fig.update_layout(height=350, **CT(), margin=dict(l=0, r=0, t=20, b=0))
-                _pc(fig)
-            else:
-                st.info("No OS data.")
-
-        with _dt4:
-            st.markdown("##### 👤 Age & Gender")
-            _ag = _demo.get("age_gender", pd.DataFrame())
-            if not _ag.empty:
-                _df(_ag)
-            else:
-                st.info("No age/gender data.")
-
-        _sub_status = _demo.get("subscribed_status", pd.DataFrame())
-        if not _sub_status.empty:
-            st.markdown("##### 🔔 Subscriber vs Non-Subscriber Views")
-            fig = px.pie(_sub_status, values="views", names="subscribedStatus", color_discrete_sequence=[T["green"], T["accent"]])
-            fig.update_layout(height=300, **CT())
-            _pc(fig)
+                st.info("No demographics data available for this period.")
 
     # ════════════════════════════════════════════════════════════
     # TAB 4: REVENUE
     # ════════════════════════════════════════════════════════════
     with _yt_tabs[4]:
-        st.markdown("#### 💰 Revenue")
+        st.markdown("#### 💰 Revenue Analytics")
         if not _has_oauth:
-            st.warning("⚠️ Revenue data requires YouTube Analytics API (OAuth). Connect OAuth to see revenue, CPM, and ad metrics.")
-            st.info("💡 YouTube revenue is only available through the YouTube Analytics API with an authorized OAuth token. See **Settings → YouTube OAuth Setup** for instructions.")
-
-        _rev = get_revenue(_yt_start, _yt_end)
-        if _rev:
-            _r1, _r2, _r3, _r4 = st.columns(4)
-            with _r1:
-                st.metric("Est. Revenue", f"${float(_rev.get('estimatedRevenue', 0)):,.2f}")
-            with _r2:
-                st.metric("CPM", f"${float(_rev.get('cpm', 0)):,.2f}")
-            with _r3:
-                st.metric("Ad Impressions", f"{int(float(_rev.get('adImpressions', 0))):,}")
-            with _r4:
-                st.metric("Monetized Playbacks", f"{int(float(_rev.get('monetizedPlaybacks', 0))):,}")
+            st.warning("⚠️ Revenue data requires YouTube Analytics API (OAuth) and channel monetization.")
         else:
-            st.info("No revenue data for this period. (Monetization may not be enabled)")
+            _rev = get_revenue(_yt_start, _yt_end)
+            if _rev:
+                _r1, _r2, _r3, _r4 = st.columns(4)
+                with _r1:
+                    st.metric("Est. Revenue", f"${float(_rev.get('estimatedRevenue', 0)):,.2f}")
+                with _r2:
+                    st.metric("CPM", f"${float(_rev.get('cpm', 0)):,.2f}")
+                with _r3:
+                    st.metric("Ad Impressions", f"{int(float(_rev.get('adImpressions', 0))):,}")
+                with _r4:
+                    st.metric("Monetized Playbacks", f"{int(float(_rev.get('monetizedPlaybacks', 0))):,}")
+            else:
+                st.info("No revenue data for this period. (Monetization may not be enabled)")
 
-        _rev_daily = get_revenue_daily(_yt_start, _yt_end)
-        if not _rev_daily.empty:
-            st.markdown("##### 📊 Daily Revenue")
-            fig = go.Figure()
-            if "estimatedRevenue" in _rev_daily.columns:
-                fig.add_trace(go.Scatter(
-                    x=_rev_daily["day"], y=_rev_daily["estimatedRevenue"],
-                    fill="tozeroy", line=dict(color=T["green"], width=2),
-                    fillcolor="rgba(0,230,118,0.08)",
-                ))
-            fig.update_layout(height=350, **CT(), margin=dict(l=50, r=20, t=20, b=20))
-            _pc(fig)
-            with st.expander("📋 Revenue Data"):
-                _df(_rev_daily)
+            _rev_daily = get_revenue_daily(_yt_start, _yt_end)
+            if not _rev_daily.empty:
+                st.markdown("##### 📊 Daily Revenue")
+                fig = go.Figure()
+                if "estimatedRevenue" in _rev_daily.columns:
+                    fig.add_trace(go.Scatter(
+                        x=_rev_daily["day"], y=_rev_daily["estimatedRevenue"],
+                        fill="tozeroy", line=dict(color=T["green"], width=2),
+                        fillcolor="rgba(0,230,118,0.08)",
+                    ))
+                fig.update_layout(height=350, **CT(), margin=dict(l=50, r=20, t=20, b=20))
+                _pc(fig)
+                with st.expander("📋 Revenue Data"):
+                    _df(_rev_daily)
 
     # ════════════════════════════════════════════════════════════
     # TAB 5: TRAFFIC SOURCES
@@ -3431,15 +3621,18 @@ elif page == "📺 YouTube":
     with _yt_tabs[5]:
         st.markdown("#### 🔍 Traffic & Discovery")
         if not _has_oauth:
-            st.warning("⚠️ Traffic sources require YouTube Analytics API (OAuth). Showing search terms from public data instead.")
-            # Show what we can from public video data
+            st.warning("⚠️ Traffic sources require YouTube Analytics API (OAuth). Showing top videos from public data instead.")
             if _vids:
                 st.markdown("##### 🔥 Top Videos by Views")
                 _top_vids = sorted(_vids, key=lambda x: x.get("views", 0), reverse=True)[:10]
                 for i, v in enumerate(_top_vids, 1):
-                    st.markdown(f"**{i}.** {v['title'][:60]} — {v['views']:,} views, {v['likes']:,} likes")
-            else:
-                st.info("No video data available.")
+                    _thumb = f"https://i.ytimg.com/vi/{v['video_id']}/hqdefault.jpg"
+                    st.markdown(f"""
+                    <div style="display:flex;gap:10px;align-items:center;padding:6px;margin:3px 0;background:{T['card']};border-radius:6px;">
+                        <img src="{_thumb}" style="width:60px;border-radius:4px;" onerror="this.style.display='none'">
+                        <div><b style="color:{T['text']};">{i}.</b> <span style="color:{T['text']};">{v['title'][:50]}</span> — <span style="color:{T['accent']};">{v['views']:,} views</span></div>
+                    </div>
+                    """, unsafe_allow_html=True)
 
         _tc1, _tc2 = st.columns(2)
         with _tc1:
@@ -3497,7 +3690,6 @@ elif page == "📺 YouTube":
 
         _pl = get_playlist_analytics(_yt_start, _yt_end)
         if not _pl.empty:
-            # Format for display
             _pl_display = _pl.copy()
             for col in _pl_display.columns:
                 if col not in ("playlist", "playlist_title"):
@@ -3521,7 +3713,7 @@ elif page == "📺 YouTube":
             st.info("No playlist data for this period.")
 
     # ════════════════════════════════════════════════════════════
-    # TAB 7: ASK AI (YouTube-specific AI chat)
+    # TAB 7: ASK AI (YouTube-specific AI chat with video context)
     # ════════════════════════════════════════════════════════════
     with _yt_tabs[7]:
         st.markdown("#### 💡 Ask AI About Your Channel")
@@ -3544,6 +3736,8 @@ elif page == "📺 YouTube":
             "Give me a 30-day action plan",
             "What times should I upload?",
             "Which videos should I make Part 2 of?",
+            "Analyze my video lengths vs engagement",
+            "What topics get the most engagement?",
         ]
 
         _sel_q = st.selectbox("Quick questions", ["Custom question..."] + _yt_questions, key="yt_ai_q")
@@ -3554,33 +3748,62 @@ elif page == "📺 YouTube":
             _yt_prompt = st.text_input("Ask anything about your YouTube channel:", key="yt_custom_q")
 
         if st.button("🤖 Ask AI", type="primary", use_container_width=True) and _yt_prompt:
-            # Build context from video data
+            # Build rich context from video data
             _vids = st.session_state.get("yt_videos", [])
             _context_parts = [
                 f"Channel: {_ch_info.get('title', 'Unknown')}",
                 f"Subscribers: {_ch_info.get('subscribers', 0):,}",
                 f"Total Views: {_ch_info.get('total_views', 0):,}",
                 f"Video Count: {len(_vids)}",
+                f"Channel Health Score: {_health_score}/100",
             ]
             if _vids:
-                _top5 = sorted(_vids, key=lambda x: x["views"], reverse=True)[:5]
-                _bot5 = sorted(_vids, key=lambda x: x["views"])[:5]
-                _context_parts.append("\nTop 5 Videos:")
+                _scored_ctx = sorted([{
+                    **v,
+                    "score": calculate_performance_score(
+                        views=v["views"], likes=v["likes"], comments=v["comments"],
+                        published_at=v.get("published_at", ""), subscribers=_subs,
+                    )
+                } for v in _vids], key=lambda x: x["score"], reverse=True)
+
+                _top5 = _scored_ctx[:5]
+                _bot5 = _scored_ctx[-5:]
+                _context_parts.append("\nTop 5 Videos (by score):")
                 for v in _top5:
-                    _context_parts.append(f"  - {v['title'][:60]}: {v['views']:,} views, {v['likes']} likes, {v['engagement_rate']:.1f}% eng, {v['duration_label']}")
+                    _eng_r = get_engagement_rating(v["engagement_rate"])
+                    _context_parts.append(f"  - {v['title'][:60]}: {v['views']:,} views, {v['likes']} likes, {v['engagement_rate']:.1f}% eng, score={v['score']}/100 ({_eng_r['label']}), duration={v['duration_label']}")
                 _context_parts.append("\nBottom 5 Videos:")
                 for v in _bot5:
-                    _context_parts.append(f"  - {v['title'][:60]}: {v['views']:,} views, {v['likes']} likes, {v['engagement_rate']:.1f}% eng")
+                    _eng_r = get_engagement_rating(v["engagement_rate"])
+                    _context_parts.append(f"  - {v['title'][:60]}: {v['views']:,} views, {v['likes']} likes, {v['engagement_rate']:.1f}% eng, score={v['score']}/100 ({_eng_r['label']})")
+
+                # Engagement distribution
+                _eng_dist = {}
+                for v in _scored_ctx:
+                    _r = get_engagement_rating(v["engagement_rate"])["label"]
+                    _eng_dist[_r] = _eng_dist.get(_r, 0) + 1
+                _context_parts.append(f"\nEngagement Distribution: {json.dumps(_eng_dist)}")
+
+            if _daily_data is not None and not _daily_data.empty:
+                _context_parts.append(f"\nPeriod analytics ({_yt_period}):")
+                _context_parts.append(f"  Views: {int(_daily_data['views'].sum()):,}")
+                if "estimatedMinutesWatched" in _daily_data.columns:
+                    _context_parts.append(f"  Watch minutes: {int(_daily_data['estimatedMinutesWatched'].sum()):,}")
+                if "subscribersGained" in _daily_data.columns:
+                    _context_parts.append(f"  Subs gained: {int(_daily_data['subscribersGained'].sum())}")
+
             _context = "\n".join(_context_parts)
 
             _full_prompt = f"""You are a YouTube analytics expert analyzing the Eagle 3D Streaming YouTube channel data.
+The channel focuses on Unreal Engine, Pixel Streaming, and 3D visualization technology.
 
 Channel Data:
 {_context}
 
 User Question: {_yt_prompt}
 
-Provide specific, actionable advice based on the data. Include numbers and specific video titles when relevant."""
+Provide specific, actionable advice based on the data. Include numbers and specific video titles when relevant.
+Format with clear sections and bullet points."""
 
             with st.spinner("Thinking..."):
                 _resp = _ai_mod.ask(_full_prompt)
@@ -3608,10 +3831,6 @@ Provide specific, actionable advice based on the data. Include numbers and speci
                 except Exception as _e:
                     st.error(f"❌ Error: {_e}")
 
-
-# ═══════════════════════════════════════════════════════════════
-# PAGE: 💼 LINKEDIN COMMAND CENTER
-# ═══════════════════════════════════════════════════════════════
 elif page == "💼 LinkedIn":
     st.markdown(
         '<div class="sec-head">💼 LinkedIn Command Center</div>',
