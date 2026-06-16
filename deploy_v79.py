@@ -99,7 +99,7 @@ def main():
 
     header("Step 2: Git setup")
 
-    current_remote, _, _ = run("git remote get-url origin", check=False, quiet=True)
+    ok, current_remote, _ = run("git remote get-url origin", check=False, quiet=True)
     if "eagle3d-kpi-automation" not in current_remote:
         print(f"\n  {YELLOW}No GitHub remote configured or wrong URL.{RESET}")
         print(f"  You need a Personal Access Token (PAT) with repo permissions.")
