@@ -4013,7 +4013,7 @@ elif page == "💼 LinkedIn":
         if _li_status["cookies"]:
             st.success("✅ Authenticated — full analytics + posts available")
         else:
-            st.warning("⚠️ Public mode only — add `LINKEDIN_COOKIES_JSON` to secrets for full analytics")
+            st.info("📋 Public data active — followers, posts, and company info available. Add `LINKEDIN_COOKIES_JSON` for engagement analytics.")
 
     # ══════════════════════════════════════════════
     # TAB 2: All Posts (like YouTube All Videos)
@@ -4021,9 +4021,22 @@ elif page == "💼 LinkedIn":
     with _li_tabs[1]:
         _li_posts = get_posts()
         if not _li_posts:
-            st.info("📝 LinkedIn post data will appear after the pipeline runs with authenticated cookies.")
-            st.caption("💡 LinkedIn posts and analytics are scraped during the daily pipeline when `LINKEDIN_COOKIES_JSON` is configured. Data refreshes automatically every 12 hours.")
-        else:
+            # Try to scrape public data right now
+            with st.spinner("🔄 Loading LinkedIn posts from public data..."):
+                try:
+                    from linkedin_connector import scrape_public_metrics
+                    _live = scrape_public_metrics()
+                    if _live and _live.get("posts"):
+                        _li_posts = _live["posts"]
+                        save_posts(_li_posts)
+                        st.success(f"✅ Loaded {len(_li_posts)} posts from public LinkedIn page!")
+                    else:
+                        st.warning("📝 LinkedIn post data will appear after the pipeline runs or when data is available.")
+                        st.caption("💡 LinkedIn posts are scraped during the daily pipeline. Data also available from public page (no cookies needed).")
+                except Exception as _e:
+                    st.warning(f"📝 LinkedIn posts not available yet: {_e}")
+                    st.caption("💡 Posts will appear after the pipeline runs. Public page data is auto-scraped (no auth needed).")
+        if _li_posts:
             # Score all posts
             for p in _li_posts:
                 p["_score"] = calculate_post_score(p)
