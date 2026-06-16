@@ -445,5 +445,62 @@ def main():
             except: pass
 
 
+def fetch_stripe_api_counts():
+    """Use official Stripe API (STRIPE_SECRET_KEY) to get accurate payment counts.
+    Returns dict with total/accepted/declined/revenue for the current month, or None if not available."""
+    stripe_key = os.environ.get("STRIPE_SECRET_KEY", "")
+    if not stripe_key or not stripe_key.startswith("sk_"):
+        return None
+    try:
+        import stripe as stripe_lib
+        stripe_lib.api_key = stripe_key
+        now = datetime.now()
+        month_start = datetime(now.year, now.month, 1)
+        import calendar
+        month_end = datetime(now.year, now.month, calendar.monthrange(now.year, now.month)[1], 23, 59, 59)
+        month_start_ts = int(month_start.timestamp())
+        
+        all_intents = []
+        has_more = True
+        starting_after = None
+        while has_more:
+            params = {"created": {"gte": month_start_ts}, "limit": 100}
+            if starting_after:
+                params["starting_after"] = starting_after
+            resp = stripe_lib.PaymentIntent.list(**params)
+            all_intents.extend(resp.data)
+            has_more = resp.has_more
+            if has_more and resp.data:
+                starting_after = resp.data[-1].id
+        
+        total = len(all_intents)
+        accepted = sum(1 for i in all_intents if i.status == "succeeded")
+        declined = sum(1 for i in all_intents if i.status in 
+                      ["requires_payment_method", "canceled", "payment_failed"])
+        revenue = sum(i.amount / 100 for i in all_intents if i.status == "succeeded")
+        
+        log(f"Stripe API verification: total={total}, accepted={accepted}, declined={declined}, revenue=${revenue:.2f}")
+        return {
+            "total_payments": total,
+            "accepted_payments": accepted,
+            "declined_payments": declined,
+            "total_revenue": round(revenue, 2),
+            "month": now.strftime("%Y-%m"),
+            "source": "stripe_api",
+        }
+    except Exception as e:
+        log(f"Stripe API verification failed (non-fatal): {e}")
+        return None
+
+
 if __name__ == "__main__":
+    # If STRIPE_SECRET_KEY is set, also verify via API
+    api_data = fetch_stripe_api_counts()
+    if api_data:
+        log(f"\n=== STRIPE API VERIFICATION ===")
+        log(f"  Month: {api_data['month']}")
+        log(f"  Total Payments: {api_data['total_payments']}")
+        log(f"  Accepted (succeeded): {api_data['accepted_payments']}")
+        log(f"  Declined: {api_data['declined_payments']}")
+        log(f"  Revenue: ${api_data['total_revenue']:.2f}")
     main()

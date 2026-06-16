@@ -759,9 +759,10 @@ def build_cross_platform_stats():
 
 
 def build_stripe_stats():
-    """Stripe revenue summary."""
+    """Stripe revenue summary — counts ACCEPTED from Verified_STRIPE + verifies via Stripe API if STRIPE_SECRET_KEY available."""
     result = {"connected": False, "total_paid": 0, "month_paid": 0,
-              "today_paid": 0, "total_revenue": 0.0, "month_revenue": 0.0}
+              "today_paid": 0, "total_revenue": 0.0, "month_revenue": 0.0,
+              "api_total": 0, "api_accepted": 0, "api_revenue": 0.0, "api_verified": False}
     try:
         from sheets_writer import read_tab_data
         stripe_rows = read_tab_data("Verified_STRIPE")
@@ -798,6 +799,43 @@ def build_stripe_stats():
         result["connected"] = len(stripe_rows) > 0
     except Exception as e:
         log(f"Stripe stats error: {e}")
+    
+    # Verify with Stripe API if STRIPE_SECRET_KEY is available
+    try:
+        stripe_key = os.environ.get("STRIPE_SECRET_KEY", "")
+        if not stripe_key:
+            try:
+                import streamlit as st
+                if "STRIPE_SECRET_KEY" in st.secrets:
+                    stripe_key = str(st.secrets["STRIPE_SECRET_KEY"])
+            except Exception:
+                pass
+        if stripe_key and stripe_key.startswith("sk_"):
+            import stripe as stripe_lib
+            stripe_lib.api_key = stripe_key
+            now = datetime.now()
+            month_start = datetime(now.year, now.month, 1)
+            month_start_ts = int(month_start.timestamp())
+            all_intents = []
+            has_more = True
+            starting_after = None
+            while has_more:
+                params = {"created": {"gte": month_start_ts}, "limit": 100}
+                if starting_after:
+                    params["starting_after"] = starting_after
+                resp = stripe_lib.PaymentIntent.list(**params)
+                all_intents.extend(resp.data)
+                has_more = resp.has_more
+                if has_more and resp.data:
+                    starting_after = resp.data[-1].id
+            result["api_total"] = len(all_intents)
+            result["api_accepted"] = sum(1 for i in all_intents if i.status == "succeeded")
+            result["api_revenue"] = round(sum(i.amount / 100 for i in all_intents if i.status == "succeeded"), 2)
+            result["api_verified"] = True
+            log(f"Stripe API verified: {result['api_accepted']} succeeded of {result['api_total']} total, ${result['api_revenue']:.2f}")
+    except Exception as e:
+        log(f"Stripe API verification (non-fatal): {e}")
+    
     return result
 
 

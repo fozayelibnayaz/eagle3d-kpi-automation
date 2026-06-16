@@ -4792,11 +4792,58 @@ elif page == "⚙️ Settings":
         with _sc1:
             st.metric("Total Rows", f"{len(stripe_raw):,}")
         with _sc2:
-            st.metric("ACCEPTED", f"{_s_acc:,}")
+            st.metric("✅ ACCEPTED", f"{_s_acc:,}")
         with _sc3:
-            st.metric("REJECTED", f"{_s_rej:,}")
+            st.metric("❌ REJECTED", f"{_s_rej:,}")
         with _sc4:
             st.metric("This Month (Accepted)", f"{_s_fp_month} (FP) / {_s_created_month} (Created)")
+
+        # Stripe API Live Verification
+        _stripe_api_key = get_secret("STRIPE_SECRET_KEY", "")
+        if _stripe_api_key and str(_stripe_api_key).startswith("sk_"):
+            with st.expander("🟢 Stripe API Live Verification", expanded=True):
+                if st.button("🔍 Verify with Stripe API", key="verify_stripe_api"):
+                    try:
+                        import stripe as _stripe_lib
+                        _stripe_lib.api_key = str(_stripe_api_key)
+                        _now = datetime.now()
+                        _ms = int(datetime(_now.year, _now.month, 1).timestamp())
+                        _all_pi = []
+                        _has_more = True
+                        _sa = None
+                        while _has_more:
+                            _params = {"created": {"gte": _ms}, "limit": 100}
+                            if _sa:
+                                _params["starting_after"] = _sa
+                            _resp = _stripe_lib.PaymentIntent.list(**_params)
+                            _all_pi.extend(_resp.data)
+                            _has_more = _resp.has_more
+                            if _has_more and _resp.data:
+                                _sa = _resp.data[-1].id
+                        _api_total = len(_all_pi)
+                        _api_accepted = sum(1 for i in _all_pi if i.status == "succeeded")
+                        _api_declined = sum(1 for i in _all_pi if i.status in 
+                                           ["requires_payment_method", "canceled", "payment_failed"])
+                        _api_revenue = sum(i.amount / 100 for i in _all_pi if i.status == "succeeded")
+                        _va1, _va2, _va3, _va4 = st.columns(4)
+                        with _va1:
+                            st.metric("API Total Payments", f"{_api_total:,}")
+                        with _va2:
+                            st.metric("API Succeeded (Accepted)", f"{_api_accepted:,}")
+                        with _va3:
+                            st.metric("API Declined", f"{_api_declined:,}")
+                        with _va4:
+                            st.metric("API Revenue", f"${_api_revenue:,.2f}")
+                        if _api_accepted != _s_acc:
+                            st.warning(f"⚠️ Mismatch: Sheets ACCEPTED={_s_acc} vs API Succeeded={_api_accepted}. Pipeline may need to re-run.")
+                        else:
+                            st.success(f"✅ Verified: Sheets ACCEPTED ({_s_acc}) matches API Succeeded ({_api_accepted})")
+                    except Exception as _e:
+                        st.error(f"❌ Stripe API error: {_e}")
+        elif not _stripe_api_key:
+            with st.expander("⚪ Stripe API Verification (Not Connected)"):
+                st.info("💡 Add `STRIPE_SECRET_KEY` (your `sk_live_...` or `sk_test_...` key) to Streamlit secrets for live Stripe verification.")
+                st.caption("This uses the official Stripe API to verify that your sheet data matches actual payment data.")
 
         with st.expander("🔍 Stripe Details — Accept/Reject Breakdown"):
             if "category" in stripe_raw.columns:

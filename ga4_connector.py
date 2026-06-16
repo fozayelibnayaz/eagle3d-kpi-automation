@@ -26,15 +26,13 @@ def _get_credentials():
     # Try Streamlit secrets first (cloud)
     try:
         import streamlit as st
-        # Check specific GA4 creds first, then fallback to general GOOGLE_CREDS
-        for sec_key in ["ga4_service_account", "GOOGLE_CREDS", "google_creds"]:
-            if sec_key in st.secrets:
-                d = dict(st.secrets[sec_key])
-                if "private_key" in d:
-                    d["private_key"] = d["private_key"].replace("\\n", "\n")
-                return service_account.Credentials.from_service_account_info(
-                    d, scopes=SCOPES
-                )
+        if "ga4_service_account" in st.secrets:
+            d = dict(st.secrets["ga4_service_account"])
+            if "private_key" in d:
+                d["private_key"] = d["private_key"].replace("\\n", "\n")
+            return service_account.Credentials.from_service_account_info(
+                d, scopes=SCOPES
+            )
     except Exception:
         pass
 
