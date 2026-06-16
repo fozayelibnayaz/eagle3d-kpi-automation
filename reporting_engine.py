@@ -193,109 +193,95 @@ def send_slack(text):
 # ═══════════════════════════════════════════════════════════════
 
 def build_kpi_stats():
-    """KPI System stats from Daily_Counts + verified tabs with overrides."""
+    """KPI System stats — counts from Verified tabs (always accurate) + Daily_Counts supplement."""
     from sheets_writer import read_tab_data
     from manual_override_engine import load_overrides, normalize_email, ACTION_TO_STATUS
 
     today_str     = datetime.now().strftime("%Y-%m-%d")
-    cur_month_str = datetime.now().strftime("%Y-%m")
+    cur_month_str = datetime.now().strftime("%Y-%m%")
 
-    rows = read_tab_data("Daily_Counts")
+    # ── PRIMARY: Count directly from Verified tabs (always accurate, like the dashboard) ──
+    free_rows   = read_tab_data("Verified_FREE")
+    upload_rows = read_tab_data("Verified_FIRST_UPLOAD")
+    stripe_rows = read_tab_data("Verified_STRIPE")
 
-    # Fallback to local JSON if Sheets returned empty
-    if not rows:
-        try:
-            _dc_path = Path("data_output") / "daily_counts.json"
-            if _dc_path.exists():
-                rows = json.loads(_dc_path.read_text())
-                log(f"KPI stats: using local JSON fallback ({len(rows)} rows)")
-        except Exception:
-            pass
-    today_row  = next((r for r in rows if r.get("Date") == today_str), {})
-    month_rows = [r for r in rows if str(r.get("Date", "")).startswith(cur_month_str)]
-
-    stats = {
-        "signups_today":  si(today_row.get("SignUps_Accepted", 0)),
-        "uploads_today":  si(today_row.get("FirstUploads_Accepted", 0)),
-        "paid_today":     si(today_row.get("PaidSubscribers_Accepted", 0)),
-        "signups_month":  sum(si(r.get("SignUps_Accepted", 0))         for r in month_rows),
-        "uploads_month":  sum(si(r.get("FirstUploads_Accepted", 0))    for r in month_rows),
-        "paid_month":     sum(si(r.get("PaidSubscribers_Accepted", 0)) for r in month_rows),
-        "signups_all":    sum(si(r.get("SignUps_Accepted", 0))         for r in rows),
-        "uploads_all":    sum(si(r.get("FirstUploads_Accepted", 0))    for r in rows),
-        "paid_all":       sum(si(r.get("PaidSubscribers_Accepted", 0)) for r in rows),
-    }
-
-    # Apply overrides to verified tabs for accurate live counts
+    # Apply overrides
     overrides = load_overrides()
     if overrides:
-        try:
-            for tab, date_col in [
-                ("Verified_FREE", "Account Created On"),
-                ("Verified_FIRST_UPLOAD", "Upload Date"),
-                ("Verified_STRIPE", "Created"),
-            ]:
-                tab_rows = read_tab_data(tab)
-                _ov_count = 0
-                for r in tab_rows:
-                    em = ""
-                    for ek in ("Email", "email", "__email_normalized__"):
-                        if r.get(ek) and "@" in str(r[ek]):
-                            em = str(r[ek]).strip().lower()
-                            break
-                    norm = normalize_email(em) if em else ""
-                    if norm and norm in overrides:
-                        ov = overrides[norm]
-                        action = ov.get("action", "")
-                        m = ACTION_TO_STATUS.get(action, {})
-                        if m:
-                            r["final_status"] = m["final_status"]
-                            _ov_count += 1
+        for tab_rows in (free_rows, upload_rows, stripe_rows):
+            for r in tab_rows:
+                em = ""
+                for ek in ("Email", "email", "__email_normalized__"):
+                    if r.get(ek) and "@" in str(r[ek]):
+                        em = str(r[ek]).strip().lower()
+                        break
+                norm = normalize_email(em) if em else ""
+                if norm and norm in overrides:
+                    ov = overrides[norm]
+                    action = ov.get("action", "")
+                    m = ACTION_TO_STATUS.get(action, {})
+                    if m:
+                        r["final_status"] = m["final_status"]
 
-            # Rebuild counts from overridden data
-            free_rows = read_tab_data("Verified_FREE")
-            upload_rows = read_tab_data("Verified_FIRST_UPLOAD")
-            stripe_rows = read_tab_data("Verified_STRIPE")
+    # Count ACCEPTED by date
+    s_today = u_today = p_today = 0
+    s_month = u_month = p_month = 0
+    s_all = u_all = p_all = 0
 
-            stats["signups_all_override"] = sum(
-                1 for r in free_rows
-                if str(r.get("final_status", "")).upper() == "ACCEPTED"
-            )
-            stats["uploads_all_override"] = sum(
-                1 for r in upload_rows
-                if str(r.get("final_status", "")).upper() == "ACCEPTED"
-            )
-            stats["paid_all_override"] = sum(
-                1 for r in stripe_rows
-                if str(r.get("final_status", "")).upper() == "ACCEPTED"
-            )
-            # Month-level override counts
-            stats["signups_month_override"] = sum(
-                1 for r in free_rows
-                if str(r.get("final_status", "")).upper() == "ACCEPTED"
-                and any(
-                    _parse_report_date(str(r.get(f, ""))).startswith(cur_month_str)
-                    for f in ("row_date_used", "Account Created On", "__scraped_at__")
-                )
-            )
-            stats["uploads_month_override"] = sum(
-                1 for r in upload_rows
-                if str(r.get("final_status", "")).upper() == "ACCEPTED"
-                and any(
-                    _parse_report_date(str(r.get(f, ""))).startswith(cur_month_str)
-                    for f in ("row_date_used", "Upload Date", "__scraped_at__")
-                )
-            )
-            stats["paid_month_override"] = sum(
-                1 for r in stripe_rows
-                if str(r.get("final_status", "")).upper() == "ACCEPTED"
-                and any(
-                    _parse_report_date(str(r.get(f, ""))).startswith(cur_month_str)
-                    for f in ("row_date_used", "Created", "First payment", "__scraped_at__")
-                )
-            )
-        except Exception as e:
-            log(f"Override rebuild error: {e}")
+    for r in free_rows:
+        if str(r.get("final_status", "")).upper() == "ACCEPTED":
+            s_all += 1
+            for f in ("row_date_used", "Account Created On", "__scraped_at__"):
+                d = _parse_report_date(str(r.get(f, "")))
+                if d:
+                    if d == today_str:
+                        s_today += 1
+                    if d.startswith(cur_month_str):
+                        s_month += 1
+                    break
+
+    for r in upload_rows:
+        if str(r.get("final_status", "")).upper() == "ACCEPTED":
+            u_all += 1
+            for f in ("row_date_used", "Upload Date", "__scraped_at__"):
+                d = _parse_report_date(str(r.get(f, "")))
+                if d:
+                    if d == today_str:
+                        u_today += 1
+                    if d.startswith(cur_month_str):
+                        u_month += 1
+                    break
+
+    for r in stripe_rows:
+        if str(r.get("final_status", "")).upper() == "ACCEPTED":
+            p_all += 1
+            for f in ("First payment", "row_date_used", "Created", "__scraped_at__"):
+                d = _parse_report_date(str(r.get(f, "")))
+                if d:
+                    if d == today_str:
+                        p_today += 1
+                    if d.startswith(cur_month_str):
+                        p_month += 1
+                    break
+
+    stats = {
+        "signups_today":  s_today,
+        "uploads_today":  u_today,
+        "paid_today":     p_today,
+        "signups_month":  s_month,
+        "uploads_month":  u_month,
+        "paid_month":     p_month,
+        "signups_all":    s_all,
+        "uploads_all":    u_all,
+        "paid_all":       p_all,
+        # Also set override keys to same values (overrides already applied above)
+        "signups_all_override": s_all,
+        "uploads_all_override": u_all,
+        "paid_all_override": p_all,
+        "signups_month_override": s_month,
+        "uploads_month_override": u_month,
+        "paid_month_override": p_month,
+    }
 
     stats["today_str"] = today_str
     stats["month_str"] = cur_month_str
