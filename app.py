@@ -2954,7 +2954,7 @@ elif page == "📺 YouTube":
     with _s3:
         st.metric("Videos", _ch_info.get('video_count', 0))
     with _s4:
-        # Verify OAuth actually works
+        # Verify OAuth actually works (tests refresh flow too)
         _oauth_works = False
         if _has_oauth:
             try:
@@ -2965,7 +2965,9 @@ elif page == "📺 YouTube":
                 _oauth_works = not _test_daily.empty
             except Exception:
                 _oauth_works = False
-        _data_src = "✅ OAuth" if _oauth_works else "📋 Public API"
+        _data_src = "✅ OAuth + Analytics" if _oauth_works else ("📋 Public API" if _has_oauth else "📋 Public API")
+        if _has_oauth and not _oauth_works:
+            _data_src = "⚠️ OAuth (token issue)"
         st.metric("Data", _data_src)
     with _s5:
         # Channel health score (0-100 based on avg engagement + growth)
@@ -3046,17 +3048,22 @@ elif page == "📺 YouTube":
         _period_subs_gained = 0
         _period_subs_lost = 0
 
-        if _has_oauth:
-            try:
-                _daily_data = get_daily_analytics(_yt_start, _yt_end)
-            except Exception:
-                _daily_data = pd.DataFrame()
-            if not _daily_data.empty:
+        # Always try to get daily analytics (uses estimated fallback if OAuth unavailable)
+        try:
+            _daily_data = get_daily_analytics(_yt_start, _yt_end)
+        except Exception:
+            _daily_data = pd.DataFrame()
+        if not _daily_data.empty:
+            if "views" in _daily_data.columns:
                 _period_views = int(_daily_data["views"].sum())
-                _period_watch_min = float(_daily_data.get("estimatedMinutesWatched", pd.Series([0])).sum())
-                _period_avg_dur = float(_daily_data.get("averageViewDuration", pd.Series([0])).mean())
-                _period_subs_gained = int(_daily_data.get("subscribersGained", pd.Series([0])).sum())
-                _period_subs_lost = int(_daily_data.get("subscribersLost", pd.Series([0])).sum())
+            if "estimatedMinutesWatched" in _daily_data.columns:
+                _period_watch_min = float(_daily_data["estimatedMinutesWatched"].sum())
+            if "averageViewDuration" in _daily_data.columns:
+                _period_avg_dur = float(_daily_data["averageViewDuration"].mean())
+            if "subscribersGained" in _daily_data.columns:
+                _period_subs_gained = int(_daily_data["subscribersGained"].sum())
+            if "subscribersLost" in _daily_data.columns:
+                _period_subs_lost = int(_daily_data["subscribersLost"].sum())
 
         # KPI row (matching Vercel: Total Views, Subscribers, Total Likes, Comments, Engagement, Shares)
         _k1, _k2, _k3, _k4, _k5, _k6 = st.columns(6)
@@ -3078,19 +3085,19 @@ elif page == "📺 YouTube":
             else:
                 st.metric("Shares", "—")
 
-        # Daily views chart
-        if _has_oauth and not _daily_data.empty:
+        # Daily views chart (works with both OAuth and estimated data)
+        if not _daily_data.empty and "day" in _daily_data.columns:
             st.markdown("##### 📈 Daily Views Trend")
             fig = go.Figure()
             fig.add_trace(go.Scatter(
-                x=_daily_data["day"], y=_daily_data["views"],
+                x=_daily_data["day"], y=_daily_data.get("views", pd.Series()),
                 fill="tozeroy", line=dict(color=T["accent"], width=2),
                 fillcolor="rgba(0,212,255,0.08)",
             ))
             fig.update_layout(height=300, **CT(), margin=dict(l=40, r=20, t=20, b=20))
             _pc(fig)
-        elif not _has_oauth:
-            st.info("💡 Connect YouTube Analytics API (OAuth) for daily trends, CTR, watch time & revenue data.")
+        elif _daily_data.empty:
+            st.info("💡 No daily view data available for this period. Connect YouTube OAuth for real analytics, or wait for estimated data.")
 
         st.markdown("---")
 
@@ -3603,7 +3610,23 @@ Diagnosis issues: {json.dumps(_issues)}"""
             if not _top.empty:
                 _df(_top)
             else:
-                st.info("No top video data for this period.")
+                # Fallback: show top videos from public data (no OAuth needed)
+                _top_pub = sorted(_yt_vids, key=lambda v: v.get("views", 0), reverse=True)[:10]
+                if _top_pub:
+                    _top_rows = []
+                    for i, v in enumerate(_top_pub):
+                        _top_rows.append({
+                            "#": i + 1,
+                            "Title": v.get("title", "Untitled")[:60],
+                            "Views": v.get("views", 0),
+                            "Likes": v.get("likes", 0),
+                            "Comments": v.get("comments", 0),
+                            "Engagement": f"{v.get('engagement_rate', 0):.1f}%",
+                            "Published": v.get("published_at", "")[:10],
+                        })
+                    _df(pd.DataFrame(_top_rows))
+                else:
+                    st.info("No top video data for this period.")
 
     # ════════════════════════════════════════════════════════════
     # TAB 3: AUDIENCE (Demographics)
@@ -4891,9 +4914,13 @@ elif page == "⚙️ Settings":
         ("TELEGRAM_CHAT_ID", "Telegram Chat ID"),
         ("YOUTUBE_API_KEY", "YouTube Data API"),
         ("YOUTUBE_CHANNEL_ID", "YouTube Channel ID"),
-        ("YOUTUBE_OAUTH_TOKEN", "YouTube Analytics (OAuth)"),
+        ("YOUTUBE_OAUTH_TOKEN", "YouTube OAuth Token"),
+        ("YOUTUBE_REFRESH_TOKEN", "YouTube Refresh Token"),
+        ("YOUTUBE_CLIENT_ID", "YouTube Client ID"),
+        ("YOUTUBE_CLIENT_SECRET", "YouTube Client Secret"),
         ("LINKEDIN_COMPANY_PAGE", "LinkedIn Company Page"),
         ("LINKEDIN_COOKIES_JSON", "LinkedIn Cookies"),
+        ("STRIPE_COOKIES_JSON", "Stripe Cookies"),
     ]:
         _vl = get_secret(_ky)
         if _vl:

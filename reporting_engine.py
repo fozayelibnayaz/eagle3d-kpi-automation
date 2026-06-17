@@ -501,6 +501,7 @@ def build_youtube_stats():
         "channel_health": "❓", "avg_engagement": 0.0,
         "uploaded_today": 0, "low_engagement_count": 0, "dead_video_count": 0,
         "channel_title": "",
+        "period_views": 0, "period_watch_hours": 0, "period_subs_gained": 0,
     }
 
     cur_month_str = datetime.now().strftime("%Y-%m")
@@ -632,6 +633,14 @@ def build_youtube_stats():
                         prev_data = daily[daily["date"].dt.strftime("%Y-%m") == prev_month_str]
                         result["prev_month_views"] = si(prev_data.get("views", pd.Series([0])).sum())
                         result["prev_month_subs_gained"] = si(prev_data.get("subscribersGained", pd.Series([0])).sum())
+                        # Period (last 30d) for Telegram
+                        _period_days = 30
+                        _period_start = (datetime.now() - timedelta(days=_period_days)).strftime("%Y-%m-%d")
+                        _period_data = daily[daily["date"].dt.strftime("%Y-%m-%d") >= _period_start]
+                        result["period_views"] = si(_period_data.get("views", pd.Series([0])).sum())
+                        _period_watch_min = sf(_period_data.get("estimatedMinutesWatched", pd.Series([0])).sum())
+                        result["period_watch_hours"] = round(_period_watch_min / 60, 1)
+                        result["period_subs_gained"] = si(_period_data.get("subscribersGained", pd.Series([0])).sum())
             if result["connected"]:
                 return result
     except Exception as e:

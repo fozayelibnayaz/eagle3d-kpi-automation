@@ -94,29 +94,54 @@ def _api_request(url: str, params: dict = None) -> Optional[dict]:
 
 
 def _analytics_request(params: dict) -> Optional[dict]:
-    token = _get_oauth_token()
-    if not token:
-        return None
+    """Make YouTube Analytics API request. Always refreshes token first if refresh_token available."""
     base_url = "https://youtubeanalytics.googleapis.com/v2/reports"
+    
+    # Always try to get a fresh access token via refresh if refresh_token is available
+    access_token = None
+    refresh_token = _get_refresh_token()
+    client_id = _get_secret("YOUTUBE_CLIENT_ID")
+    client_secret = _get_secret("YOUTUBE_CLIENT_SECRET")
+    
+    if refresh_token and client_id and client_secret:
+        # Prefer refreshed token (access tokens expire in ~1hr)
+        access_token = _try_refresh_token()
+        if access_token:
+            # Save the fresh token for this session
+            os.environ["YOUTUBE_OAUTH_TOKEN"] = access_token
+    
+    if not access_token:
+        # Fallback to stored access token (may be expired)
+        access_token = _get_oauth_token()
+    
+    if not access_token:
+        return None
+    
     full_url = base_url + "?" + urllib.parse.urlencode(params)
     try:
         req = urllib.request.Request(full_url)
-        req.add_header("Authorization", f"Bearer {token}")
+        req.add_header("Authorization", f"Bearer {access_token}")
         with urllib.request.urlopen(req, timeout=30) as resp:
             return json.loads(resp.read().decode())
     except urllib.error.HTTPError as e:
-        if e.code == 401:
-            # Token expired — try refresh
+        error_body = ""
+        try:
+            error_body = e.read().decode()[:500]
+        except Exception:
+            pass
+        print(f"[YouTube Analytics] HTTP {e.code}: {e.reason} | {error_body}")
+        if e.code == 401 and refresh_token and client_id and client_secret:
+            # One more retry with fresh token
             try:
-                refreshed = _try_refresh_token()
-                if refreshed:
+                fresh = _try_refresh_token()
+                if fresh:
                     req2 = urllib.request.Request(full_url)
-                    req2.add_header("Authorization", f"Bearer {refreshed}")
+                    req2.add_header("Authorization", f"Bearer {fresh}")
+                    os.environ["YOUTUBE_OAUTH_TOKEN"] = fresh
                     with urllib.request.urlopen(req2, timeout=30) as resp2:
                         return json.loads(resp2.read().decode())
             except Exception as e2:
-                print(f"[YouTube Analytics] Refresh retry failed: {e2}")
-        print(f"[YouTube Analytics] HTTP {e.code}: {e.reason}")
+                print(f"[YouTube Analytics] Retry failed: {e2}")
         return None
     except Exception as e:
         print(f"[YouTube Analytics] API error: {e}")
@@ -139,11 +164,20 @@ def _get_refresh_token() -> str:
 
 
 def _try_refresh_token() -> Optional[str]:
-    """Try to refresh OAuth token using refresh_token + client_id/secret."""
+    """Try to refresh OAuth token using refresh_token + client_id/secret.
+    This is the PRIMARY way to get a valid access token — access tokens expire in ~1hr."""
     refresh = _get_refresh_token()
     client_id = _get_secret("YOUTUBE_CLIENT_ID")
     client_secret = _get_secret("YOUTUBE_CLIENT_SECRET")
     if not all([refresh, client_id, client_secret]):
+        missing = []
+        if not refresh:
+            missing.append("YOUTUBE_REFRESH_TOKEN")
+        if not client_id:
+            missing.append("YOUTUBE_CLIENT_ID")
+        if not client_secret:
+            missing.append("YOUTUBE_CLIENT_SECRET")
+        print(f"[YouTube OAuth] Cannot refresh — missing: {', '.join(missing)}")
         return None
     try:
         data = urllib.parse.urlencode({
@@ -153,9 +187,24 @@ def _try_refresh_token() -> Optional[str]:
             "grant_type": "refresh_token",
         }).encode()
         req = urllib.request.Request("https://oauth2.googleapis.com/token", data=data)
+        req.add_header("Content-Type", "application/x-www-form-urlencoded")
         with urllib.request.urlopen(req, timeout=15) as resp:
             result = json.loads(resp.read().decode())
-            return result.get("access_token")
+            new_token = result.get("access_token")
+            if new_token:
+                print(f"[YouTube OAuth] Token refreshed successfully (expires in {result.get('expires_in', '?')}s)")
+                return new_token
+            else:
+                print(f"[YouTube OAuth] Refresh response missing access_token: {list(result.keys())}")
+                return None
+    except urllib.error.HTTPError as e:
+        body = ""
+        try:
+            body = e.read().decode()[:500]
+        except Exception:
+            pass
+        print(f"[YouTube OAuth] Refresh failed HTTP {e.code}: {e.reason} | {body}")
+        return None
     except Exception as e:
         print(f"[YouTube OAuth] Refresh failed: {e}")
         return None
@@ -780,7 +829,14 @@ def is_configured() -> bool:
 
 
 def has_analytics_access() -> bool:
-    return bool(_get_oauth_token())
+    """Check if OAuth credentials exist (access token OR refresh token + client credentials).
+    Returns True if we have the minimum required to attempt an analytics API call."""
+    access_token = _get_oauth_token()
+    refresh_token = _get_refresh_token()
+    client_id = _get_secret("YOUTUBE_CLIENT_ID")
+    client_secret = _get_secret("YOUTUBE_CLIENT_SECRET")
+    # Have access if: access_token exists, OR refresh_token + client creds exist
+    return bool(access_token or (refresh_token and client_id and client_secret))
 
 
 def get_status() -> Dict[str, Any]:
