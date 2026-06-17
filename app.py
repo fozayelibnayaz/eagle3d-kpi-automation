@@ -315,6 +315,57 @@ def _css():
         .kpi-grid {{ grid-template-columns: 1fr; }}
     }}
 
+    /* ═══ DESIGN SYSTEM: Typography & Spacing ═══ */
+    body, .stApp {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; }}
+    h1, h2, h3, h4, h5, h6 {{ font-weight: 700; letter-spacing: -0.02em; }}
+    h1 {{ font-size: 1.65rem; }} h2 {{ font-size: 1.35rem; }}
+    h3 {{ font-size: 1.1rem; }} h4 {{ font-size: 1rem; }}
+
+    /* ═══ CARD COMPONENT ═══ */
+    .card {{
+        background: var(--card); border: 1px solid var(--border);
+        border-radius: 14px; padding: 20px; margin: 12px 0;
+        transition: all 0.3s ease;
+    }}
+    .card:hover {{ border-color: var(--accent); box-shadow: 0 4px 24px {T['accent']}15; }}
+
+    /* ═══ EXPANDER REFINEMENT ═══ */
+    .streamlit-expanderHeader {{
+        font-weight: 700 !important; font-size: 0.85rem !important;
+        border-radius: 10px !important; padding: 8px 12px !important;
+        transition: background 0.2s;
+    }}
+    .streamlit-expanderHeader:hover {{
+        background: var(--card-alt) !important;
+    }}
+
+    /* ═══ SELECT/SLIDER/INPUT REFINEMENT ═══ */
+    div[data-baseweb="select"] > div, div[data-baseweb="input"] > div {{
+        border-radius: 8px !important;
+        border-color: var(--border) !important;
+    }}
+    div[data-baseweb="slider"] > div {{
+        background: var(--border) !important;
+    }}
+
+    /* ═══ PROGRESS BAR ═══ */
+    .stProgress > div > div > div {{
+        background: linear-gradient(90deg, var(--accent), var(--accent2)) !important;
+        border-radius: 4px !important;
+    }}
+
+    /* ═══ DIVIDER ═══ */
+    hr {{
+        border-color: var(--border) !important;
+        opacity: 0.5;
+    }}
+
+    /* ═══ TOAST / SUCCESS / ERROR ═══ */
+    .stAlert {{
+        border-radius: 10px !important;
+        border: 1px solid var(--border) !important;
+    }}
+
     /* ═══ CLEANUP ═══ */
     #MainMenu {{ visibility: hidden; }}
     footer {{ visibility: hidden; }}
@@ -1516,6 +1567,97 @@ if page == "📊 Dashboard":
     h += kpi_h("S→P Rate", f"{s2p:.1f}%", delta_h(s2p, ps2p), "🎯")
     h += "</div>"
     st.markdown(h, unsafe_allow_html=True)
+
+    # ── Conversion-Time & Analytical Metrics ──
+    _ct_c1, _ct_c2, _ct_c3, _ct_c4 = st.columns(4)
+    # Compute signup→paid time from joined data
+    _avg_signup_to_paid = None
+    _avg_upload_to_paid = None
+    _churn_rate = None
+    _avg_sub_len = None
+    if not free_rows.empty and not stripe_raw.empty:
+        try:
+            _free_emails = {}
+            for _, _r in free_rows.iterrows():
+                _em = str(_r.get("Email", "")).lower().strip()
+                _d = parse_to_date(_r.get("Account Created On", ""))
+                if _em and "@" in _em and _d and str(_r.get("final_status", "")).upper() == "ACCEPTED":
+                    _free_emails[_em] = _d
+            _paid_join = []
+            for _, _r in stripe_raw.iterrows():
+                _em = str(_r.get("Email", "")).lower().strip()
+                _pd = parse_to_date(_r.get("First payment", "") or _r.get("row_date_used", "") or _r.get("Created", ""))
+                if _em and "@" in _em and _pd and str(_r.get("final_status", "")).upper() == "ACCEPTED":
+                    _paid_join.append({"email": _em, "paid_date": _pd})
+            _times = []
+            for pj in _paid_join:
+                if pj["email"] in _free_emails:
+                    _diff = (pj["paid_date"] - _free_emails[pj["email"]]).days
+                    if _diff >= 0:
+                        _times.append(_diff)
+            if _times:
+                _avg_signup_to_paid = sum(_times) / len(_times)
+        except Exception:
+            pass
+
+    if not upload_rows.empty and not stripe_raw.empty:
+        try:
+            _upload_emails = {}
+            for _, _r in upload_rows.iterrows():
+                _em = str(_r.get("Email", "")).lower().strip()
+                _d = parse_to_date(_r.get("Upload Date", "") or _r.get("Account Created On", ""))
+                if _em and "@" in _em and _d and str(_r.get("final_status", "")).upper() == "ACCEPTED":
+                    _upload_emails[_em] = _d
+            _paid_join2 = []
+            for _, _r in stripe_raw.iterrows():
+                _em = str(_r.get("Email", "")).lower().strip()
+                _pd = parse_to_date(_r.get("First payment", "") or _r.get("row_date_used", "") or _r.get("Created", ""))
+                if _em and "@" in _em and _pd and str(_r.get("final_status", "")).upper() == "ACCEPTED":
+                    _paid_join2.append({"email": _em, "paid_date": _pd})
+            _times_u = []
+            for pj in _paid_join2:
+                if pj["email"] in _upload_emails:
+                    _diff = (pj["paid_date"] - _upload_emails[pj["email"]]).days
+                    if _diff >= 0:
+                        _times_u.append(_diff)
+            if _times_u:
+                _avg_upload_to_paid = sum(_times_u) / len(_times_u)
+        except Exception:
+            pass
+
+    # Churn rate: paid customers whose last payment was >90 days ago
+    if not stripe_raw.empty:
+        try:
+            _paid_dates = []
+            for _, _r in stripe_raw.iterrows():
+                _pd = parse_to_date(_r.get("First payment", "") or _r.get("row_date_used", "") or _r.get("Created", ""))
+                if _pd and str(_r.get("final_status", "")).upper() == "ACCEPTED":
+                    _paid_dates.append(_pd)
+            if len(_paid_dates) >= 5:
+                _cutoff = datetime.now() - timedelta(days=90)
+                _churned = sum(1 for d in _paid_dates if d <= _cutoff)
+                _churn_rate = _churned / len(_paid_dates) * 100
+                # Average subscription length
+                _now = datetime.now()
+                _lengths = [(_now - d).days for d in _paid_dates]
+                _avg_sub_len = sum(_lengths) / len(_lengths)
+        except Exception:
+            pass
+
+    with _ct_c1:
+        _ct1_val = f"{_avg_signup_to_paid:.1f}d" if _avg_signup_to_paid is not None else "—"
+        st.metric("⏱ Avg Signup→Paid", _ct1_val, help="Average days from account creation to first payment")
+    with _ct_c2:
+        _ct2_val = f"{_avg_upload_to_paid:.1f}d" if _avg_upload_to_paid is not None else "—"
+        st.metric("⏱ Avg Upload→Paid", _ct2_val, help="Average days from first upload to first payment")
+    with _ct_c3:
+        _ct3_val = f"{_churn_rate:.1f}%" if _churn_rate is not None else "—"
+        st.metric("🔄 Churn Rate (>90d)", _ct3_val, help="% of paid customers inactive for 90+ days")
+    with _ct_c4:
+        _ct4_val = f"{_avg_sub_len:.0f}d" if _avg_sub_len is not None else "—"
+        st.metric("📆 Avg Subscription", _ct4_val, help="Average days since first payment (lifetime)")
+
+    st.markdown("---")
 
     # ── Monthly Goals Tracker ──
     _cur_month = datetime.now().strftime("%Y-%m")

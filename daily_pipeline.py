@@ -36,6 +36,15 @@ def main():
     log(f"Sheets available: {SHEETS_AVAILABLE}")
     log(f"{'='*70}")
 
+    # Ensure all required Google Sheet tabs exist
+    try:
+        from sheets_writer import ensure_tabs_exist
+        _created = ensure_tabs_exist()
+        if _created:
+            log(f"✅ Created missing sheet tabs: {', '.join(_created)}")
+    except Exception as e:
+        log(f"⚠️ ensure_tabs_exist: {e}")
+
     results = {}
 
     def s1():
@@ -323,11 +332,16 @@ def main():
                     "company_name": result.get("company_name", ""),
                     "employees": result.get("employees", ""),
                     "industry": result.get("industry", ""),
+                    "search_appearances": result.get("search_appearances", 0),
+                    "competitors": result.get("competitors", ""),
+                    "leads": result.get("leads", 0),
+                    "newsletters": result.get("newsletters", 0),
                     "scraped_at": datetime.now().isoformat(),
                 }
                 # Authenticated data
                 for _k in ("impressionCount", "uniqueVisitors", "totalPageViews",
-                           "likeCount", "commentCount", "shareCount", "clickCount"):
+                           "likeCount", "commentCount", "shareCount", "clickCount",
+                           "search_appearances", "competitors", "leads", "newsletters"):
                     if result.get(_k):
                         _entry[_k] = result.get(_k)
                 # Also map to friendly names
@@ -376,6 +390,7 @@ def main():
                     "Industry": _entry.get("industry", ""),
                     "Impressions": _entry.get("impressions", 0),
                     "Unique Visitors": _entry.get("unique_visitors", 0),
+                    "Total Page Views": _entry.get("totalPageViews", 0),
                     "Likes": _entry.get("likes", 0),
                     "Comments": _entry.get("comments", 0),
                     "Shares": _entry.get("shares", 0),
@@ -388,6 +403,12 @@ def main():
                     "Engagement Rate": _entry.get("engagement_rate", 0),
                     "Impressions Change": _entry.get("impressions_change_pct", ""),
                     "Reactions Change": _entry.get("reactions_change_pct", ""),
+                    "Comments Change": _entry.get("comments_change_pct", ""),
+                    "Reposts Change": _entry.get("reposts_change_pct", ""),
+                    "Search Appearances": _entry.get("search_appearances", 0),
+                    "Competitors": _entry.get("competitors", ""),
+                    "Leads": _entry.get("leads", 0),
+                    "Newsletters": _entry.get("newsletters", 0),
                     "Source": result.get("source", "public" if not has_cookies() else "authenticated"),
                     "Last Updated": datetime.now().strftime("%Y-%m-%d %H:%M UTC"),
                 }

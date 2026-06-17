@@ -248,6 +248,38 @@ def read_tab_data(tab_name: str) -> list:
     return []
 
 
+REQUIRED_TABS = [
+    "Raw_FREE", "Raw_FIRST_UPLOAD", "Raw_STRIPE", "Raw_PAID", "Raw_500_MIN",
+    "Verified_FREE", "Verified_FIRST_UPLOAD", "Verified_STRIPE", "Verified_PAID", "Verified_500_MIN",
+    "Daily_Counts", "Monthly_Counts",
+    "LinkedIn", "LinkedIn_Posts",
+    "YouTube", "GA4", "Cross_Platform",
+    "Daily_Report", "Phase2_Summary",
+]
+
+
+def ensure_tabs_exist():
+    """Create any missing Google Sheet tabs needed by the system."""
+    try:
+        client, ss = _get_client()
+        existing = {ws.title for ws in ss.worksheets()}
+        created = []
+        for tab in REQUIRED_TABS:
+            if tab not in existing:
+                try:
+                    ss.add_worksheet(title=tab, rows=100, cols=26)
+                    created.append(tab)
+                    time.sleep(0.5)
+                except Exception as e:
+                    log(f"Could not create tab '{tab}': {e}")
+        if created:
+            log(f"Created missing tabs: {', '.join(created)}")
+        return created
+    except Exception as e:
+        log(f"ensure_tabs_exist failed: {e}")
+        return []
+
+
 def write_run_summary(summary: dict) -> bool:
     """Append one row to Daily_Report tab."""
     try:

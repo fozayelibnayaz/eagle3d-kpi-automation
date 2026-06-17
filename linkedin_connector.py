@@ -652,12 +652,102 @@ def scrape_via_api() -> Dict[str, Any]:
     return result
 
 
+def _extract_numeric(val):
+    """Extract numeric value from a string, returning 0 if not parseable."""
+    if val is None:
+        return 0
+    if isinstance(val, (int, float)):
+        return val
+    s = str(val).strip().replace(",", "").replace("%", "").replace("--", "0").replace("-", "0")
+    try:
+        return float(s) if "." in s else int(s)
+    except (ValueError, TypeError):
+        return 0
+
+
+def _parse_voyager_analytics(data: dict) -> dict:
+    """Parse LinkedIn Voyager API analytics response into flat dict."""
+    result = {}
+    try:
+        elements = data.get("included", []) if isinstance(data, dict) else []
+        if not elements and isinstance(data, list):
+            elements = data
+        for item in elements:
+            if not isinstance(item, dict):
+                continue
+            template = item.get("$linkedInSchema", "")
+            if "shareStatistics" in template or "shareStatistic" in template:
+                impressions = _extract_numeric(item.get("impressionCount", item.get("impressionCounts", {}).get("total", 0)))
+                likes = _extract_numeric(item.get("likeCount", item.get("reactionCounts", {}).get("total", 0)))
+                comments = _extract_numeric(item.get("commentCount", 0))
+                reposts = _extract_numeric(item.get("shareCount", item.get("repostCount", 0)))
+                result["impressionCount"] = max(result.get("impressionCount", 0), impressions)
+                result["likeCount"] = max(result.get("likeCount", 0), likes)
+                result["commentCount"] = max(result.get("commentCount", 0), comments)
+                result["shareCount"] = max(result.get("shareCount", 0), reposts)
+            if "analyticsMetricValue" in template or "timeSeries" in template:
+                for key in ("impressionCount", "uniqueImpressions", "totalPageViews",
+                            "uniqueVisitors", "likeCount", "commentCount", "shareCount", "clickCount"):
+                    if key in item:
+                        result[key] = _extract_numeric(item[key])
+    except Exception:
+        pass
+    return result
+
+
+def _parse_voyager_posts(data: dict) -> list:
+    """Parse LinkedIn Voyager API content engagement response into post list."""
+    posts = []
+    try:
+        elements = data.get("included", []) if isinstance(data, dict) else []
+        for item in elements:
+            if not isinstance(item, dict):
+                continue
+            template = item.get("$linkedInSchema", "")
+            if "shareStatistics" not in template and "contentEngagement" not in template:
+                continue
+            post = {
+                "title": (item.get("title", item.get("headline", "")) or "")[:300],
+                "text": (item.get("commentary", item.get("text", "")) or "")[:500],
+                "published_at": item.get("createdAt", item.get("firstPublishedAt", "")),
+                "impressions": _extract_numeric(item.get("impressionCount", item.get("impressionCounts", {}).get("total", 0))),
+                "views": _extract_numeric(item.get("viewCount", 0)),
+                "clicks": _extract_numeric(item.get("clickCount", 0)),
+                "ctr": _extract_numeric(item.get("clickThroughRate", item.get("ctr", 0))),
+                "likes": _extract_numeric(item.get("likeCount", item.get("reactionCounts", {}).get("total", 0))),
+                "comments": _extract_numeric(item.get("commentCount", 0)),
+                "reposts": _extract_numeric(item.get("shareCount", item.get("repostCount", 0))),
+                "follows": _extract_numeric(item.get("followCount", item.get("followerGains", 0))),
+                "engagement_rate": _extract_numeric(item.get("engagementRate", 0)),
+                "post_type": (item.get("postType", item.get("type", "")) or ""),
+                "audience": (item.get("audience", item.get("visibility", "")) or ""),
+                "url": (item.get("url", item.get("landingUrl", "")) or ""),
+                "source": "voyager_api",
+            }
+            # Try to extract URN
+            urn = item.get("entityUrn", item.get("urn", item.get("$id", "")))
+            if urn:
+                post["urn"] = urn
+            # Parse milliseconds timestamp to date string
+            if isinstance(post["published_at"], (int, float)) and post["published_at"] > 1e10:
+                try:
+                    post["published_at"] = datetime.fromtimestamp(post["published_at"] / 1000).strftime("%Y-%m-%d")
+                except Exception:
+                    pass
+            if post["impressions"] > 0 or post["likes"] > 0 or post["title"]:
+                posts.append(post)
+    except Exception:
+        pass
+    return posts
+
+
 def scrape_analytics_playwright() -> Dict[str, Any]:
     """Scrape FULL LinkedIn analytics using Playwright with authenticated session.
     Gets: Highlights (Impressions, Reactions, Comments, Reposts with % change),
           Content Engagement table per post (Impressions, Views, Clicks, CTR,
           Reactions, Comments, Reposts, Follows, Engagement Rate),
           daily visitor metrics, follower trends, historical data.
+    Uses Voyager API network interception for reliable data extraction.
     Stores results in Google Sheets for dashboard display.
     Called by daily pipeline when LINKEDIN_COOKIES_JSON is configured.
     """
@@ -701,26 +791,41 @@ def scrape_analytics_playwright() -> Dict[str, Any]:
 
             page = context.new_page()
 
+            # ── NETWORK INTERCEPT: Capture Voyager API responses ──
+            _voyager_responses = []
+            def _on_response(response):
+                url = response.url
+                if "voyager/api" in url or "graphql" in url:
+                    try:
+                        ct = response.headers.get("content-type", "")
+                        if "json" in ct:
+                            data = response.json()
+                            _voyager_responses.append({"url": url, "data": data})
+                    except Exception:
+                        pass
+            page.on("response", _on_response)
+
             # ── 1. Analytics Overview — Highlights ──
-            # This page shows: Impressions, Reactions, Comments, Reposts with % changes
             try:
                 analytics_url = company_page.rstrip("/") + "/admin/analytics/"
                 page.goto(analytics_url, wait_until="networkidle", timeout=30000)
                 time.sleep(5)
-                # Extract highlights from the overview page
+                # Parse captured API responses
+                for vr in _voyager_responses:
+                    parsed = _parse_voyager_analytics(vr["data"])
+                    if parsed:
+                        result.update(parsed)
+                # Also extract highlights from the overview page
                 highlights = _extract_highlights_from_page(page)
                 if highlights:
                     result.update(highlights)
                     print(f"[LinkedIn] Analytics Highlights: {highlights}")
-
-                # Also extract from page text for any missed metrics
+                # Extract from page text for any missed metrics
                 page_text = page.inner_text("body")
                 _vis = _extract_metrics_from_text(page_text)
                 for k, v in _vis.items():
                     if v and (k not in result or result.get(k, 0) == 0):
                         result[k] = v
-
-                # Also try JSON data from HTML source
                 visitor_html = page.content()
                 visitor_data = _extract_analytics_from_page(visitor_html)
                 result.update(visitor_data)
@@ -732,6 +837,11 @@ def scrape_analytics_playwright() -> Dict[str, Any]:
                 visitor_url = company_page.rstrip("/") + "/admin/analytics/visitors/"
                 page.goto(visitor_url, wait_until="networkidle", timeout=30000)
                 time.sleep(4)
+                # Parse captured Voyager responses
+                for vr in _voyager_responses:
+                    parsed = _parse_voyager_analytics(vr["data"])
+                    if parsed:
+                        result.update(parsed)
                 visitor_html = page.content()
                 visitor_data = _extract_analytics_from_page(visitor_html)
                 for k, v in visitor_data.items():
@@ -742,13 +852,11 @@ def scrape_analytics_playwright() -> Dict[str, Any]:
                 for k, v in _vis.items():
                     if v and (k not in result or result.get(k, 0) == 0):
                         result[k] = v
-
-                # Extract visitor chart data (daily impressions line chart)
+                # Extract visitor chart data
                 visitor_chart = _extract_daily_chart_from_page(page)
                 if visitor_chart:
                     result["daily_visitor_chart"] = visitor_chart
                     print(f"[LinkedIn] Visitor chart: {len(visitor_chart)} days")
-
                 print(f"[LinkedIn] Visitor analytics: {visitor_data}")
             except Exception as e:
                 print(f"[LinkedIn] Visitor analytics failed: {e}")
@@ -778,8 +886,8 @@ def scrape_analytics_playwright() -> Dict[str, Any]:
                 print(f"[LinkedIn] Follower scrape failed: {e}")
 
             # ── 4. Posts with FULL Content Engagement Table ──
-            # This is the critical page — it shows the Content Engagement table
-            # with: Post title, Post type, Audience, Impressions, Views, Clicks,
+            # Uses Voyager API interception + DOM fallback for reliable extraction.
+            # Gets: Post title, Post type, Audience, Impressions, Views, Clicks,
             # CTR, Reactions, Comments, Reposts, Follows, Engagement rate
             try:
                 posts_url = company_page.rstrip("/") + "/admin/posts/"
@@ -790,14 +898,33 @@ def scrape_analytics_playwright() -> Dict[str, Any]:
                     page.evaluate("window.scrollBy(0, 2000)")
                     time.sleep(1.5)
 
-                # PRIMARY: Extract Content Engagement table (the structured table)
-                posts = _extract_content_engagement_table(page)
+                # PRIMARY: Parse Voyager API responses from network interception
+                posts = []
+                for vr in _voyager_responses:
+                    parsed = _parse_voyager_posts(vr["data"])
+                    if parsed:
+                        posts.extend(parsed)
+                # Dedup posts by URN or title
+                if posts:
+                    _seen = set()
+                    _uniq = []
+                    for p in posts:
+                        _key = p.get("urn") or p.get("title", "")[:80]
+                        if _key not in _seen:
+                            _seen.add(_key)
+                            _uniq.append(p)
+                    posts = _uniq
+                    print(f"[LinkedIn] Voyager API gave {len(posts)} posts with full engagement data")
 
-                # SECONDARY: If no table found, try extracting from page text
+                # SECONDARY: Extract Content Engagement table (DOM)
+                if not posts:
+                    posts = _extract_content_engagement_table(page)
+
+                # TERTIARY: If no table found, try extracting from page text
                 if not posts:
                     posts = _extract_posts_from_page(page)
 
-                # TERTIARY: If still no posts, try HTML extraction
+                # QUATERNARY: If still no posts, try HTML extraction
                 if not posts:
                     posts = _extract_posts_from_html(page.content())
 
@@ -1524,18 +1651,79 @@ def scrape_with_cookies() -> Dict[str, Any]:
         import urllib.request
         import urllib.error
 
-        # Try company analytics API endpoint
+        # Extract CSRF token from cookies (JSESSIONID after "ajax:")
+        _csrf_token = ""
+        for _ck in cookie_str.split(";"):
+            _ck = _ck.strip()
+            if _ck.startswith("JSESSIONID="):
+                _csrf_token = _ck.split("=", 1)[1].strip('"').strip("'")
+                if _csrf_token.startswith("ajax:"):
+                    _csrf_token = _csrf_token[5:]
+                break
+
+        # ── PRIMARY: Try Voyager REST API (cleanest data) ──
+        _voyager_headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Cookie": cookie_str,
+            "Accept": "application/vnd.linkedin.normalized+json+2.1",
+            "x-restli-protocol-version": "2.0.0",
+            "x-li-lang": "en_US",
+            "x-li-page-instance": "urn:li:page:d_organization_admin_analytics;",
+        }
+        if _csrf_token:
+            _voyager_headers["csrf-token"] = _csrf_token
+
+        # Try Voyager Analytics API
         try:
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                "Cookie": cookie_str,
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                "Accept-Language": "en-US,en;q=0.9",
-                "Referer": company_page,
-            }
-            # Try the company admin analytics page
+            _now = datetime.now()
+            _start_d = (_now - timedelta(days=365)).strftime("%Y%m%d")
+            _end_d = _now.strftime("%Y%m%d")
+            _voyager_url = f"https://www.linkedin.com/voyager/api/organization/analytics?q=company&startDate=(year:{_now.year},month:{_now.month},day:{_now.day})&endDate=(year:{_now.year},month:{_now.month},day:{_now.day})"
+            _req = urllib.request.Request(_voyager_url, headers=_voyager_headers)
+            with urllib.request.urlopen(_req, timeout=30) as _resp:
+                _raw = _resp.read().decode("utf-8", errors="replace")
+                _voyager_data = json.loads(_raw)
+                _aparsed = _parse_voyager_analytics(_voyager_data)
+                if _aparsed:
+                    result.update(_aparsed)
+                    print(f"[LinkedIn] Voyager API analytics: {list(_aparsed.keys())}")
+        except Exception as e:
+            print(f"[LinkedIn] Voyager API analytics call: {e}")
+
+        # Try to get posts via Voyager API
+        try:
+            _voyager_url2 = f"https://www.linkedin.com/voyager/api/feed/shareStatistics?q=organization&startDate=(year:2024,month:1,day:1)&endDate=(year:{_now.year},month:{_now.month},day:{_now.day})"
+            _req2 = urllib.request.Request(_voyager_url2, headers=_voyager_headers)
+            with urllib.request.urlopen(_req2, timeout=30) as _resp2:
+                _raw2 = _resp2.read().decode("utf-8", errors="replace")
+                _voyager_data2 = json.loads(_raw2)
+                _pparsed = _parse_voyager_posts(_voyager_data2)
+                if _pparsed:
+                    result["posts"] = _pparsed
+                    result["post_count"] = len(_pparsed)
+                    result["total_likes"] = sum(p.get("likes", 0) for p in _pparsed)
+                    result["total_comments"] = sum(p.get("comments", 0) for p in _pparsed)
+                    result["total_reposts"] = sum(p.get("reposts", 0) for p in _pparsed)
+                    _timps = sum(p.get("impressions", 0) for p in _pparsed)
+                    if _timps > 0:
+                        result["total_impressions"] = max(result.get("total_impressions", 0), _timps)
+                    print(f"[LinkedIn] Voyager API posts: {len(_pparsed)} posts with engagement data")
+        except Exception as e:
+            print(f"[LinkedIn] Voyager API posts: {e}")
+
+        # ── SECONDARY: HTML-based fallback for any missed data ──
+        _html_headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Cookie": cookie_str,
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Referer": company_page,
+        }
+
+        # Try the company admin analytics page
+        try:
             analytics_url = company_page.rstrip("/") + "/admin/analytics/visitors/"
-            req = urllib.request.Request(analytics_url, headers=headers)
+            req = urllib.request.Request(analytics_url, headers=_html_headers)
             with urllib.request.urlopen(req, timeout=30) as resp:
                 html = resp.read().decode("utf-8", errors="replace")
                 analytics = _extract_analytics_from_page(html)
@@ -1546,9 +1734,9 @@ def scrape_with_cookies() -> Dict[str, Any]:
 
         # Try followers page
         try:
-            headers["Referer"] = company_page.rstrip("/") + "/admin/analytics/"
+            _html_headers["Referer"] = company_page.rstrip("/") + "/admin/analytics/"
             follower_url = company_page.rstrip("/") + "/admin/followers/"
-            req = urllib.request.Request(follower_url, headers=headers)
+            req = urllib.request.Request(follower_url, headers=_html_headers)
             with urllib.request.urlopen(req, timeout=30) as resp:
                 html = resp.read().decode("utf-8", errors="replace")
                 followers = _extract_followers_from_page(html)
@@ -1561,19 +1749,21 @@ def scrape_with_cookies() -> Dict[str, Any]:
         except Exception as e:
             print(f"[LinkedIn] Cookie-based followers scrape: {e}")
 
-        # Try posts page
-        try:
-            posts_url = company_page.rstrip("/") + "/admin/posts/"
-            req = urllib.request.Request(posts_url, headers=headers)
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                html = resp.read().decode("utf-8", errors="replace")
-                posts = _extract_posts_from_html(html)
-                if posts:
-                    result["posts"] = posts
-                    result["post_count"] = len(posts)
-                    print(f"[LinkedIn] Cookie scrape: got {len(posts)} posts")
-        except Exception as e:
-            print(f"[LinkedIn] Cookie-based posts scrape: {e}")
+        # Try posts page (only if Voyager API didn't get posts)
+        if not result.get("posts"):
+            try:
+                _html_headers["Referer"] = company_page.rstrip("/") + "/admin/posts/"
+                posts_url = company_page.rstrip("/") + "/admin/posts/"
+                req = urllib.request.Request(posts_url, headers=_html_headers)
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    html = resp.read().decode("utf-8", errors="replace")
+                    posts = _extract_posts_from_html(html)
+                    if posts:
+                        result["posts"] = posts
+                        result["post_count"] = len(posts)
+                        print(f"[LinkedIn] Cookie scrape: got {len(posts)} posts")
+            except Exception as e:
+                print(f"[LinkedIn] Cookie-based posts scrape: {e}")
 
         result["authenticated"] = True
 
