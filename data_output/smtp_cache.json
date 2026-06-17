@@ -3104,6 +3104,11 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "salome.ruiz@ebedix.com": {
+    "checked_at": "2026-06-17T04:37:50.388063",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
   "samofut24303@gmail.com": {
     "checked_at": "2026-06-02T16:35:26.056374",
     "detail": "smtp_accepted_250",
@@ -3336,6 +3341,11 @@
   },
   "steffenaltmann96@googlemail.com": {
     "checked_at": "2026-06-02T16:33:47.936407",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
+  "stemgames2000@gmail.com": {
+    "checked_at": "2026-06-17T04:37:50.704757",
     "detail": "smtp_accepted_250",
     "status": "ok"
   },

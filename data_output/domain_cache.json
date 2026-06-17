@@ -858,6 +858,24 @@
     ],
     "reputation_score": 0.35
   },
+  "ebedix.com": {
+    "checked_at": "2026-06-17T04:37:49.002004",
+    "domain": "ebedix.com",
+    "domain_age_days": null,
+    "has_a_record": true,
+    "has_dmarc": true,
+    "has_spf": true,
+    "is_disposable": false,
+    "is_major_provider": false,
+    "mx_ok": true,
+    "mx_records": [
+      [
+        0,
+        "ebedix-com.mail.protection.outlook.com"
+      ]
+    ],
+    "reputation_score": 0.45
+  },
   "eleganza.ai": {
     "checked_at": "2026-05-18T20:27:39.029218",
     "domain": "eleganza.ai",
