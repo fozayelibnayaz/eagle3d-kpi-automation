@@ -501,7 +501,7 @@ def build_youtube_stats():
         "days_since_upload": 0, "total_likes": 0, "total_comments": 0,
         "channel_health": "❓", "avg_engagement": 0.0,
         "uploaded_today": 0, "low_engagement_count": 0, "dead_video_count": 0,
-        "channel_title": "",
+        "channel_title": "", "videos_raw": [],
         "period_views": 0, "period_watch_hours": 0, "period_subs_gained": 0,
     }
 
@@ -607,6 +607,7 @@ def build_youtube_stats():
                     if views >= 100 and (likes / views * 100) < 0.5:
                         low_eng += 1
                 result["low_engagement_count"] = low_eng
+                result["videos_raw"] = vids
 
             if has_analytics_access():
                 result["has_analytics"] = True
@@ -1869,6 +1870,24 @@ def send_subsystem_reports():
                 send_telegram(alert)
         except Exception as e:
             log(f"Dead video alerts error: {e}")
+
+    # ── YOUTUBE SMART NOTIFICATION EVENTS ──
+    if yt and yt.get("videos_raw"):
+        try:
+            from youtube_connector import detect_video_events
+            _events = detect_video_events(yt["videos_raw"], prev_snapshot=None, channel_subs=yt.get("subscribers", 0))
+            for _ev in _events[:8]:
+                _sev_icon = {"critical": "🚨", "warning": "⚠️", "success": "✅", "info": "ℹ️"}.get(_ev.get("severity", "info"), "ℹ️")
+                _msg = f"{_ev['emoji']} <b>{_ev['type'].replace('_', ' ').title()}</b>\n"
+                _msg += f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                _msg += f"{_ev['message']}\n"
+                if _ev.get("data"):
+                    for _k, _v in _ev["data"].items():
+                        _msg += f"• {escape_html(str(_k))}: <code>{escape_html(str(_v))}</code>\n"
+                _msg += f"⏰ {datetime.utcnow().strftime('%b %d, %Y, %I:%M %p')} UTC"
+                send_telegram(_msg)
+        except Exception as e:
+            log(f"Smart video events error: {e}")
 
     # ── LINKEDIN DETAILED (always send) ──
     if li:
