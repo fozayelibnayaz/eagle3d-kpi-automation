@@ -635,7 +635,7 @@ def delta_h(c, p, inv=False):
         return '<span class="kpi-delta d-fl">→ —</span>'
     if p == 0:
         if c > 0:
-            return '<span class="kpi-delta d-up">▲ NEW</span>'
+            return f'<span class="kpi-delta d-up">{int(c):,} total</span>'
         return '<span class="kpi-delta d-fl">→ —</span>'
     pct = (c - p) / p * 100
     pos = pct > 0 if not inv else pct < 0
@@ -686,32 +686,72 @@ with st.sidebar:
 
     st.markdown("---")
 
-    # Navigation — flat list (reliable across Streamlit versions)
-    page = st.radio(
-        "Navigation",
-        [
-            "📊 Dashboard",
-            "🔍 Browse Data",
-            "✏️ Manual Override",
-            "🚦 Traffic Intel",
-            "🔬 EDA Lab",
-            "📺 YouTube",
-            "💼 LinkedIn",
-            "🔗 Cross-Platform",
-            "🤖 Ask AI",
-            "🔮 Predictions",
-            "📋 Reports",
-            "🔔 Alerts",
-        ],
-        label_visibility="collapsed",
-        key="nav_page",
-    )
+    # Navigation — organized into expandable category sections
+    if "nav_page" not in st.session_state:
+        st.session_state["nav_page"] = "📊 Dashboard"
+
+    _KPI_PAGES = {"📊 Dashboard", "🔍 Browse Data", "🔬 EDA Lab", "✏️ Manual Override", "📋 Reports", "🔔 Alerts"}
+    _TRAFFIC_PAGES = {"🚦 Traffic Intel", "📺 YouTube", "💼 LinkedIn", "🔗 Cross-Platform"}
+    _AI_PAGES = {"🤖 Ask AI", "🔮 Predictions"}
+
+    page = st.session_state["nav_page"]
+
+    with st.expander("📊 KPI", expanded=page in _KPI_PAGES):
+        for _label, _key in [("Dashboard", "📊 Dashboard"), ("Browse Data", "🔍 Browse Data"),
+                             ("EDA Lab", "🔬 EDA Lab"), ("Manual Override", "✏️ Manual Override"),
+                             ("Reports", "📋 Reports"), ("Alerts", "🔔 Alerts")]:
+            if st.button(_label, use_container_width=True, key=f"nav_{_key}"):
+                st.session_state["nav_page"] = _key
+                st.rerun()
+
+    with st.expander("🚦 Traffic Intel", expanded=page in _TRAFFIC_PAGES):
+        for _label, _key in [("Google Analytics", "🚦 Traffic Intel"), ("YouTube", "📺 YouTube"),
+                             ("LinkedIn", "💼 LinkedIn"), ("Cross-Platform", "🔗 Cross-Platform")]:
+            if st.button(_label, use_container_width=True, key=f"nav_{_key}"):
+                st.session_state["nav_page"] = _key
+                st.rerun()
+
+    with st.expander("🤖 AI & Insights", expanded=page in _AI_PAGES):
+        for _label, _key in [("Ask AI", "🤖 Ask AI"), ("Predictions", "🔮 Predictions")]:
+            if st.button(_label, use_container_width=True, key=f"nav_{_key}"):
+                st.session_state["nav_page"] = _key
+                st.rerun()
+
+    st.markdown("---")
+
+    # Refresh data button
+    if st.button("🔄 Refresh Data", use_container_width=True, key="nav_refresh"):
+        st.cache_data.clear()
+        st.session_state["_last_refresh"] = datetime.now().strftime("%H:%M:%S")
+        st.rerun()
+    # Pipeline trigger button (delegated to GitHub Actions)
+    _gh_tok = get_secret("GITHUB_TOKEN", "")
+    if _gh_tok:
+        _repo = "fozayelibnayaz/eagle3d-kpi-automation"
+        if st.button("🚀 Run Pipeline", use_container_width=True, key="nav_pipeline"):
+            try:
+                import urllib.request
+                _url = f"https://api.github.com/repos/{_repo}/actions/workflows/daily_pipeline.yml/dispatches"
+                _data = json.dumps({"ref": "main"}).encode()
+                _req = urllib.request.Request(_url, data=_data, method="POST",
+                    headers={"Authorization": f"token {_gh_tok}", "Accept": "application/vnd.github+json"})
+                with urllib.request.urlopen(_req, timeout=10) as _r:
+                    if _r.status in (200, 204):
+                        st.toast("🚀 Pipeline triggered! Refresh in ~5 min")
+            except Exception:
+                st.error("Pipeline trigger failed")
 
     st.markdown("---")
 
     # Universal Settings page (always accessible)
     if st.button("⚙️ Settings", use_container_width=True, key="nav_settings"):
         st.session_state["_go_settings"] = True
+        st.rerun()
+
+    # Show last refresh time
+    _last_ref = st.session_state.get("_last_refresh", "")
+    if _last_ref:
+        st.caption(f"🔄 Refreshed at {_last_ref}")
 
     st.markdown("---")
 
@@ -1263,6 +1303,16 @@ def _build_time_to_conversion(free_df, upload_df, ledger_path=None):
     if not _rows:
         return {}, pd.DataFrame(), pd.DataFrame(), []
     _df_rows = pd.DataFrame(_rows)
+    # Convert to pd.Timestamp for .dt accessor support
+    for _dt_col in ["signup_date", "upload_date"]:
+        if _dt_col in _df_rows.columns:
+            _df_rows[_dt_col] = pd.to_datetime(_df_rows[_dt_col], errors="coerce")
+    _df_rows = _df_rows.dropna(subset=["signup_date", "upload_date"])
+    if _df_rows.empty:
+        return {}, pd.DataFrame(), pd.DataFrame(), []
+    _df_rows["gap_days"] = (_df_rows["upload_date"] - _df_rows["signup_date"]).dt.days.clip(lower=0)
+    # Rebuild _rows with pd.Timestamp for consistent downstream usage
+    _rows = _df_rows.to_dict("records")
     _gaps = _df_rows["gap_days"]
     _stats = {
         "matched_users": len(_df_rows), "mean_days": round(_gaps.mean(), 1), "median_days": int(_gaps.median()),
@@ -3755,7 +3805,7 @@ Diagnosis issues: {json.dumps(_issues)}"""
                 _df(_top)
             else:
                 # Fallback: show top videos from public data (no OAuth needed)
-                _top_pub = sorted(_yt_vids, key=lambda v: v.get("views", 0), reverse=True)[:10]
+                _top_pub = sorted(_vids, key=lambda v: v.get("views", 0), reverse=True)[:10]
                 if _top_pub:
                     _top_rows = []
                     for i, v in enumerate(_top_pub):
