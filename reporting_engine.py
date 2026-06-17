@@ -314,8 +314,9 @@ def build_ga4_stats():
             end = datetime.now().strftime("%Y-%m-%d")
             start = (datetime.now() - timedelta(days=60)).strftime("%Y-%m-%d")
             utm = fetch_utm_traffic(start, end)
+            # Mark as connected if API call succeeded (even with empty data)
+            result["connected"] = True
             if not utm.empty:
-                result["connected"] = True
                 # Ensure date column
                 if "date" in utm.columns:
                     utm["date"] = pd.to_datetime(utm["date"], errors="coerce")
@@ -2152,12 +2153,13 @@ def main():
     combined_msg = build_full_telegram_message(kpi, ga4, yt, li, stripe, health)
     tg_combined = send_telegram(combined_msg)
 
-    # Send individual subsystem Telegram messages for detail
-    log("Sending individual subsystem Telegram reports...")
-    try:
-        send_subsystem_reports()
-    except Exception as e:
-        log(f"Subsystem reports error: {e}")
+    # Individual subsystem messages are DISABLED to prevent duplicates.
+    # The combined message above covers ALL systems in a single notification.
+    # log("Sending individual subsystem Telegram reports...")
+    # try:
+    #     send_subsystem_reports()
+    # except Exception as e:
+    #     log(f"Subsystem reports error: {e}")
 
     # Send email + Slack with full text report
     log("Sending email + Slack...")

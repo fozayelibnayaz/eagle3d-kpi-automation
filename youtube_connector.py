@@ -840,10 +840,17 @@ def has_analytics_access() -> bool:
 
 
 def get_status() -> Dict[str, Any]:
+    has_api_key = bool(_get_secret("YOUTUBE_API_KEY"))
+    has_channel = bool(_get_secret("YOUTUBE_CHANNEL_ID"))
+    has_access_token = bool(_get_oauth_token())
+    has_refresh_token = bool(_get_refresh_token())
+    has_client_creds = bool(_get_secret("YOUTUBE_CLIENT_ID") and _get_secret("YOUTUBE_CLIENT_SECRET"))
     return {
-        "data_api": bool(_get_secret("YOUTUBE_API_KEY")),
-        "channel_id": bool(_get_secret("YOUTUBE_CHANNEL_ID")),
-        "analytics_api": bool(_get_oauth_token()),
-        "configured": bool(_get_secret("YOUTUBE_API_KEY") and _get_secret("YOUTUBE_CHANNEL_ID")),
-        "full_access": bool(_get_secret("YOUTUBE_API_KEY") and _get_secret("YOUTUBE_CHANNEL_ID") and _get_oauth_token()),
+        "data_api": has_api_key,
+        "channel_id": has_channel,
+        "analytics_api": has_access_token or (has_refresh_token and has_client_creds),
+        "has_refresh_token": has_refresh_token,
+        "has_client_creds": has_client_creds,
+        "configured": bool(has_api_key and has_channel),
+        "full_access": bool(has_api_key and has_channel and has_access_token),
     }

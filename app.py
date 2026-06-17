@@ -1205,6 +1205,87 @@ if "ga4_connector" in MOD:
         except Exception:
             pass
 
+# ── Time-to-Conversion Analytics ──
+def _build_time_to_conversion(free_df, upload_df, ledger_path=None):
+    if free_df is None or free_df.empty or upload_df is None or upload_df.empty:
+        return {}, pd.DataFrame(), pd.DataFrame(), []
+    _free = free_df[free_df.get("final_status", "").astype(str).str.upper() == "ACCEPTED"].copy()
+    _up = upload_df[upload_df.get("final_status", "").astype(str).str.upper() == "ACCEPTED"].copy()
+    if _free.empty or _up.empty:
+        return {}, pd.DataFrame(), pd.DataFrame(), []
+    _email_col_free = next((c for c in _free.columns if "email" in c.lower() and "normalized" in c.lower() and not c.startswith("__")), None)
+    if not _email_col_free:
+        _email_col_free = next((c for c in _free.columns if "email" in c.lower()), None)
+    _email_col_up = next((c for c in _up.columns if "email" in c.lower() and "normalized" in c.lower() and not c.startswith("__")), None)
+    if not _email_col_up:
+        _email_col_up = next((c for c in _up.columns if "email" in c.lower()), None)
+    if not _email_col_free or not _email_col_up:
+        return {}, pd.DataFrame(), pd.DataFrame(), []
+    _date_col_free = next((c for c in _free.columns if "created" in c.lower() or "signup" in c.lower() or "account" in c.lower()), None)
+    if not _date_col_free:
+        _date_col_free = next((c for c in _free.columns if "date" in c.lower()), None)
+    _date_col_up = "Upload Date" if "Upload Date" in _up.columns else next((c for c in _up.columns if "upload" in c.lower() or "date" in c.lower()), None)
+    if not _date_col_free or not _date_col_up:
+        return {}, pd.DataFrame(), pd.DataFrame(), []
+    _signup_map = {}
+    for _, r in _free.iterrows():
+        _em = str(r.get(_email_col_free, "")).strip().lower()
+        _d = parse_to_date(r.get(_date_col_free, ""))
+        if _em and _d:
+            _em_norm = _em
+            if _em not in _signup_map or _d < _signup_map[_em]:
+                _signup_map[_em_norm] = _d
+    _upload_map = {}
+    for _, r in _up.iterrows():
+        _em = str(r.get(_email_col_up, "")).strip().lower()
+        _d = parse_to_date(r.get(_date_col_up, ""))
+        if _em and _d:
+            _em_norm = _em
+            if _em not in _upload_map or _d < _upload_map[_em]:
+                _upload_map[_em_norm] = _d
+    if ledger_path and os.path.exists(ledger_path):
+        try:
+            with open(ledger_path) as _lf:
+                _ledger = json.load(_lf)
+            for _em, _info in _ledger.items():
+                _up_d = parse_to_date(_info.get("first_upload_date", ""))
+                if _em and _up_d:
+                    if _em not in _upload_map or _up_d < _upload_map[_em]:
+                        _upload_map[_em] = _up_d
+        except Exception:
+            pass
+    _rows = []
+    for _em, _signup_date in _signup_map.items():
+        _upload_date = _upload_map.get(_em)
+        if _upload_date:
+            _gap = (_upload_date - _signup_date).days
+            _rows.append({"email": _em, "signup_date": _signup_date, "upload_date": _upload_date, "gap_days": max(_gap, 0)})
+    if not _rows:
+        return {}, pd.DataFrame(), pd.DataFrame(), []
+    _df_rows = pd.DataFrame(_rows)
+    _gaps = _df_rows["gap_days"]
+    _stats = {
+        "matched_users": len(_df_rows), "mean_days": round(_gaps.mean(), 1), "median_days": int(_gaps.median()),
+        "min_days": int(_gaps.min()), "max_days": int(_gaps.max()),
+        "p25_days": int(_gaps.quantile(0.25)), "p75_days": int(_gaps.quantile(0.75)), "p90_days": int(_gaps.quantile(0.90)),
+        "within_7d": int((_gaps <= 7).sum()), "within_14d": int((_gaps <= 14).sum()),
+        "within_30d": int((_gaps <= 30).sum()), "within_60d": int((_gaps <= 60).sum()),
+        "pct_7d": round((_gaps <= 7).mean() * 100, 1), "pct_14d": round((_gaps <= 14).mean() * 100, 1),
+        "pct_30d": round((_gaps <= 30).mean() * 100, 1), "pct_60d": round((_gaps <= 60).mean() * 100, 1),
+    }
+    _bins = list(range(0, min(_stats["max_days"] + 7, 365), 7))
+    if _bins[-1] < _stats["max_days"]:
+        _bins.append(_stats["max_days"] + 1)
+    _hist = pd.cut(_df_rows["gap_days"], bins=_bins, right=False)
+    _hist_df = _hist.value_counts().sort_index().reset_index()
+    _hist_df.columns = ["range", "count"]
+    _hist_df["range"] = _hist_df["range"].astype(str)
+    _df_rows["signup_month"] = _df_rows["signup_date"].dt.strftime("%Y-%m")
+    _monthly = _df_rows.groupby("signup_month").agg(
+        users=("email", "count"), median_days=("gap_days", "median"), mean_days=("gap_days", "mean"),
+    ).reset_index().sort_values("signup_month")
+    return _stats, _hist_df, _monthly, _rows
+
 period_label = f"{fd(p_start)} to {fd(p_end)}"
 
 # Universal Settings override
@@ -1512,6 +1593,69 @@ if page == "📊 Dashboard":
                          color_discrete_sequence=CC)
             fig.update_layout(height=350, **CT(), margin=dict(l=0, r=0, t=0, b=0), showlegend=False)
             _pc(fig)
+
+    # ── Time-to-Conversion Analytics ──
+    _ledger_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data_output", "first_upload_ledger.json")
+    _ttc_stats, _ttc_hist, _ttc_monthly, _ttc_rows = _build_time_to_conversion(free_rows, upload_rows, _ledger_path)
+    if _ttc_rows:
+        with st.expander("⏱️ Time-to-Conversion Analytics", expanded=False):
+            _tc1, _tc2, _tc3, _tc4, _tc5 = st.columns(5)
+            with _tc1:
+                st.metric("Matched Users", _ttc_stats["matched_users"])
+            with _tc2:
+                st.metric("Median (Days)", _ttc_stats["median_days"])
+            with _tc3:
+                st.metric("Mean (Days)", _ttc_stats["mean_days"])
+            with _tc4:
+                st.metric("Within 7d", f'{_ttc_stats["pct_7d"]}%')
+            with _tc5:
+                st.metric("Within 30d", f'{_ttc_stats["pct_30d"]}%')
+            _tt_ch1, _tt_ch2 = st.columns([2, 1])
+            with _tt_ch1:
+                if not _ttc_hist.empty:
+                    fig = px.bar(_ttc_hist, x="range", y="count",
+                                 title="Distribution: Days from Sign-up to First Upload",
+                                 labels={"range": "Days", "count": "Users"},
+                                 color_discrete_sequence=[T["accent"]])
+                    fig.update_layout(height=350, **CT(), margin=dict(l=0, r=0, t=40, b=0), xaxis_tickangle=-45)
+                    _pc(fig)
+            with _tt_ch2:
+                _cum_curve = pd.DataFrame({"day": list(range(0, _ttc_stats["max_days"] + 1, 1))})
+                _cum_curve["converted"] = _cum_curve["day"].apply(lambda d: sum(1 for r in _ttc_rows if r["gap_days"] <= d))
+                _cum_curve["pct"] = (_cum_curve["converted"] / _ttc_stats["matched_users"] * 100).round(1)
+                fig = px.line(_cum_curve, x="day", y="pct",
+                              title="Cumulative Conversion",
+                              labels={"day": "Days", "pct": "% Converted"},
+                              color_discrete_sequence=[T["green"]])
+                fig.update_layout(height=350, **CT(), margin=dict(l=0, r=0, t=40, b=0))
+                fig.update_traces(fill="tozeroy")
+                _pc(fig)
+            if not _ttc_monthly.empty:
+                st.markdown("**Monthly Cohort — Median Days to Upload**")
+                fig = px.bar(_ttc_monthly, x="signup_month", y="median_days",
+                             title="Median Days by Signup Month",
+                             labels={"signup_month": "Signup Month", "median_days": "Median Days"},
+                             color="median_days", color_continuous_scale="Viridis", text_auto=True)
+                fig.update_layout(height=350, **CT(), margin=dict(l=0, r=0, t=40, b=0))
+                _pc(fig)
+            _tt_sorted = sorted(_ttc_rows, key=lambda r: r["gap_days"])
+            _tt_fastest = pd.DataFrame(_tt_sorted[:20])
+            _tt_slowest = pd.DataFrame(reversed(_tt_sorted[-20:]))
+            _tt_fc1, _tt_fc2 = st.columns(2)
+            with _tt_fc1:
+                st.markdown("**⚡ Fastest Conversions (top 20)**")
+                if not _tt_fastest.empty:
+                    _tt_fastest["email"] = _tt_fastest["email"].str[:25]
+                    _tt_fastest["signup_date"] = _tt_fastest["signup_date"].dt.strftime("%Y-%m-%d")
+                    _tt_fastest["upload_date"] = _tt_fastest["upload_date"].dt.strftime("%Y-%m-%d")
+                    _df(_tt_fastest[["email", "signup_date", "upload_date", "gap_days"]], height=300)
+            with _tt_fc2:
+                st.markdown("**🐌 Slowest Conversions (top 20)**")
+                if not _tt_slowest.empty:
+                    _tt_slowest["email"] = _tt_slowest["email"].str[:25]
+                    _tt_slowest["signup_date"] = _tt_slowest["signup_date"].dt.strftime("%Y-%m-%d")
+                    _tt_slowest["upload_date"] = _tt_slowest["upload_date"].dt.strftime("%Y-%m-%d")
+                    _df(_tt_slowest[["email", "signup_date", "upload_date", "gap_days"]], height=300)
 
     _ai_mod = MOD.get("ai_engine")
     if _ai_mod:
