@@ -692,7 +692,7 @@ with st.sidebar:
 
     _KPI_PAGES = {"📊 Dashboard", "🔍 Browse Data", "🔬 EDA Lab", "✏️ Manual Override", "📋 Reports", "🔔 Alerts"}
     _TRAFFIC_PAGES = {"🚦 Traffic Intel", "📺 YouTube", "💼 LinkedIn", "🔗 Cross-Platform"}
-    _AI_PAGES = {"🤖 Ask AI", "🔮 Predictions"}
+    _AI_PAGES = {"🤖 Ask AI", "🔮 Predictions", "🧠 AI Tools"}
 
     page = st.session_state["nav_page"]
 
@@ -712,7 +712,7 @@ with st.sidebar:
                 st.rerun()
 
     with st.expander("🤖 AI & Insights", expanded=page in _AI_PAGES):
-        for _label, _key in [("Ask AI", "🤖 Ask AI"), ("Predictions", "🔮 Predictions")]:
+        for _label, _key in [("AI Tools", "🧠 AI Tools"), ("Ask AI", "🤖 Ask AI"), ("Predictions", "🔮 Predictions")]:
             if st.button(_label, use_container_width=True, key=f"nav_{_key}"):
                 st.session_state["nav_page"] = _key
                 st.rerun()
@@ -1963,6 +1963,192 @@ elif page == "🤖 Ask AI":
                 st.rerun()
 
 # ═══════════════════════════════════════════════════════════════
+# PAGE: 🧠 AI POWER TOOLS — 29 YouTube AI Tools
+# ═══════════════════════════════════════════════════════════════
+elif page == "🧠 AI Tools":
+    st.markdown('<div class="sec-head">🧠 AI Power Tools</div>', unsafe_allow_html=True)
+    _ai_mod = MOD.get("ai_engine")
+    if not _ai_mod:
+        st.error("AI Engine not loaded. Add GROQ_API_KEY or GEMINI_API_KEY to secrets.")
+        st.stop()
+
+    _YT_TOOLS = [
+        ("content_strategy", "Content Strategy", "🎯", "purple", "90-day strategy from YOUR data", False),
+        ("competitor_gap", "Competitive Gap Analysis", "📊", "blue", "Find content opportunities", True, "Competitor channel"),
+        ("thumbnail_audit", "Thumbnail Audit", "🖼️", "pink", "What thumbnails work", False),
+        ("title_optimizer", "Title Optimizer", "✨", "yellow", "Rewrite for max CTR", True, "Title to optimize"),
+        ("upload_schedule", "Upload Schedule", "📅", "green", "Data-driven schedule", False),
+        ("audience_persona", "Audience Persona", "👥", "cyan", "Who your viewers are", False),
+        ("viral_pattern", "Viral Pattern Detector", "⚡", "orange", "Replicate viral success", False),
+        ("comment_insights", "Comment Insights", "💬", "indigo", "Ideas from comments", False),
+        ("weekly_report", "Weekly Report", "📋", "red", "Executive-ready report", False),
+        ("improvement_plan", "30-Day Plan", "💡", "green", "Actionable daily plan", False),
+        ("video_clone", "Video Clone Blueprint", "📝", "purple", "Replicate your top videos", True, "Video title"),
+        ("description_writer", "Description Writer", "📖", "blue", "SEO-optimized descriptions", True, "Video title"),
+        ("tag_optimizer", "Tag Optimizer", "🏷️", "cyan", "Generate optimal SEO tags", True, "Video topic"),
+        ("channel_swot", "SWOT Analysis", "🧭", "orange", "Strengths, Weaknesses, Opportunities", False),
+        ("ab_test_planner", "A/B Test Planner", "🔀", "pink", "Plan title/thumbnail tests", True, "Title to test"),
+        ("hook_generator", "Hook Generator", "🎤", "purple", "First 15s hooks that retain", True, "Video topic"),
+        ("script_writer", "Full Script Writer", "🎬", "blue", "Complete video scripts", True, "Video topic"),
+        ("shorts_ideas", "Shorts Ideas", "✂️", "pink", "Viral shorts from your videos", False),
+        ("chapter_generator", "Auto Chapters", "📋", "cyan", "Timestamp chapters for SEO", True, "Video title"),
+        ("sponsor_pitch", "Sponsor Pitch", "📧", "green", "Brand outreach emails", True, "Target brand"),
+        ("community_post", "Community Posts", "📢", "orange", "High-engagement posts", False),
+        ("comment_replier", "Smart Reply", "↩️", "indigo", "Reply to comments", True, "Comment to reply"),
+        ("cta_generator", "CTA Generator", "🖱️", "yellow", "Convert viewers to subs", True, "Video topic"),
+        ("trend_radar", "Trend Radar", "📡", "red", "Trending topics now", True, "Your niche"),
+        ("keyword_finder", "Keyword Finder", "🔑", "purple", "Low-comp keywords", True, "Topic"),
+        ("channel_audit", "Full Channel Audit", "✅", "blue", "Complete A-F review", False),
+        ("revenue_forecast", "Revenue Forecast", "💰", "green", "Predict earnings", False),
+        ("collab_finder", "Collab Finder", "🤝", "cyan", "Channels to collab with", False),
+        ("niche_analyzer", "Niche Analyzer", "🧩", "orange", "Niche saturation check", True, "Niche"),
+        ("algorithm_decoder", "Algorithm Decoder", "🤖", "pink", "What YT favors now", False),
+    ]
+
+    _COLORS = {"purple": "#7c3aed", "blue": "#3b82f6", "pink": "#ec4899", "yellow": "#eab308",
+               "green": "#22c55e", "cyan": "#06b6d4", "orange": "#f97316", "indigo": "#6366f1", "red": "#ef4444"}
+
+    _sel_tool = st.session_state.get("yt_tool_selected")
+    if not _sel_tool:
+        st.caption(f"⚡ {len(_YT_TOOLS)} AI tools that analyze YOUR real channel data")
+        _cols = st.columns(3)
+        for i, t in enumerate(_YT_TOOLS):
+            with _cols[i % 3]:
+                _tid, _tname, _ticon, _tcolor, _tdesc = t[0], t[1], t[2], t[3], t[4]
+                _needs_input = len(t) > 5 and t[5]
+                _stub = ""
+                if _needs_input:
+                    _stub = " 🔤"
+                st.markdown(f"""
+                <div onclick="navigator.clipboard.writeText('{_tid}').then(() => {{}})" 
+                     style="padding:12px;border-radius:10px;border:1px solid {_COLORS.get(_tcolor,'#555')}33;
+                     background:{_COLORS.get(_tcolor,'#555')}11;cursor:pointer;margin:4px 0;
+                     transition:all 0.15s ease;"
+                     onmouseover="this.style.borderColor='{_COLORS.get(_tcolor,'#555')}'"
+                     onmouseout="this.style.borderColor='{_COLORS.get(_tcolor,'#555')}33'">
+                    <div style="font-size:22px;margin-bottom:4px;">{_ticon}</div>
+                    <div style="font-weight:600;color:#fff;font-size:13px;">{_tname}</div>
+                    <div style="color:#999;font-size:11px;margin-top:2px;">{_tdesc}{'  ✏️' if _needs_input else ''}</div>
+                </div>
+                """, unsafe_allow_html=True)
+                if st.button(f"▶️ {_tname}", key=f"yt_tool_{_tid}", use_container_width=True):
+                    st.session_state["yt_tool_selected"] = _tid
+                    st.session_state["yt_tool_input"] = ""
+                    st.session_state["yt_tool_result"] = ""
+                    st.rerun()
+    else:
+        # Tool detail view
+        _tool_info = next((t for t in _YT_TOOLS if t[0] == _sel_tool), None)
+        if _tool_info:
+            _tid, _tname, _ticon, _tcolor, _tdesc = _tool_info[0], _tool_info[1], _tool_info[2], _tool_info[3], _tool_info[4]
+            _needs_input = len(_tool_info) > 5 and _tool_info[5]
+            _input_label = _tool_info[6] if _needs_input else ""
+
+            if st.button("← Back to all tools", key="yt_tool_back"):
+                st.session_state.pop("yt_tool_selected", None)
+                st.rerun()
+
+            st.markdown(f"""
+            <div style="padding:16px;border-radius:12px;border:1px solid {_COLORS.get(_tcolor,'#555')}44;
+                 background:{_COLORS.get(_tcolor,'#555')}11;">
+                <div style="font-size:28px;">{_ticon}</div>
+                <div style="font-weight:700;color:#fff;font-size:18px;margin:4px 0;">{_tname}</div>
+                <div style="color:#aaa;font-size:13px;">{_tdesc}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            _topic = st.session_state.get("yt_tool_input", "")
+            if _needs_input:
+                _topic = st.text_input(f"✏️ {_input_label}", value=_topic, placeholder=f"Enter {_input_label.lower()}...", key="yt_tool_input_field")
+
+            _result = st.session_state.get("yt_tool_result", "")
+            if st.button("🚀 Run Analysis", type="primary", use_container_width=True, disabled=bool(_result)):
+                with st.spinner(f"🤖 Analyzing with {_tname}..."):
+                    try:
+                        # Build channel context from YouTube data
+                        _vids = st.session_state.get("yt_videos", [])
+                        if not _vids:
+                            try:
+                                from youtube_connector import get_channel_videos
+                                _vids = get_channel_videos(max_videos=200)
+                                st.session_state["yt_videos"] = _vids
+                            except Exception:
+                                pass
+                        _ch_info = {}
+                        try:
+                            from youtube_connector import get_channel_info
+                            _ch_info = get_channel_info()
+                        except Exception:
+                            pass
+                        _ctx_parts = [f"CHANNEL: {_ch_info.get('title','Unknown')}",
+                                      f"Subscribers: {_ch_info.get('subscribers',0):,}",
+                                      f"Videos: {len(_vids)}",
+                                      f"Total Views: {_ch_info.get('total_views',0):,}"]
+                        if _vids:
+                            _scored = sorted(_vids, key=lambda v: v.get('views',0), reverse=True)
+                            _ctx_parts.append("\nTOP 20 VIDEOS:")
+                            for v in _scored[:20]:
+                                _ctx_parts.append(f"- {v.get('title','?')[:50]} | V:{v.get('views',0)} L:{v.get('likes',0)} C:{v.get('comments',0)}")
+                            _ctx_parts.append("\nBOTTOM 10:")
+                            for v in _scored[-10:]:
+                                _ctx_parts.append(f"- {v.get('title','?')[:50]} | V:{v.get('views',0)}")
+                        _context = "\n".join(_ctx_parts)
+
+                        _prompt_map = {
+                            "content_strategy": "Create a 90-day content strategy: top 3 themes that work, 10 specific video ideas, optimal video length, series ideas, topics to AVOID.",
+                            "competitor_gap": f"Competitor: {_topic or 'N/A'}\nFind content gaps: topics this channel covers well, topics it should cover but doesn't, underserved niche areas, 5 specific video ideas.",
+                            "thumbnail_audit": "Thumbnail Performance Audit: patterns in TOP vs BOTTOM videos, 5 design principles to follow, what to change immediately, 3 thumbnail templates to test.",
+                            "title_optimizer": f"ORIGINAL TITLE: {_topic or 'Top video'}\nOptimize: 5 rewrites (curiosity, listicle, controversy, story, value), pick BEST and explain, predicted CTR improvement.",
+                            "upload_schedule": "Upload Strategy: optimal frequency, best days/times, optimal video length, consistency tactics, 4-week content calendar.",
+                            "audience_persona": "Build audience personas: PRIMARY persona, what they watch for, why they engage, content to attract more, 5 video ideas.",
+                            "viral_pattern": "Analyze TOP videos: title patterns, topic patterns, what separates top from bottom, formula to replicate, 5 video ideas using formula.",
+                            "comment_insights": "Based on engagement data: topics generating discussion, content ideas, how to encourage comments, 5 CTAs to add.",
+                            "weekly_report": "Weekly Executive Report: Executive Summary, Key Metrics, Top Wins, Areas of Concern, Action Items, 30-Day Outlook.",
+                            "improvement_plan": "30-Day Plan: Week 1 Foundation, Week 2 Content, Week 3 Optimization, Week 4 Growth. Specific daily tasks.",
+                            "video_clone": f"Video to clone: {_topic or 'Auto-detect top video'}\nVIDEO CLONE BLUEPRINT: Analyze top video success formula, 5 key elements, 7 NEW video ideas using same formula.",
+                            "description_writer": f"VIDEO TITLE: {_topic or 'Use best video'}\nWrite OPTIMIZED description: hook in first 2 lines, SEO-rich paragraph, key takeaways, CTA, hashtags, tags.",
+                            "tag_optimizer": f"VIDEO TOPIC: {_topic or 'Best video topic'}\nGenerate: 15 primary tags, 10 long-tail tags, 5 broad niche tags, 5 trending tags, SEO strategy.",
+                            "channel_swot": "CHANNEL SWOT: Strengths, Weaknesses, Opportunities, Threats. 5 strategic priorities ranked by impact.",
+                            "ab_test_planner": f"TITLE TO TEST: {_topic or 'Best video'}\nA/B TEST PLAN: 3 title variations, 3 thumbnail concepts, hypothesis, success metrics, test duration.",
+                            "hook_generator": f"VIDEO TOPIC: {_topic}\nWrite 6 powerful hooks (15s each): curiosity, shocking, story, value, controversial, MrBeast-style.",
+                            "script_writer": f"VIDEO TOPIC: {_topic}\nWrite complete script: hook, promise, main content (3-5 sections), CTA, outro with end-screen prompts.",
+                            "shorts_ideas": "Generate 15 Shorts ideas from existing content: hook line, 30-60s script, hashtags, best source video, viral potential score.",
+                            "chapter_generator": f"VIDEO: {_topic or 'Best video'}\nGenerate optimal chapter timestamps: 6-10 chapters with SEO-rich titles.",
+                            "sponsor_pitch": f"TARGET BRAND: {_topic or 'any relevant brand'}\nWrite sponsor pitch: subject lines, hook, channel stats, audience, deal proposal, CTA.",
+                            "community_post": "Generate 10 high-engagement community posts: polls, questions, image ideas, announcements with engagement strategy.",
+                            "comment_replier": f"COMMENT: {_topic}\nGenerate 5 reply options: friendly+question, thank you+CTA, funny, detailed, pin-worthy.",
+                            "cta_generator": f"VIDEO TOPIC: {_topic}\nGenerate 10 CTAs: subscribe(3), like(2), comment(2), watch next(2), external(1).",
+                            "trend_radar": f"NICHE: {_topic or 'this niche'}\nIdentify: 5 rising topics, 5 declining, seasonal opps, format trends, 10 specific video ideas.",
+                            "keyword_finder": f"TOPIC: {_topic}\nFind low-competition keywords: 10 long-tail, search volume, competition, suggested titles, hashtags.",
+                            "channel_audit": "Complete Channel Audit: branding, content quality, upload consistency, SEO health, engagement, monetization, grade A-F.",
+                            "revenue_forecast": "Revenue Forecast: current est. monthly revenue, 3/6/12 month projections, CPM estimates, action plan to 10x.",
+                            "collab_finder": "Collaboration Opportunities: 10 similar-sized channels, 5 bigger channels, collab formats, outreach template.",
+                            "niche_analyzer": f"NICHE: {_topic or 'current niche'}\nNiche analysis: saturation (1-10), audience size, revenue potential, top channels, gaps.",
+                            "algorithm_decoder": "Decode YouTube algorithm: current ranking factors, what's favored, what's penalized, CTR vs Retention priorities, 30-day strategy.",
+                        }
+                        _user_prompt = f"{_context}\n\n{'TOPIC: ' + _topic if _needs_input and _topic else ''}\n\n{_prompt_map.get(_tid, 'Analyze this channel data and provide specific actionable advice.')}"
+                        _result_raw = _ai_mod.ask_ai(question=_user_prompt)
+                        _result_text = _result_raw.get("answer", "") if isinstance(_result_raw, dict) else str(_result_raw)
+                        st.session_state["yt_tool_result"] = _result_text
+                        st.rerun()
+                    except Exception as _e:
+                        st.session_state["yt_tool_result"] = f"❌ Error: {_e}"
+                        st.rerun()
+
+            if _result:
+                st.markdown("---")
+                st.markdown("#### 📊 AI Analysis Result")
+                _rcol1, _rcol2 = st.columns([1, 5])
+                with _rcol1:
+                    if st.button("📋 Copy", key="yt_tool_copy"):
+                        st.toast("Copied to clipboard!")
+                with _rcol2:
+                    if st.button("🗑️ Clear", key="yt_tool_clear"):
+                        st.session_state.pop("yt_tool_result", None)
+                        st.rerun()
+                st.markdown(f'<div style="padding:16px;background:#111;border-radius:8px;border:1px solid #333;color:#ddd;font-size:14px;line-height:1.6;white-space:pre-wrap;">{_result}</div>', unsafe_allow_html=True)
+
+# ═══════════════════════════════════════════════════════════════
 # PAGE: 🔮 PREDICTIONS
 # ═══════════════════════════════════════════════════════════════
 elif page == "🔮 Predictions":
@@ -3129,7 +3315,7 @@ elif page == "📺 YouTube":
             get_video_analytics_batch, get_retention_curve,
             calculate_performance_score, get_engagement_rating, get_retention_rating,
             diagnose_video, get_score_label, format_number,
-            is_configured, has_analytics_access, get_status, _parse_duration, _format_duration,
+            is_configured, has_analytics_access, get_status, _format_duration,
         )
     except Exception as e:
         st.error(f"YouTube connector not loaded: {e}")
@@ -3210,11 +3396,20 @@ elif page == "📺 YouTube":
     st.markdown("---")
 
     # ── Date range for analytics ──
-    _yt_period = st.selectbox("📅 Period", ["Last 7 Days", "Last 14 Days", "Last 28 Days", "Last 30 Days", "Last 90 Days", "Last 180 Days", "Last 365 Days", "All Time"], index=2, key="yt_period")
+    _yt_comp_mode = st.checkbox("🔄 Compare with previous period", key="yt_comp_mode")
+    _c1, _c2 = st.columns([3, 1])
+    with _c1:
+        _yt_period = st.selectbox("📅 Period", ["Last 7 Days", "Last 14 Days", "Last 28 Days", "Last 30 Days", "Last 90 Days", "Last 180 Days", "Last 365 Days", "All Time"], index=2, key="yt_period")
     _yt_days_map = {"Last 7 Days": 7, "Last 14 Days": 14, "Last 28 Days": 28, "Last 30 Days": 30, "Last 90 Days": 90, "Last 180 Days": 180, "Last 365 Days": 365, "All Time": 3650}
     _yt_days = _yt_days_map.get(_yt_period, 28)
     _yt_start = (datetime.now() - timedelta(days=_yt_days)).strftime("%Y-%m-%d")
     _yt_end = datetime.now().strftime("%Y-%m-%d")
+    # Comparison period: same length, ending at _yt_start
+    _yt_comp_start = (datetime.now() - timedelta(days=_yt_days * 2)).strftime("%Y-%m-%d")
+    _yt_comp_end = (datetime.now() - timedelta(days=_yt_days)).strftime("%Y-%m-%d")
+    _yt_comp_prefix = "prev_"
+    if _yt_comp_mode:
+        st.caption(f"🔄 Comparing **{_yt_start} → {_yt_end}** vs **{_yt_comp_start} → {_yt_comp_end}**")
 
     # ── Tabs matching Vercel Command Center ──
     _yt_tabs = st.tabs([
@@ -3259,11 +3454,32 @@ elif page == "📺 YouTube":
             if "subscribersLost" in _daily_data.columns:
                 _period_subs_lost = int(_daily_data["subscribersLost"].sum())
 
+        # ── Comparison period data (same functions, previous period) ──
+        _comp_data = {}
+        if _yt_comp_mode and _has_oauth:
+            try:
+                _comp_data["daily"] = get_daily_analytics(_yt_comp_start, _yt_comp_end)
+                if not _comp_data["daily"].empty:
+                    _comp_views = int(_comp_data["daily"]["views"].sum()) if "views" in _comp_data["daily"].columns else 0
+                    _comp_watch = float(_comp_data["daily"]["estimatedMinutesWatched"].sum()) if "estimatedMinutesWatched" in _comp_data["daily"].columns else 0
+                    _comp_subs_g = int(_comp_data["daily"]["subscribersGained"].sum()) if "subscribersGained" in _comp_data["daily"].columns else 0
+                    _comp_subs_l = int(_comp_data["daily"]["subscribersLost"].sum()) if "subscribersLost" in _comp_data["daily"].columns else 0
+                else:
+                    _comp_views = _comp_watch = _comp_subs_g = _comp_subs_l = 0
+            except Exception:
+                _comp_views = _comp_watch = _comp_subs_g = _comp_subs_l = 0
+        else:
+            _comp_views = _comp_watch = _comp_subs_g = _comp_subs_l = 0
+
+        def _pct(v, p):
+            if p == 0: return None
+            return f"{((v - p) / p * 100):+.1f}%"
+
         # KPI row (matching Vercel: Total Views, Subscribers, Total Likes, Comments, Engagement, Shares)
         _k1, _k2, _k3, _k4, _k5, _k6 = st.columns(6)
         with _k1:
             _views_display = _period_views if _has_oauth and _period_views > 0 else _total_views
-            st.metric("Total Views", format_number(_views_display))
+            st.metric("Total Views", format_number(_views_display), delta=_pct(_views_display, _comp_views) if _yt_comp_mode else None)
         with _k2:
             st.metric("Subscribers", f"{_ch_info.get('subscribers', 0):,}")
         with _k3:
@@ -3275,7 +3491,7 @@ elif page == "📺 YouTube":
             st.caption("real calc", help="Engagement = (likes + comments) / views")
         with _k6:
             if _has_oauth and _period_watch_min > 0:
-                st.metric("Watch Hours", f"{_period_watch_min/60:.0f}")
+                st.metric("Watch Hours", f"{_period_watch_min/60:.0f}", delta=_pct(_period_watch_min, _comp_watch) if _yt_comp_mode else None)
             else:
                 st.metric("Shares", "—")
 
@@ -3286,8 +3502,13 @@ elif page == "📺 YouTube":
             fig.add_trace(go.Scatter(
                 x=_daily_data["day"], y=_daily_data.get("views", pd.Series()),
                 fill="tozeroy", line=dict(color=T["accent"], width=2),
-                fillcolor="rgba(0,212,255,0.08)",
+                fillcolor="rgba(0,212,255,0.08)", name="Current",
             ))
+            if _yt_comp_mode and _comp_data.get("daily") is not None and not _comp_data["daily"].empty and "views" in _comp_data["daily"].columns:
+                fig.add_trace(go.Scatter(
+                    x=_comp_data["daily"]["day"], y=_comp_data["daily"]["views"],
+                    line=dict(color="#888", width=1.5, dash="dot"), name="Previous",
+                ))
             fig.update_layout(height=300, **CT(), margin=dict(l=40, r=20, t=20, b=20))
             _pc(fig)
         elif _daily_data.empty:
@@ -3434,8 +3655,9 @@ Diagnosis issues: {json.dumps(_issues)}"""
                         _prompt = f"{'Explain why this YouTube video performed well and how to replicate its success.' if _is_work else 'Explain why this YouTube video underperformed and provide specific actionable fixes.'}\n\n{_context}"
                         with st.spinner("🤖 AI analyzing..."):
                             try:
-                                _resp = _ai_mod.ask(_prompt)
-                                st.markdown(_resp)
+                                _resp = _ai_mod.ask_ai(question=_prompt)
+                                if isinstance(_resp, dict) and _resp.get("answer"):
+                                    st.markdown(_resp["answer"])
                             except Exception:
                                 pass
 
@@ -3800,7 +4022,7 @@ Diagnosis issues: {json.dumps(_issues)}"""
 
             # Top videos for period
             st.markdown("##### 🏆 Top Videos This Period")
-            _top = get_top_videos(_yt_start, _yt_end)
+            _top = get_top_videos(metric="views", start_date=_yt_start, end_date=_yt_end)
             if not _top.empty:
                 _df(_top)
             else:
@@ -4115,8 +4337,8 @@ Provide specific, actionable advice based on the data. Include numbers and speci
 Format with clear sections and bullet points."""
 
             with st.spinner("Thinking..."):
-                _resp = _ai_mod.ask(_full_prompt)
-                st.markdown(_resp)
+                _resp = _ai_mod.ask_ai(question=_full_prompt)
+                st.markdown(_resp.get("answer", str(_resp)))
 
     # ── YouTube Quick Alert ──
     st.markdown("---")

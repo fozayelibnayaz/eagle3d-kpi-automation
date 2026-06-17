@@ -854,3 +854,351 @@ def get_status() -> Dict[str, Any]:
         "configured": bool(has_api_key and has_channel),
         "full_access": bool(has_api_key and has_channel and has_access_token),
     }
+
+
+# ═══════════════════════════════════════════════════════════════
+# SMART NOTIFICATIONS — Event detection engine (v4.0 port)
+# 25+ alert types with per-type caps, dedup, priority sorting
+# ═══════════════════════════════════════════════════════════════
+
+_MILESTONE_VIEWS = [100, 500, 1000, 2500, 5000, 10000, 25000, 50000, 100000, 250000, 500000, 1000000]
+_MILESTONE_SUBS = [100, 500, 1000, 2000, 5000, 10000, 25000, 50000, 100000, 500000, 1000000]
+_MILESTONE_WATCH = [100, 500, 1000, 5000, 10000, 50000, 100000]
+
+_MAX_PER_TYPE = {
+    "critical_retention": 3, "critical_engagement": 3, "dead_video": 3,
+    "rising": 4, "views_dropped": 3, "likes_spike": 3, "comments_spike": 3,
+    "shares_spike": 3, "watch_time_milestone": 2, "new_video": 5, "strong_launch": 3,
+    "hidden_gem": 3, "high_ctr_low_views": 3, "low_ctr_warning": 3,
+    "re_engagement": 2, "momentum_loss": 3, "consistency_warning": 1,
+    "channel_engagement_drop": 1, "upload_streak": 1,
+}
+
+
+def detect_video_events(videos, prev_snapshot=None, channel_subs=0):
+    """Detect events from video list. Returns list of event dicts sorted by priority."""
+    events = []
+    type_counts = {}
+    has_prev = bool(prev_snapshot)
+    active = [v for v in videos if (v.get("views") or 0) > 0]
+    now_ts = datetime.now().timestamp()
+
+    def _age_days(pub):
+        if not pub:
+            return 999
+        try:
+            pub_dt = datetime.fromisoformat(pub.replace("Z", "+00:00"))
+            return max(0.001, (datetime.now(pub_dt.tzinfo) - pub_dt).total_seconds() / 86400)
+        except Exception:
+            return 999
+
+    def _pct(n, p):
+        if p == 0:
+            return 100 if n > 0 else 0
+        return (n - p) / p * 100
+
+    def _eng(l, c, v):
+        if v == 0:
+            return 0
+        return (l + c) / v * 100
+
+    def _add(e):
+        mx = _MAX_PER_TYPE.get(e["type"])
+        if mx == 0:
+            return
+        cnt = type_counts.get(e["type"], 0)
+        if mx is not None and cnt >= mx:
+            return
+        type_counts[e["type"]] = cnt + 1
+        events.append(e)
+
+    for v in videos:
+        vid = v.get("video_id", v.get("youtube_id", ""))
+        title = (v.get("title") or "Untitled")[:60]
+        p = (prev_snapshot or {}).get(vid)
+
+        views = v.get("views") or 0
+        likes = v.get("likes") or 0
+        comments = v.get("comments") or 0
+        va = v.get("analytics") or {}
+        shares = va.get("shares") or v.get("shares") or 0
+        ctr = va.get("ctr")
+        retention = va.get("avg_view_percentage") or va.get("averageViewPercentage")
+        watch_min = va.get("watch_time_minutes") or va.get("estimatedMinutesWatched")
+        subs_g = va.get("subscribers_gained") or va.get("subscribersGained") or 0
+        has_real = v.get("has_real_analytics", False)
+        er = _eng(likes, comments, views)
+        age = _age_days(v.get("published_at"))
+        vpd = views / max(age, 0.001) if views > 0 else 0
+
+        def _is_real_ret(r):
+            return bool(has_real and r is not None and r > 0 and r >= 1.5 and views >= 100)
+
+        # NEW VIDEO <48h
+        if age <= 2:
+            _add({
+                "type": "new_video", "video_id": vid, "title": title,
+                "emoji": "🆕", "priority": 4, "severity": "info",
+                "message": f"New video live — push in first 24h for algorithm boost",
+                "data": {"Video": title, "Hours Live": f"{int(age * 24)}h", "Views": views},
+            })
+            continue
+
+        if views == 0:
+            continue
+
+        # SNAPSHOT-BASED
+        if p and has_prev:
+            v_delta = views - (p.get("views") or 0)
+            l_delta = likes - (p.get("likes") or 0)
+            c_delta = comments - (p.get("comments") or 0)
+            s_delta = shares - (p.get("shares") or 0)
+            sub_delta = subs_g - (p.get("subscribers_gained") or 0)
+            v_pct = _pct(views, p.get("views") or 0)
+            l_pct = _pct(likes, p.get("likes") or 0)
+
+            if v_pct >= 200 and v_delta >= 1000:
+                _add({"type": "viral_explosion", "video_id": vid, "title": title, "emoji": "🔥", "priority": 1,
+                      "severity": "critical",
+                      "message": f"VIRAL EXPLOSION! +{v_delta:,} views ({v_pct:.0f}% surge) — promote NOW",
+                      "data": {"Video": title, "New Views": f"+{v_delta:,}", "Growth": f"+{v_pct:.0f}%"}})
+            elif v_pct >= 100 and v_delta >= 500:
+                _add({"type": "viral", "video_id": vid, "title": title, "emoji": "🚀", "priority": 2,
+                      "severity": "critical",
+                      "message": f"Going viral! +{v_delta:,} views ({v_pct:.0f}% growth)",
+                      "data": {"Video": title, "New Views": f"+{v_delta:,}", "Growth": f"+{v_pct:.0f}%"}})
+            elif v_pct >= 30 and v_delta >= 50:
+                _add({"type": "rising", "video_id": vid, "title": title, "emoji": "📈", "priority": 7,
+                      "severity": "success",
+                      "message": f"Rising! +{v_delta:,} views ({v_pct:.0f}% growth)",
+                      "data": {"Video": title, "New Views": f"+{v_delta:,}"}})
+
+            if v_delta < 0 and abs(v_delta) >= 100 and abs(v_pct) >= 40:
+                _add({"type": "views_dropped", "video_id": vid, "title": title, "emoji": "📉", "priority": 3,
+                      "severity": "warning",
+                      "message": f"Views dropped {abs(v_pct):.0f}% — lost {abs(v_delta):,} views",
+                      "data": {"Video": title, "Lost": f"{abs(v_delta):,}"}})
+
+            if l_delta >= 10 and l_pct >= 50:
+                _add({"type": "likes_spike", "video_id": vid, "title": title, "emoji": "👍", "priority": 6,
+                      "severity": "success",
+                      "message": f"Likes spiking! +{l_delta} ({l_pct:.0f}% increase)",
+                      "data": {"Video": title, "New Likes": f"+{l_delta}"}})
+
+            if c_delta >= 3:
+                _add({"type": "comments_spike", "video_id": vid, "title": title, "emoji": "💬", "priority": 5,
+                      "severity": "info",
+                      "message": f"Comments spiking! +{c_delta} — reply fast for algo boost",
+                      "data": {"Video": title, "New Comments": f"+{c_delta}"}})
+
+            if s_delta >= 5:
+                _add({"type": "shares_spike", "video_id": vid, "title": title, "emoji": "🔗", "priority": 5,
+                      "severity": "success",
+                      "message": f"+{s_delta} new shares — content spreading!",
+                      "data": {"Video": title, "New Shares": f"+{s_delta}"}})
+
+            if sub_delta >= 10:
+                _add({"type": "subscriber_gained", "video_id": vid, "title": title, "emoji": "👥", "priority": 4,
+                      "severity": "success",
+                      "message": f"+{sub_delta} subscribers from this video — growth driver!",
+                      "data": {"Video": title, "New Subs": f"+{sub_delta}"}})
+
+            # Milestone detection
+            for m in _MILESTONE_VIEWS:
+                if views >= m and (p.get("views") or 0) < m:
+                    _add({"type": "milestone", "video_id": vid, "title": title, "emoji": "🏆", "priority": 2,
+                          "severity": "success",
+                          "message": f"Crossed {m:,} views milestone!",
+                          "data": {"Video": title, "Milestone": f"{m:,} views"}})
+                    break
+
+            if watch_min and watch_min > 0:
+                wh = watch_min / 60
+                pwh = (p.get("watch_time_minutes") or 0) / 60
+                for m in _MILESTONE_WATCH:
+                    if wh >= m and pwh < m:
+                        _add({"type": "watch_time_milestone", "video_id": vid, "title": title, "emoji": "⌚", "priority": 5,
+                              "severity": "success",
+                              "message": f"{m:,} watch hours milestone!",
+                              "data": {"Video": title, "Watch Hours": f"{m:,}"}})
+                        break
+
+            if v_pct < -10 and v_delta < -20 and 7 < age < 60:
+                _add({"type": "momentum_loss", "video_id": vid, "title": title, "emoji": "📉", "priority": 8,
+                      "severity": "warning",
+                      "message": f"Momentum slowing: {v_pct:.0f}% view change",
+                      "data": {"Video": title, "Change": f"{v_pct:.0f}%"}})
+
+            if age >= 60 and v_delta >= 200 and v_pct >= 20:
+                _add({"type": "re_engagement", "video_id": vid, "title": title, "emoji": "🔄", "priority": 6,
+                      "severity": "success",
+                      "message": f"Old video resurging! +{v_delta:,} views on {int(age)}-day-old video",
+                      "data": {"Video": title, "New Views": f"+{v_delta:,}"}})
+
+        # NON-SNAPSHOT
+        if 1 < age <= 7 and vpd >= 100:
+            _add({"type": "strong_launch", "video_id": vid, "title": title, "emoji": "🎉", "priority": 3,
+                  "severity": "success",
+                  "message": f"Strong launch! {vpd:.0f} views/day in first {int(age)} days",
+                  "data": {"Video": title, "Views/Day": f"{vpd:.0f}"}})
+
+        if _is_real_ret(retention) and retention < 15:
+            _add({"type": "critical_retention", "video_id": vid, "title": title, "emoji": "⏱️", "priority": 9,
+                  "severity": "critical",
+                  "message": f"Critical retention: {retention:.1f}% — viewers leaving immediately",
+                  "data": {"Video": title, "Retention": f"{retention:.1f}%"}})
+
+        if er < 0.5 and er > 0 and views >= 500:
+            _add({"type": "critical_engagement", "video_id": vid, "title": title, "emoji": "❌", "priority": 10,
+                  "severity": "critical",
+                  "message": f"Critical engagement: {er:.2f}% — add CTA or refresh thumbnail",
+                  "data": {"Video": title, "Engagement": f"{er:.2f}%"}})
+
+        if age >= 30 and vpd < 1 and views > 0:
+            _add({"type": "dead_video", "video_id": vid, "title": title, "emoji": "🪦", "priority": 14,
+                  "severity": "warning",
+                  "message": f"Dead video: {vpd:.2f} views/day after {int(age)} days",
+                  "data": {"Video": title, "Views/Day": f"{vpd:.2f}"}})
+
+        if _is_real_ret(retention) and retention >= 50 and views < 500 and age > 7:
+            _add({"type": "hidden_gem", "video_id": vid, "title": title, "emoji": "💎", "priority": 8,
+                  "severity": "info",
+                  "message": f"{retention:.0f}% retention but only {views:,} views — promote this!",
+                  "data": {"Video": title, "Retention": f"{retention:.1f}%", "Views": f"{views:,}"}})
+
+        if ctr is not None and ctr >= 8 and views < 300 and age > 3:
+            _add({"type": "high_ctr_low_views", "video_id": vid, "title": title, "emoji": "🎯", "priority": 8,
+                  "severity": "info",
+                  "message": f"High CTR ({ctr:.1f}%) but only {views:,} views — share externally",
+                  "data": {"Video": title, "CTR": f"{ctr:.1f}%", "Views": f"{views:,}"}})
+
+        if ctr is not None and ctr < 2 and views >= 200:
+            _add({"type": "low_ctr_warning", "video_id": vid, "title": title, "emoji": "📊", "priority": 9,
+                  "severity": "warning",
+                  "message": f"Low CTR: {ctr:.1f}% — thumbnail or title needs A/B test",
+                  "data": {"Video": title, "CTR": f"{ctr:.1f}%"}})
+
+    # ─── CHANNEL-WIDE ─────────────────────────────────────────
+    if len(active) > 2:
+        by_score = sorted(active, key=lambda v: v.get("score") or v.get("views") or 0, reverse=True)
+        top_v = by_score[0]
+        worst_v = by_score[-1]
+
+        total_views = sum(v.get("views") or 0 for v in videos)
+        total_likes = sum(v.get("likes") or 0 for v in videos)
+        total_comments = sum(v.get("comments") or 0 for v in videos)
+        total_shares = sum(v.get("analytics", {}).get("shares") or v.get("shares") or 0 for v in videos)
+        total_watch = sum(v.get("analytics", {}).get("watch_time_minutes") or 0 for v in videos)
+        avg_eng = _eng(total_likes, total_comments, total_views) if total_views > 0 else 0
+        avg_score = sum(v.get("score") or 0 for v in active) / max(len(active), 1)
+
+        day_vids = [v for v in videos if _age_days(v.get("published_at")) <= 1]
+        week_vids = [v for v in videos if _age_days(v.get("published_at")) <= 7]
+        month_vids = [v for v in videos if _age_days(v.get("published_at")) <= 30]
+        dead_count = len([v for v in videos if _age_days(v.get("published_at")) >= 30 and (v.get("views") or 0) / max(_age_days(v.get("published_at")), 1) < 1])
+        low_eng_count = len([v for v in active if _eng(v.get("likes") or 0, v.get("comments") or 0, v.get("views") or 0) < 0.5 and (v.get("views") or 0) >= 200])
+
+        health = "🟢 Excellent" if avg_score >= 60 else "🟡 Good" if avg_score >= 40 else "🟠 Needs Work" if avg_score >= 25 else "🔴 Critical"
+
+        if top_v and (top_v.get("views") or 0) >= 100:
+            events.append({"type": "top_performer", "video_id": top_v.get("video_id"), "title": (top_v.get("title") or "")[:60],
+                           "emoji": "🥇", "priority": 11, "severity": "success",
+                           "message": f"Top performing video: {(top_v.get('title') or '')[:40]}",
+                           "data": {"Score": f"{top_v.get('score') or 0}/100", "Views": f"{top_v.get('views') or 0:,}"}})
+
+        if worst_v and (worst_v.get("score") or 0) < (top_v.get("score") or 100) - 30 and (worst_v.get("views") or 0) >= 50:
+            events.append({"type": "worst_performer", "video_id": worst_v.get("video_id"), "title": (worst_v.get("title") or "")[:60],
+                           "emoji": "🔴", "priority": 12, "severity": "warning",
+                           "message": f"Lowest scoring video — refresh title and thumbnail",
+                           "data": {"Score": f"{worst_v.get('score') or 0}/100"}})
+
+        events.append({"type": "daily_summary", "video_id": "channel", "title": "Channel Daily Summary",
+                       "emoji": "📊", "priority": 15, "severity": "info",
+                       "message": f"Full channel snapshot — {datetime.now().strftime('%A, %B %d')}",
+                       "data": {"Active Videos": len(active), "Total Views": f"{total_views:,}",
+                                "Avg Engagement": f"{avg_eng:.2f}%", "Health": health,
+                                "Uploads (7d)": len(week_vids), "Uploads (30d)": len(month_vids)}})
+
+        newest = max(videos, key=lambda v: v.get("published_at") or "") if videos else None
+        if newest:
+            gap = _age_days(newest.get("published_at"))
+            if gap > 14:
+                events.append({"type": "upload_gap", "video_id": "channel", "title": "Upload Gap Warning",
+                               "emoji": "📅", "priority": 13, "severity": "warning",
+                               "message": f"No upload in {int(gap)} days — algorithm is cooling down",
+                               "data": {"Days": int(gap), "Last Video": (newest.get("title") or "")[:45]}})
+
+        if len(week_vids) >= 7:
+            _add({"type": "upload_streak", "video_id": "channel", "title": "Upload Streak",
+                  "emoji": "🔥", "priority": 6, "severity": "success",
+                  "message": f"{len(week_vids)} uploads this week — algorithm will reward this!",
+                  "data": {"Uploads": len(week_vids)}})
+
+        if avg_eng < 0.3 and total_views > 1000:
+            _add({"type": "channel_engagement_drop", "video_id": "channel", "title": "Channel Engagement Low",
+                  "emoji": "📉", "priority": 10, "severity": "critical",
+                  "message": f"Channel avg engagement {avg_eng:.2f}% — below healthy threshold",
+                  "data": {"Avg Engagement": f"{avg_eng:.2f}%", "Total Views": f"{total_views:,}"}})
+
+        if len(month_vids) < 2:
+            _add({"type": "consistency_warning", "video_id": "channel", "title": "Low Upload Frequency",
+                  "emoji": "⚠️", "priority": 13, "severity": "warning",
+                  "message": f"Only {len(month_vids)} upload(s) this month — aim for 4+ per month",
+                  "data": {"Uploads": len(month_vids)}})
+
+    # SUBSCRIBER MILESTONE
+    if channel_subs:
+        for m in _MILESTONE_SUBS:
+            if channel_subs >= m and channel_subs < m * 1.05:
+                events.append({"type": "sub_milestone", "video_id": "channel", "title": "Subscriber Milestone",
+                               "emoji": "🎉", "priority": 3, "severity": "success",
+                               "message": f"{m:,} subscribers reached! Incredible milestone!",
+                               "data": {"Milestone": f"{m:,} subs", "Current": channel_subs}})
+                break
+
+    # Dedup + sort + cap
+    seen = set()
+    unique = []
+    for e in events:
+        key = f"{e['type']}:{e['video_id']}"
+        if key not in seen:
+            seen.add(key)
+            unique.append(e)
+    unique.sort(key=lambda x: x.get("priority", 50))
+    return unique[:15]
+
+
+def generate_daily_digest(videos, channel_subs=0):
+    """Generate structured daily digest data."""
+    now_ts = datetime.now().timestamp()
+    active = [v for v in videos if (v.get("views") or 0) > 0]
+    by_views = sorted(active, key=lambda v: v.get("views") or 0, reverse=True)
+    total_views = sum(v.get("views") or 0 for v in videos)
+    total_likes = sum(v.get("likes") or 0 for v in videos)
+    total_comments = sum(v.get("comments") or 0 for v in videos)
+    avg_eng = ((total_likes + total_comments) / max(total_views, 1)) * 100 if total_views > 0 else 0
+    day_uploads = [v for v in videos if _age_days_s(v.get("published_at")) <= 1]
+    newest = max(videos, key=lambda v: v.get("published_at") or "") if videos else None
+    gap = _age_days_s(newest.get("published_at")) if newest else 0
+    return {
+        "title": "📊 Daily Digest — Eagle 3D Streaming",
+        "Subscribers": channel_subs,
+        "Total Views": total_views,
+        "Total Likes": total_likes,
+        "Total Comments": total_comments,
+        "Avg Engagement": f"{avg_eng:.2f}%",
+        "Uploaded Today": len(day_uploads),
+        "Days Since Upload": int(gap),
+        "Top Video": (by_views[0].get("title") or "")[:50] if by_views else "N/A",
+        "Top Views": by_views[0].get("views") if by_views else 0,
+    }
+
+
+def _age_days_s(pub):
+    if not pub:
+        return 999
+    try:
+        pub_dt = datetime.fromisoformat(pub.replace("Z", "+00:00"))
+        return max(0.001, (datetime.now(pub_dt.tzinfo) - pub_dt).total_seconds() / 86400)
+    except Exception:
+        return 999
