@@ -1433,22 +1433,22 @@ def _build_time_to_conversion(free_df, upload_df, stripe_df=None, mode="signup_t
     if mode == "signup_to_upload":
         if free_df is None or free_df.empty or upload_df is None or upload_df.empty:
             return {}, pd.DataFrame(), pd.DataFrame(), [], _st_label, _en_label
-        _src = free_df[free_df.get("final_status", "").astype(str).str.upper() == "ACCEPTED"].copy()
-        _tgt = upload_df[upload_df.get("final_status", "").astype(str).str.upper() == "ACCEPTED"].copy()
+        _src = free_df.loc[free_df["final_status"].astype(str).str.upper() == "ACCEPTED"].copy() if "final_status" in free_df.columns else free_df.copy()
+        _tgt = upload_df.loc[upload_df["final_status"].astype(str).str.upper() == "ACCEPTED"].copy() if "final_status" in upload_df.columns else upload_df.copy()
         if _src.empty or _tgt.empty:
             return {}, pd.DataFrame(), pd.DataFrame(), [], _st_label, _en_label
     elif mode == "signup_to_paid":
-        if free_df is None or free_df.empty or stripe_df is None or stripe_df.empty:
+        if free_df is None or (hasattr(free_df, 'empty') and free_df.empty) or stripe_df is None or (hasattr(stripe_df, 'empty') and stripe_df.empty):
             return {}, pd.DataFrame(), pd.DataFrame(), [], _st_label, _en_label
-        _src = free_df[free_df.get("final_status", "").astype(str).str.upper() == "ACCEPTED"].copy()
-        _tgt = stripe_df[stripe_df.get("final_status", "").astype(str).str.upper() == "ACCEPTED"].copy()
+        _src = free_df.loc[free_df["final_status"].astype(str).str.upper() == "ACCEPTED"].copy() if "final_status" in free_df.columns else free_df.copy()
+        _tgt = stripe_df.loc[stripe_df["final_status"].astype(str).str.upper() == "ACCEPTED"].copy() if "final_status" in stripe_df.columns else stripe_df.copy()
         if _src.empty or _tgt.empty:
             return {}, pd.DataFrame(), pd.DataFrame(), [], _st_label, _en_label
     elif mode == "upload_to_paid":
-        if upload_df is None or upload_df.empty or stripe_df is None or stripe_df.empty:
+        if upload_df is None or (hasattr(upload_df, 'empty') and upload_df.empty) or stripe_df is None or (hasattr(stripe_df, 'empty') and stripe_df.empty):
             return {}, pd.DataFrame(), pd.DataFrame(), [], _st_label, _en_label
-        _src = upload_df[upload_df.get("final_status", "").astype(str).str.upper() == "ACCEPTED"].copy()
-        _tgt = stripe_df[stripe_df.get("final_status", "").astype(str).str.upper() == "ACCEPTED"].copy()
+        _src = upload_df.loc[upload_df["final_status"].astype(str).str.upper() == "ACCEPTED"].copy() if "final_status" in upload_df.columns else upload_df.copy()
+        _tgt = stripe_df.loc[stripe_df["final_status"].astype(str).str.upper() == "ACCEPTED"].copy() if "final_status" in stripe_df.columns else stripe_df.copy()
         if _src.empty or _tgt.empty:
             return {}, pd.DataFrame(), pd.DataFrame(), [], _st_label, _en_label
 
@@ -1949,10 +1949,15 @@ if page == "📊 Dashboard":
 
     # ── Time-to-Conversion Analytics ──
     _ledger_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data_output", "first_upload_ledger.json")
-    # Build all 3 conversion types
-    _ttc_s2u = _build_time_to_conversion(free_rows, upload_rows, mode="signup_to_upload", ledger_path=_ledger_path)
-    _ttc_s2p = _build_time_to_conversion(free_rows, upload_rows, stripe_raw, mode="signup_to_paid")
-    _ttc_u2p = _build_time_to_conversion(None, upload_rows, stripe_raw, mode="upload_to_paid")
+    # Build all 3 conversion types with defensive wrappers
+    def _ttc_safe(fn, *a, **kw):
+        try:
+            return fn(*a, **kw)
+        except Exception:
+            return {}, pd.DataFrame(), pd.DataFrame(), [], "", ""
+    _ttc_s2u = _ttc_safe(_build_time_to_conversion, free_rows, upload_rows, mode="signup_to_upload", ledger_path=_ledger_path)
+    _ttc_s2p = _ttc_safe(_build_time_to_conversion, free_rows, upload_rows, stripe_raw, mode="signup_to_paid")
+    _ttc_u2p = _ttc_safe(_build_time_to_conversion, pd.DataFrame() if upload_rows is None else upload_rows, stripe_raw, mode="upload_to_paid")
 
     def _render_ttc(ttc_result):
         _st, _hist, _monthly, _rows, _st_label, _en_label = ttc_result
