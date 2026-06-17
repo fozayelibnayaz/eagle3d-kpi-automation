@@ -110,3 +110,4 @@ _build_ti_page.py
 !data_output/linkedin_metrics.json
 !data_output/linkedin_posts.json
 !data_output/linkedin_followers.json
+!data_output/linkedin_daily.json

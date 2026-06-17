@@ -63,7 +63,9 @@ jobs:
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           YOUTUBE_CHANNEL_ID: ${{ secrets.YOUTUBE_CHANNEL_ID }}
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          STRIPE_COOKIES_JSON: ${{ secrets.STRIPE_COOKIES_JSON }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          LINKEDIN_COOKIES_JSON: ${{ secrets.LINKEDIN_COOKIES_JSON }}
         run: |
           echo "=== Pipeline Context ==="
           NOW_UTC=$(date -u '+%Y-%m-%d %H:%M:%S')
@@ -74,8 +76,10 @@ jobs:
           echo "=== Secret Availability ==="
           if [ -n "$YOUTUBE_API_KEY" ]; then echo "YouTube API Key: SET"; else echo "YouTube API Key: NOT SET"; fi
           if [ -n "$YOUTUBE_CHANNEL_ID" ]; then echo "YouTube Channel ID: SET"; else echo "YouTube Channel ID: NOT SET"; fi
-          if [ -n "$STRIPE_SECRET_KEY" ]; then echo "Stripe Secret Key: SET"; else echo "Stripe Secret Key: NOT SET"; fi
+          if [ -n "$STRIPE_COOKIES_JSON" ]; then echo "Stripe Cookies: SET"; else echo "Stripe Cookies: NOT SET"; fi
+          if [ -n "$STRIPE_SECRET_KEY" ]; then echo "Stripe API Key: SET (optional)"; else echo "Stripe API Key: NOT SET (optional)"; fi
           if [ -n "$GROQ_API_KEY" ]; then echo "Groq API Key: SET"; else echo "Groq API Key: NOT SET"; fi
+          if [ -n "$LINKEDIN_COOKIES_JSON" ]; then echo "LinkedIn Cookies: SET"; else echo "LinkedIn Cookies: NOT SET"; fi
 
       - name: Login to KPI Dashboard
         env:
