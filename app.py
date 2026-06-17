@@ -1195,12 +1195,44 @@ if page == "📊 Dashboard":
     else:
         st.warning("⚠️ No KPI data loaded. Check Settings → Secrets Status.")
 
-    cs = km(kpi, "signups")
-    cu = km(kpi, "first_uploads")
-    cp = km(kpi, "paid_customers")
-    ps = km(prev_kpi, "signups")
-    pu = km(prev_kpi, "first_uploads")
-    pp = km(prev_kpi, "paid_customers")
+cs = km(kpi, "signups")
+cu = km(kpi, "first_uploads")
+cp = km(kpi, "paid_customers")
+ps = km(prev_kpi, "signups")
+pu = km(prev_kpi, "first_uploads")
+pp = km(prev_kpi, "paid_customers")
+
+# ── VERIFICATION: Ensure cp (paid count) matches ACCEPTED-only from Verified_STRIPE ──
+# This prevents Method 2 Daily_Counts from using a "total" column instead of "accepted"
+if not stripe_raw.empty and "final_status" in stripe_raw.columns:
+    _direct_paid = sum(1 for _, r in stripe_raw.iterrows()
+                       if str(r.get("final_status", "")).upper() == "ACCEPTED")
+    _kpi_paid_all = int(kpi_all["paid_customers"].sum()) if not kpi_all.empty and "paid_customers" in kpi_all.columns else 0
+    if _kpi_paid_all != _direct_paid:
+        # kpi_all has wrong paid count — rebuild paid_customers from Verified_STRIPE directly
+        if not kpi_all.empty and "paid_customers" in kpi_all.columns:
+            # Recount paid per date from stripe_raw
+            _paid_by_date = {}
+            for _, r in stripe_raw.iterrows():
+                if str(r.get("final_status", "")).upper() == "ACCEPTED":
+                    _pd = parse_to_date(r.get("First payment", "") or r.get("row_date_used", "") or r.get("Created", ""))
+                    if _pd:
+                        _ds = _pd.strftime("%Y-%m-%d")
+                        _paid_by_date[_ds] = _paid_by_date.get(_ds, 0) + 1
+            # Zero out existing, then fill from recount
+            kpi_all["paid_customers"] = 0
+            for _ds, _cnt in _paid_by_date.items():
+                _mask = kpi_all["date"] == _ds
+                if _mask.any():
+                    kpi_all.loc[_mask, "paid_customers"] = _cnt
+                else:
+                    _new = {"date": _ds, "signups": 0, "first_uploads": 0, "paid_customers": _cnt}
+                    kpi_all = pd.concat([kpi_all, pd.DataFrame([_new])], ignore_index=True)
+            # Re-filter
+            kpi = filter_kpi(kpi_all, p_start, p_end)
+            prev_kpi = filter_kpi(kpi_all, comp_s, comp_e) if enable_comp and comp_s else pd.DataFrame()
+            cp = km(kpi, "paid_customers")
+            pp = km(prev_kpi, "paid_customers")
 
     s2u = (cu / cs * 100) if cs > 0 else 0
     u2p = (cp / cu * 100) if cu > 0 else 0
@@ -3361,60 +3393,109 @@ Diagnosis issues: {json.dumps(_issues)}"""
                     _mini_periods = ["7d", "28d", "30d", "90d", "180d", "1y", "All"]
                     st.markdown(f"<span style='color:{T['muted']};font-size:11px;'>Period: {' · '.join(_mini_periods)}</span>", unsafe_allow_html=True)
 
-                # Per-video analytics (if OAuth available)
-                if _has_oauth:
-                    with st.expander(f"📊 Video Analytics — {v['title'][:40]}", key=f"vid_analytics_{v['video_id']}"):
-                        _v_period = st.selectbox("Period", ["7d", "28d", "30d", "90d", "180d", "1y", "All"], index=2, key=f"vper_{v['video_id']}")
-                        _v_days_map = {"7d": 7, "28d": 28, "30d": 30, "90d": 90, "180d": 180, "1y": 365, "All": 3650}
-                        _v_days = _v_days_map.get(_v_period, 30)
-                        _v_start = (datetime.now() - timedelta(days=_v_days)).strftime("%Y-%m-%d")
-                        _v_end = datetime.now().strftime("%Y-%m-%d")
+                # Per-video analytics — works with OAuth OR public Data API
+                with st.expander(f"📊 Video Analytics — {v['title'][:40]}", key=f"vid_analytics_{v['video_id']}"):
+                    _v_period = st.selectbox("Period", ["7d", "28d", "30d", "90d", "180d", "1y", "All"], index=2, key=f"vper_{v['video_id']}")
+                    _v_days_map = {"7d": 7, "28d": 28, "30d": 30, "90d": 90, "180d": 180, "1y": 365, "All": 3650}
+                    _v_days = _v_days_map.get(_v_period, 30)
+                    _v_start = (datetime.now() - timedelta(days=_v_days)).strftime("%Y-%m-%d")
+                    _v_end = datetime.now().strftime("%Y-%m-%d")
 
+                    _va = {}
+                    if _has_oauth:
                         try:
                             _va_dict = get_video_analytics_batch([v["video_id"]], _v_start, _v_end)
                             _va = _va_dict.get(v["video_id"], {}) if _va_dict else {}
-                            if _va:
-                                _va_views = int(float(_va.get('views', 0)))
-                                _va_likes = int(float(_va.get('likes', 0)))
-                                _va_comments = int(float(_va.get('comments', 0)))
-                                _va_avg_dur = float(_va.get('averageViewDuration', 0))
-                                _va_avg_pct = float(_va.get('averageViewPercentage', 0))
-                                _va_ctr = float(_va.get('ctr', 0))
-                                _vc1, _vc2 = st.columns(2)
-                                with _vc1:
-                                    st.markdown(f"**Views (total)**")
-                                    st.write(f"{_va_views:,}")
-                                    st.markdown(f"**Likes**")
-                                    st.write(f"{_va_likes:,}")
-                                    st.markdown(f"**Comments**")
-                                    st.write(f"{_va_comments:,}")
-                                with _vc2:
-                                    st.markdown(f"**Avg Watch**")
-                                    st.write(f"{format_number(round(_vpd))}/d")
-                                    st.markdown(f"**Retention**")
-                                    if _va_avg_pct > 0:
-                                        st.write(f"{_va_avg_pct:.1f}%")
-                                    elif _va_avg_dur > 0:
-                                        st.write(_format_duration(int(_va_avg_dur)))
-                                    else:
-                                        st.write("No data")
+                        except Exception:
+                            _va = {}
 
-                                # Engagement score card
-                                _eng_pct = v["engagement_rate"]
-                                _eng_label = get_engagement_rating(_eng_pct)
-                                st.markdown(f"""
-                                <div style="padding:10px;background:{T['card_alt']};border-radius:8px;text-align:center;margin-top:8px;">
-                                    <div style="font-size:11px;color:{T['muted']};">Engagement REAL</div>
-                                    <div style="font-size:24px;font-weight:700;color:{_eng_color};">{_eng_pct:.1f}%</div>
-                                    <div style="font-size:13px;color:{_eng_color};">{_eng_label['color']} {_eng_label['label']} — {_eng_label['desc']}</div>
-                                </div>
-                                """, unsafe_allow_html=True)
+                    _va_views = int(float(_va.get('views', 0))) if _va else v.get("views", 0)
+                    _va_likes = int(float(_va.get('likes', 0))) if _va else v.get("likes", 0)
+                    _va_comments = int(float(_va.get('comments', 0))) if _va else v.get("comments", 0)
+                    _va_avg_dur = float(_va.get('averageViewDuration', 0)) if _va else 0
+                    _va_avg_pct = float(_va.get('averageViewPercentage', 0)) if _va else 0
+                    _va_ctr = float(_va.get('ctr', 0)) if _va else None
+                    _va_watch_min = float(_va.get('estimatedMinutesWatched', 0)) if _va else 0
+                    _va_shares = int(float(_va.get('shares', 0))) if _va else 0
+                    _va_subs_gained = int(float(_va.get('subscribersGained', 0))) if _va else 0
+
+                    # Estimate views in selected period from publish date
+                    _pub_date = v.get("published_at", "")
+                    _vid_age_days = _v_days
+                    if _pub_date:
+                        try:
+                            _pd = datetime.fromisoformat(_pub_date.replace("Z", "+00:00")).replace(tzinfo=None)
+                            _vid_age_days = max(1, (datetime.now() - _pd).days)
+                        except Exception:
+                            pass
+                    _period_days = min(_v_days, _vid_age_days)
+                    _vpd_est = v.get("views", 0) / max(_vid_age_days, 1)
+                    _est_period_views = int(_vpd_est * _period_days)
+                    _est_period_likes = int(_va_likes * (_period_days / max(_vid_age_days, 1))) if _va_likes > 0 else int(v.get("likes", 0) * _period_days / max(_vid_age_days, 1))
+                    _est_period_comments = int(_va_comments * (_period_days / max(_vid_age_days, 1))) if _va_comments > 0 else int(v.get("comments", 0) * _period_days / max(_vid_age_days, 1))
+
+                    # Show analytics metrics
+                    _vc1, _vc2, _vc3, _vc4 = st.columns(4)
+                    with _vc1:
+                        if _va:
+                            st.metric("Views (period)", f"{_va_views:,}")
+                        else:
+                            st.metric("Views (est.)", f"{_est_period_views:,}")
+                            st.caption(f"~{format_number(round(_vpd_est))}/day")
+                    with _vc2:
+                        if _va:
+                            st.metric("Likes", f"{_va_likes:,}")
+                        else:
+                            st.metric("Likes (est.)", f"{_est_period_likes:,}")
+                    with _vc3:
+                        if _va:
+                            st.metric("Comments", f"{_va_comments:,}")
+                        else:
+                            st.metric("Comments (est.)", f"{_est_period_comments:,}")
+                    with _vc4:
+                        if _va and _va_avg_pct > 0:
+                            st.metric("Retention", f"{_va_avg_pct:.1f}%")
+                        elif _va and _va_avg_dur > 0:
+                            st.metric("Avg Watch", _format_duration(int(_va_avg_dur)))
+                        else:
+                            # Estimate retention from video duration vs typical engagement
+                            _vid_dur = v.get("duration_seconds", 0)
+                            if _vid_dur > 0 and v.get("views", 0) > 0:
+                                _est_ret = min(95, max(15, 60 - (_vid_dur / 300) * 5))
+                                st.metric("Retention (est.)", f"{_est_ret:.0f}%")
                             else:
-                                st.info("No analytics data for this period.")
-                        except Exception as _vae:
-                            st.warning(f"Analytics unavailable: {_vae}")
+                                st.metric("Retention", "—")
 
-                        # Retention curve
+                    # OAuth-specific metrics row
+                    if _va:
+                        _vo1, _vo2, _vo3, _vo4 = st.columns(4)
+                        with _vo1:
+                            if _va_ctr is not None:
+                                st.metric("CTR", f"{_va_ctr:.2f}%")
+                        with _vo2:
+                            if _va_watch_min > 0:
+                                st.metric("Watch Time", f"{_va_watch_min:,.0f} min")
+                        with _vo3:
+                            st.metric("Shares", f"{_va_shares:,}")
+                        with _vo4:
+                            st.metric("Subs Gained", f"+{_va_subs_gained:,}")
+
+                    # Engagement score card (always available)
+                    _eng_pct = v["engagement_rate"]
+                    _eng_label = get_engagement_rating(_eng_pct)
+                    _eng_color_map = {"🟢": "#22c55e", "🔵": "#3b82f6", "🟣": "#a855f7", "🟡": "#eab308", "🟠": "#f97316", "🔴": "#ef4444", "⚪": "#6b7280"}
+                    _eng_color = _eng_color_map.get(_eng_label["color"], "#6b7280")
+                    _data_badge = "🔒 OAuth" if _va else "📋 Public API"
+                    st.markdown(f"""
+                    <div style="padding:10px;background:{T['card_alt']};border-radius:8px;text-align:center;margin-top:8px;">
+                        <div style="font-size:11px;color:{T['muted']};">Engagement ({_data_badge})</div>
+                        <div style="font-size:24px;font-weight:700;color:{_eng_color};">{_eng_pct:.1f}%</div>
+                        <div style="font-size:13px;color:{_eng_color};">{_eng_label['color']} {_eng_label['label']} — {_eng_label['desc']}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                    # Retention curve (OAuth only)
+                    if _has_oauth:
                         try:
                             _ret_list = get_retention_curve(v["video_id"])
                             if _ret_list:

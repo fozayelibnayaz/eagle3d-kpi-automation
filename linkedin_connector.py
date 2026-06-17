@@ -78,7 +78,10 @@ def _get_cookies() -> str:
 
 
 def _get_company_page() -> str:
-    return _get_secret("LINKEDIN_COMPANY_PAGE", "")
+    url = _get_secret("LINKEDIN_COMPANY_PAGE", "")
+    if not url:
+        url = "https://www.linkedin.com/company/eagle-3d-streaming/"
+    return url
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -132,12 +135,13 @@ def scrape_public_metrics() -> Dict[str, Any]:
 
 
 def _extract_posts_from_jsonld(html: str) -> List[Dict]:
-    """Extract recent posts from LinkedIn's JSON-LD structured data.
-    LinkedIn public pages include DiscussionForumPosting entries for recent posts.
+    """Extract recent posts from LinkedIn's structured data + HTML engagement metrics.
+    Uses JSON-LD for post content, then enriches with aria-label reactions from HTML.
     This is 100% free and requires no authentication."""
     posts = []
     
-    # Method 1: Parse the full JSON-LD @graph array
+    # Step 1: Parse JSON-LD for post content (text, date, URL)
+    jsonld_posts = []
     try:
         m = re.search(r'<script type="application/ld\+json"[^>]*>(.*?)</script>', html, re.DOTALL)
         if m:
@@ -186,14 +190,84 @@ def _extract_posts_from_jsonld(html: str) -> List[Dict]:
                     elif "Share" in str(stat_type) or "share" in str(stat_type).lower():
                         post["shares"] = count
                 
-                posts.append(post)
+                jsonld_posts.append(post)
     except Exception as e:
         print(f"[LinkedIn] JSON-LD extraction error: {e}")
     
-    # Method 2: Regex fallback for posts if JSON-LD didn't work
+    # Step 2: Extract engagement from HTML post cards (aria-label reactions)
+    # LinkedIn embeds "5 Reactions", "2 comments" in aria-label attributes
+    _html_engagement = {}
+    try:
+        post_cards = re.findall(
+            r'data-id="main-feed-card"(.*?)(?=data-id="main-feed-card"|<div class="org-feed|$)',
+            html, re.DOTALL
+        )
+        for card in post_cards:
+            urn_match = re.search(r'urn:li:activity:(\d+)', card)
+            if not urn_match:
+                continue
+            urn = urn_match.group(1)
+            
+            # Reactions (likes)
+            reactions = re.findall(r'aria-label="(\d+)\s+Reaction', card)
+            likes = int(reactions[0]) if reactions else 0
+            
+            # Comments
+            comments = re.findall(r'(\d+)\s*comment', card, re.IGNORECASE)
+            comment_count = int(comments[0]) if comments else 0
+            
+            # Reposts
+            reposts = re.findall(r'(\d+)\s*repost', card, re.IGNORECASE)
+            repost_count = int(reposts[0]) if reposts else 0
+            
+            _html_engagement[urn] = {
+                "likes": likes,
+                "comments": comment_count,
+                "reposts": repost_count,
+            }
+    except Exception as e:
+        print(f"[LinkedIn] HTML engagement extraction error: {e}")
+    
+    # Step 3: Merge JSON-LD posts with HTML engagement
+    if jsonld_posts:
+        for post in jsonld_posts:
+            # Try to match by activity URN in the post URL
+            url = post.get("url", "")
+            urn_match = re.search(r'activity-(\d+)', url)
+            if urn_match and urn_match.group(1) in _html_engagement:
+                eng = _html_engagement[urn_match.group(1)]
+                if eng["likes"] > 0:
+                    post["likes"] = eng["likes"]
+                if eng["comments"] > 0:
+                    post["comments"] = eng["comments"]
+                if eng["reposts"] > 0:
+                    post["shares"] = eng["reposts"]
+            posts.append(post)
+    
+    # Step 4: Add any HTML-only posts not in JSON-LD
+    _used_urns = set()
+    for p in posts:
+        url = p.get("url", "")
+        m = re.search(r'activity-(\d+)', url)
+        if m:
+            _used_urns.add(m.group(1))
+    
+    for urn, eng in _html_engagement.items():
+        if urn not in _used_urns:
+            posts.append({
+                "title": "",
+                "text": "",
+                "url": f"https://www.linkedin.com/posts/eagle-3d-streaming_activity-{urn}",
+                "published_at": "",
+                "likes": eng["likes"],
+                "comments": eng["comments"],
+                "shares": eng["reposts"],
+                "source": "linkedin_html",
+            })
+    
+    # Step 5: If no JSON-LD or HTML posts, try regex fallback
     if not posts:
         try:
-            # Look for activity URLs in the page
             activity_urls = re.findall(
                 r'https://www\.linkedin\.com/posts/eagle-3d-streaming_[\w-]+-activity-(\d+)-[\w]+',
                 html
@@ -561,6 +635,234 @@ def scrape_via_api() -> Dict[str, Any]:
     return result
 
 
+def scrape_analytics_playwright() -> Dict[str, Any]:
+    """Scrape FULL LinkedIn analytics using Playwright with authenticated session.
+    Gets: daily visitor metrics, follower trends, post engagement, historical data.
+    Stores results in Google Sheets for dashboard display.
+    Called by daily pipeline when LINKEDIN_COOKIES_JSON is configured.
+    """
+    cookies_json = _get_cookies()
+    if not cookies_json:
+        return {"error": "No cookies", "demo": True}
+
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        return {"error": "Playwright not installed", "demo": True}
+
+    company_page = _get_company_page()
+    if not company_page:
+        return {"error": "LINKEDIN_COMPANY_PAGE not configured", "demo": True}
+
+    try:
+        cookies = json.loads(cookies_json) if isinstance(cookies_json, str) else cookies_json
+    except json.JSONDecodeError:
+        return {"error": "Invalid cookies JSON", "demo": True}
+
+    result = {"scraped_at": datetime.now().isoformat(), "demo": False, "source": "playwright_authenticated"}
+
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            context = browser.new_context(
+                user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+                viewport={"width": 1920, "height": 1080}
+            )
+
+            if isinstance(cookies, list):
+                formatted = [{
+                    "name": c.get("name", ""),
+                    "value": c.get("value", ""),
+                    "domain": c.get("domain", ".linkedin.com"),
+                    "path": c.get("path", "/"),
+                } for c in cookies]
+                context.add_cookies(formatted)
+
+            page = context.new_page()
+
+            # ── 1. Visitor Analytics ──
+            try:
+                analytics_url = company_page.rstrip("/") + "/admin/analytics/visitors/"
+                page.goto(analytics_url, wait_until="networkidle", timeout=30000)
+                time.sleep(4)
+                visitor_html = page.content()
+                visitor_data = _extract_analytics_from_page(visitor_html)
+                result.update(visitor_data)
+                page_text = page.inner_text("body")
+                _vis = _extract_metrics_from_text(page_text)
+                for k, v in _vis.items():
+                    if v and (k not in result or result.get(k, 0) == 0):
+                        result[k] = v
+                print(f"[LinkedIn] Visitor analytics: {visitor_data}")
+            except Exception as e:
+                print(f"[LinkedIn] Visitor analytics failed: {e}")
+
+            # ── 2. Follower Data ──
+            try:
+                follower_url = company_page.rstrip("/") + "/admin/analytics/followers/"
+                page.goto(follower_url, wait_until="networkidle", timeout=30000)
+                time.sleep(3)
+                follower_html = page.content()
+                followers = _extract_followers_from_page(follower_html)
+                result.update(followers)
+                page_text = page.inner_text("body")
+                f_text = _extract_metrics_from_text(page_text)
+                for k, v in f_text.items():
+                    if v and (k not in result or result.get(k, 0) == 0):
+                        result[k] = v
+                print(f"[LinkedIn] Followers: {followers}")
+            except Exception as e:
+                print(f"[LinkedIn] Follower scrape failed: {e}")
+
+            # ── 3. Posts with Full Engagement ──
+            try:
+                posts_url = company_page.rstrip("/") + "/admin/posts/"
+                page.goto(posts_url, wait_until="networkidle", timeout=30000)
+                time.sleep(3)
+                for _ in range(8):
+                    page.evaluate("window.scrollBy(0, 1500)")
+                    time.sleep(1.5)
+                posts = _extract_posts_from_page(page)
+                if not posts:
+                    posts = _extract_posts_from_html(page.content())
+                # Enrich with public scrape data
+                pub = scrape_public_metrics()
+                pub_posts = pub.get("posts", [])
+                if pub_posts and posts:
+                    _pub_by_url = {}
+                    for pp in pub_posts:
+                        url = pp.get("url", "")
+                        if url:
+                            _pub_by_url[url] = pp
+                    for post in posts:
+                        p_url = post.get("url", "")
+                        if p_url and p_url in _pub_by_url:
+                            pp = _pub_by_url[p_url]
+                            if not post.get("text") and pp.get("text"):
+                                post["text"] = pp["text"]
+                            if not post.get("published_at") and pp.get("published_at"):
+                                post["published_at"] = pp["published_at"]
+                if not posts and pub_posts:
+                    posts = pub_posts
+                result["posts"] = posts
+                result["post_count"] = len(posts)
+                result["total_likes"] = sum(p.get("likes", 0) for p in posts)
+                result["total_comments"] = sum(p.get("comments", 0) for p in posts)
+                result["total_reposts"] = sum(p.get("reposts", 0) for p in posts)
+                total_imp = sum(p.get("impressions", 0) for p in posts)
+                if total_imp > 0:
+                    result["total_impressions"] = max(result.get("total_impressions", 0), total_imp)
+                    total_eng = result["total_likes"] + result["total_comments"] + result["total_reposts"]
+                    result["engagement_rate"] = round(total_eng / total_imp * 100, 2)
+                print(f"[LinkedIn] Scraped {len(posts)} posts with engagement")
+            except Exception as e:
+                print(f"[LinkedIn] Posts scrape failed: {e}")
+
+            # ── 4. Page overview ──
+            try:
+                page.goto(company_page, wait_until="networkidle", timeout=30000)
+                time.sleep(2)
+                page_text = page.inner_text("body")
+                overview = _extract_metrics_from_text(page_text)
+                for k, v in overview.items():
+                    if v and (k not in result or not result.get(k)):
+                        result[k] = v
+                html = page.content()
+                html_data = _extract_public_data(html, company_page)
+                for k, v in html_data.items():
+                    if v and (k not in result or not result.get(k)):
+                        result[k] = v
+            except Exception as e:
+                print(f"[LinkedIn] Overview scrape failed: {e}")
+
+            browser.close()
+    except Exception as e:
+        result["error"] = str(e)
+
+    if not result.get("followers"):
+        pub = scrape_public_metrics()
+        if "followers" in pub:
+            result["followers"] = pub["followers"]
+        if "company_name" not in result and "company_name" in pub:
+            result["company_name"] = pub["company_name"]
+
+    _save_json(LI_METRICS_CACHE, result)
+
+    # ── Write to Google Sheets ──
+    try:
+        from sheets_writer import write_tab_data
+        _today = datetime.now().strftime("%Y-%m-%d")
+        _li_row = {
+            "Date": _today,
+            "Followers": result.get("followers", 0),
+            "Employees": result.get("employees", ""),
+            "Company Name": result.get("company_name", ""),
+            "Industry": result.get("industry", ""),
+            "Impressions": result.get("total_impressions", 0) or result.get("impressionCount", 0),
+            "Unique Visitors": result.get("uniqueVisitors", 0),
+            "Likes": result.get("total_likes", 0) or result.get("likeCount", 0),
+            "Comments": result.get("total_comments", 0) or result.get("commentCount", 0),
+            "Shares": result.get("shareCount", 0),
+            "Posts": result.get("post_count", 0),
+            "Engagement Rate": result.get("engagement_rate", 0),
+            "Source": result.get("source", "playwright"),
+            "Last Updated": datetime.now().strftime("%Y-%m-%d %H:%M UTC"),
+        }
+        _written = write_tab_data("LinkedIn", [_li_row])
+        if _written:
+            print("[LinkedIn] Data written to Google Sheets")
+    except Exception as e:
+        print(f"[LinkedIn] Sheets write error (non-fatal): {e}")
+
+    # ── Write posts to Sheets ──
+    posts = result.get("posts", [])
+    if posts:
+        try:
+            from sheets_writer import write_tab_data as _wtd
+            _post_rows = []
+            for p in posts[:20]:
+                _post_rows.append({
+                    "Date": p.get("published_at", "")[:10] if p.get("published_at") else "",
+                    "Title": (p.get("title", "") or p.get("text", ""))[:100],
+                    "Likes": p.get("likes", 0),
+                    "Comments": p.get("comments", 0),
+                    "Shares": p.get("shares", 0) or p.get("reposts", 0),
+                    "Impressions": p.get("impressions", 0),
+                    "URL": p.get("url", ""),
+                    "Source": p.get("source", "linkedin"),
+                })
+            if _post_rows:
+                _pw = _wtd("LinkedIn_Posts", _post_rows)
+                if _pw:
+                    print(f"[LinkedIn] {len(_post_rows)} posts written to LinkedIn_Posts sheet")
+        except Exception as e:
+            print(f"[LinkedIn] Posts sheet write error (non-fatal): {e}")
+
+    return result
+
+
+def _extract_metrics_from_text(text: str) -> Dict[str, Any]:
+    """Extract numeric metrics from LinkedIn page text content."""
+    result = {}
+    patterns = [
+        (r'(\d[\d,]+)\s*(?:total\s+)?(?:followers?|following)', 'followers'),
+        (r'(\d[\d,]+)\s*(?:total\s+)?(?:impressions?|page views)', 'total_impressions'),
+        (r'(\d[\d,]+)\s*(?:unique\s+)?(?:visitors?|views)', 'uniqueVisitors'),
+        (r'(\d[\d,]+)\s*(?:total\s+)?(?:likes?|reactions?)', 'likeCount'),
+        (r'(\d[\d,]+)\s*(?:total\s+)?comments?', 'commentCount'),
+        (r'(\d[\d,]+)\s*(?:total\s+)?(?:shares?|reposts?)', 'shareCount'),
+        (r'(\d[\d,]+)\s*employees?', 'employees'),
+    ]
+    for pattern, key in patterns:
+        m = re.search(pattern, text, re.IGNORECASE)
+        if m:
+            try:
+                result[key] = int(m.group(1).replace(",", ""))
+            except (ValueError, TypeError):
+                pass
+    return result
+
+
 # ═══════════════════════════════════════════════════════════════
 # METHOD 3: Cookie-based authenticated urllib scrape (no Playwright)
 # Works on Streamlit Cloud where Playwright is not available
@@ -732,34 +1034,54 @@ def save_posts(posts: List[Dict[str, Any]]) -> bool:
 
 
 def calculate_post_score(post: Dict[str, Any]) -> int:
-    """Calculate engagement score 0-100 for a LinkedIn post."""
+    """Calculate engagement score 0-100 for a LinkedIn post.
+    When impressions are available: uses engagement rate benchmarks.
+    When only likes/comments available: uses follower ratio + absolute engagement.
+    """
     impressions = post.get("impressions", 0) or 0
     likes = post.get("likes", 0) or 0
     comments = post.get("comments", 0) or 0
     reposts = post.get("reposts", 0) or 0
+    shares = post.get("shares", 0) or 0
+    total_reposts = reposts + shares
 
-    if impressions == 0 and likes == 0 and comments == 0:
+    if likes == 0 and comments == 0 and total_reposts == 0:
         return 0
 
-    # Engagement rate calculation
     if impressions > 0:
-        eng_rate = (likes + comments * 3 + reposts * 2) / impressions * 100
+        # Full data: engagement rate based scoring
+        eng_rate = (likes + comments * 3 + total_reposts * 2) / impressions * 100
+        if eng_rate >= 6: score = 80 + min(20, int(eng_rate))
+        elif eng_rate >= 4: score = 60 + int((eng_rate - 4) / 2 * 20)
+        elif eng_rate >= 2: score = 40 + int((eng_rate - 2) / 2 * 20)
+        elif eng_rate >= 1: score = 20 + int((eng_rate - 1) * 20)
+        else: score = int(eng_rate * 20)
     else:
-        eng_rate = (likes + comments * 3) / max(1, likes + comments + 1) * 10
+        # No impressions — score from likes/comments relative to followers
+        total_engagement = likes + comments * 3 + total_reposts * 2
+        # Benchmark: typical LinkedIn post gets ~1-2% of followers engaging
+        # 5+ likes on a 2500-follower page = ~0.2% (below average)
+        # 10+ likes = ~0.4% (average)
+        # 20+ likes = ~0.8% (good)
+        # 50+ likes = ~2% (great)
+        score = 0
+        # Likes component (0-50 points)
+        if likes >= 50: score += 50
+        elif likes >= 20: score += 35 + int((likes - 20) / 30 * 15)
+        elif likes >= 10: score += 25 + int((likes - 10) / 10 * 10)
+        elif likes >= 5: score += 15 + int((likes - 5) / 5 * 10)
+        elif likes >= 1: score += 5 + int((likes - 1) / 4 * 10)
+        # Comments component (0-30 points)
+        if comments >= 10: score += 30
+        elif comments >= 5: score += 20 + int((comments - 5) / 5 * 10)
+        elif comments >= 2: score += 10 + int((comments - 2) / 3 * 10)
+        elif comments >= 1: score += 5
+        # Reposts component (0-20 points)
+        if total_reposts >= 5: score += 20
+        elif total_reposts >= 2: score += 10 + int((total_reposts - 2) / 3 * 10)
+        elif total_reposts >= 1: score += 5
 
-    # Score based on engagement rate benchmarks for LinkedIn
-    # Avg LinkedIn engagement: ~2%, Good: 4%, Great: 6%+
-    score = min(100, int(eng_rate * 15))
-
-    # Bonus for absolute engagement
-    if likes > 20:
-        score = min(100, score + 5)
-    if comments > 5:
-        score = min(100, score + 5)
-    if reposts > 3:
-        score = min(100, score + 5)
-
-    return max(0, score)
+    return min(100, max(0, score))
 
 
 def get_score_label(score: int) -> tuple:

@@ -59,9 +59,14 @@ jobs:
           echo "$CREDS" > google_creds.json
 
       - name: Show schedule context
+        env:
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          YOUTUBE_CHANNEL_ID: ${{ secrets.YOUTUBE_CHANNEL_ID }}
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
-          NOW_UTC=$(date -u '+%Y-%m-%d %H:%M:%S')
           echo "=== Pipeline Context ==="
+          NOW_UTC=$(date -u '+%Y-%m-%d %H:%M:%S')
           echo "Triggered at UTC: $NOW_UTC"
           REPORT_DATE=$(date -u -d '12 hours ago' '+%Y-%m-%d')
           echo "Reporting on day: $REPORT_DATE"
@@ -71,11 +76,6 @@ jobs:
           if [ -n "$YOUTUBE_CHANNEL_ID" ]; then echo "YouTube Channel ID: SET"; else echo "YouTube Channel ID: NOT SET"; fi
           if [ -n "$STRIPE_SECRET_KEY" ]; then echo "Stripe Secret Key: SET"; else echo "Stripe Secret Key: NOT SET"; fi
           if [ -n "$GROQ_API_KEY" ]; then echo "Groq API Key: SET"; else echo "Groq API Key: NOT SET"; fi
-        env:
-          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
-          YOUTUBE_CHANNEL_ID: ${{ secrets.YOUTUBE_CHANNEL_ID }}
-          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
 
       - name: Login to KPI Dashboard
         env:

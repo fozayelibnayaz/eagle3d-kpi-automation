@@ -1,6 +1,6 @@
 {
   "company_page": "https://www.linkedin.com/company/eagle-3d-streaming/",
-  "scraped_at": "2026-06-16T15:19:17.256197",
+  "scraped_at": "2026-06-17T05:22:21.902534",
   "demo": false,
   "company_name": "Eagle 3D Streaming",
   "company_url": "https://www.linkedin.com/company/eagle-3d-streaming",
@@ -14,7 +14,7 @@
       "url": "https://www.linkedin.com/posts/eagle-3d-streaming_vrdevelopment-pixelstreaming-unrealengine5-activity-7471207589448413185-SDNt",
       "published_at": "2026-06-12T14:31:37.630Z",
       "author": "Eagle 3D Streaming",
-      "likes": 0,
+      "likes": 5,
       "comments": 0,
       "shares": 0,
       "source": "linkedin_jsonld"
@@ -25,7 +25,7 @@
       "url": "https://www.linkedin.com/posts/eagle-3d-streaming_unrealengine-pixelstreaming-linux-activity-7468540475726266369-RQzY",
       "published_at": "2026-06-05T05:53:28.168Z",
       "author": "Eagle 3D Streaming",
-      "likes": 0,
+      "likes": 3,
       "comments": 0,
       "shares": 0,
       "source": "linkedin_jsonld"
@@ -36,7 +36,7 @@
       "url": "https://www.linkedin.com/posts/eagle-3d-streaming_deploying-pixel-streams-globally-comes-with-activity-7463622293789892608-QUiu",
       "published_at": "2026-05-22T16:10:22.207Z",
       "author": "Eagle 3D Streaming",
-      "likes": 0,
+      "likes": 5,
       "comments": 0,
       "shares": 0,
       "source": "linkedin_jsonld"
@@ -47,7 +47,7 @@
       "url": "https://www.linkedin.com/posts/eagle-3d-streaming_unrealengine-pixelstreaming-nvdlss-activity-7462429900348547073-r8eY",
       "published_at": "2026-05-19T09:12:13.464Z",
       "author": "Eagle 3D Streaming",
-      "likes": 0,
+      "likes": 6,
       "comments": 0,
       "shares": 0,
       "source": "linkedin_jsonld"
@@ -58,7 +58,7 @@
       "url": "https://www.linkedin.com/posts/eagle-3d-streaming_pixelstreaming-unrealengine5-ue5-activity-7460929287349518336-CTeG",
       "published_at": "2026-05-15T05:49:19.449Z",
       "author": "Eagle 3D Streaming",
-      "likes": 0,
+      "likes": 4,
       "comments": 0,
       "shares": 0,
       "source": "linkedin_jsonld"
@@ -69,7 +69,7 @@
       "url": "https://www.linkedin.com/posts/eagle-3d-streaming_pixelstreaming-unrealengine5-ue5-activity-7460022824728940544-h0OW",
       "published_at": "2026-05-12T17:47:21.914Z",
       "author": "Eagle 3D Streaming",
-      "likes": 0,
+      "likes": 3,
       "comments": 0,
       "shares": 0,
       "source": "linkedin_jsonld"
@@ -80,8 +80,8 @@
       "url": "https://www.linkedin.com/posts/eagle-3d-streaming_if-your-pixel-stream-is-loading-fine-but-activity-7459541735845568512-aqNe",
       "published_at": "2026-05-11T09:55:41.393Z",
       "author": "Eagle 3D Streaming",
-      "likes": 0,
-      "comments": 0,
+      "likes": 5,
+      "comments": 2,
       "shares": 0,
       "source": "linkedin_jsonld"
     },
@@ -91,7 +91,7 @@
       "url": "https://www.linkedin.com/posts/eagle-3d-streaming_pixelstreaming-unrealengine5-webrtc-activity-7457856841998581760-Fk7-",
       "published_at": "2026-05-06T18:20:31.385Z",
       "author": "Eagle 3D Streaming",
-      "likes": 0,
+      "likes": 1,
       "comments": 0,
       "shares": 0,
       "source": "linkedin_jsonld"
@@ -102,7 +102,7 @@
       "url": "https://www.linkedin.com/posts/eagle-3d-streaming_pixelstreaming-unrealengine5-webrtc-activity-7456009143557193728-1xTS",
       "published_at": "2026-05-01T15:58:25.757Z",
       "author": "Eagle 3D Streaming",
-      "likes": 0,
+      "likes": 3,
       "comments": 0,
       "shares": 0,
       "source": "linkedin_jsonld"
@@ -113,14 +113,14 @@
       "url": "https://www.linkedin.com/posts/eagle-3d-streaming_unrealengine5-pixelstreaming-cloudrendering-activity-7454915167517048832-6bPp",
       "published_at": "2026-04-28T15:31:21.545Z",
       "author": "Eagle 3D Streaming",
-      "likes": 0,
+      "likes": 9,
       "comments": 0,
       "shares": 0,
       "source": "linkedin_jsonld"
     }
   ],
   "post_count": 10,
-  "total_post_likes": 0,
-  "total_post_comments": 0,
-  "_cached_at": "2026-06-16T15:19:17.260718"
+  "total_post_likes": 44,
+  "total_post_comments": 2,
+  "_cached_at": "2026-06-17T05:22:21.925803"
 }

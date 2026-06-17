@@ -1,16 +1,29 @@
 #!/usr/bin/env python3
 """
-Eagle Analytics Hub v8.3 — Pipeline Fix Deploy
+Eagle Analytics Hub v8.3 — FULL DEPLOY
+======================================
 Run from your eagle3d-kpi-automation directory:
     python3 deploy_v83.py
 
 This script:
-1. Updates daily_pipeline.yml with YouTube/GA4/LinkedIn/Stripe env vars
-2. Updates .gitignore with force-include for data files
-3. Updates ga4_connector.py with env var fallback
-4. Commits and pushes to GitHub
-5. Cleans up old deploy/patch files
+1. Reads .b64 files and decodes them to the correct Python files
+2. Writes the updated GitHub Actions workflow
+3. Updates .gitignore
+4. Commits everything and pushes to GitHub
+5. Cleans up old deploy files
+
+You need these files in the SAME directory as this script:
+  - v83_app.py.b64
+  - v83_linkedin_connector.py.b64
+  - v83_youtube_connector.py.b64
+  - v83_ga4_connector.py.b64
+  - v83_reporting_engine.py.b64
+  - v83_daily_pipeline.py.b64
+
+Download all .b64 files from the workspace before running.
 """
+import base64
+import glob
 import os
 import subprocess
 import sys
@@ -18,14 +31,13 @@ import sys
 
 def run(cmd):
     r = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-    ok = r.returncode == 0
-    return ok, r.stdout.strip(), r.stderr.strip()
+    return r.returncode == 0, r.stdout.strip(), r.stderr.strip()
 
 
 def main():
     print()
     print("=" * 60)
-    print("Eagle Analytics Hub v8.3 -- Pipeline Fix Deploy")
+    print("Eagle Analytics Hub v8.3 -- FULL DEPLOY")
     print("=" * 60)
 
     if not os.path.exists("app.py"):
@@ -35,28 +47,47 @@ def main():
     ok, _, _ = run("git remote get-url origin")
     if not ok:
         print("ERROR: No git remote 'origin' configured")
-        print("  Run: git remote add origin https://github.com/fozayelibnayaz/eagle3d-kpi-automation.git")
         sys.exit(1)
 
+    b64_files = sorted(glob.glob("v83_*.b64"))
+    if not b64_files:
+        print("ERROR: No v83_*.b64 files found!")
+        print("Download these files from the workspace first:")
+        print("  v83_app.py.b64")
+        print("  v83_linkedin_connector.py.b64")
+        print("  v83_youtube_connector.py.b64")
+        print("  v83_ga4_connector.py.b64")
+        print("  v83_reporting_engine.py.b64")
+        print("  v83_daily_pipeline.py.b64")
+        sys.exit(1)
+
+    print(f"\nFound {len(b64_files)} .b64 files")
+
     print("\nStep 1: Fetching latest from GitHub...")
-    run("git fetch origin main")
-
-    print("Step 2: Stashing any local changes...")
     run("git stash")
-
-    print("Step 3: Rebasing on origin/main...")
-    ok, out, err = run("git rebase origin/main")
+    run("git fetch origin main")
+    ok, _, _ = run("git rebase origin/main")
     if not ok:
-        print(f"  Rebase conflict, trying pull instead...")
         run("git rebase --abort")
         run("git pull --rebase origin main")
 
-    print("Step 4: Writing updated daily_pipeline.yml...")
+    print("Step 2: Decoding .b64 files...")
+    for b64path in b64_files:
+        target = b64path.replace("v83_", "", 1).replace(".b64", "")
+        try:
+            with open(b64path, "rb") as f:
+                raw = base64.b64decode(f.read())
+            with open(target, "wb") as f:
+                f.write(raw)
+            lines = raw.decode().count("\n")
+            print(f"  OK {target} ({lines} lines)")
+        except Exception as e:
+            print(f"  FAIL {target}: {e}")
+            sys.exit(1)
 
-    workflow_path = ".github/workflows/daily_pipeline.yml"
-    os.makedirs(os.path.dirname(workflow_path), exist_ok=True)
-
-    workflow_content = r'''name: Daily KPI Pipeline
+    print("Step 3: Writing updated workflow...")
+    os.makedirs(".github/workflows", exist_ok=True)
+    workflow = r'''name: Daily KPI Pipeline
 
 on:
   workflow_dispatch:
@@ -117,9 +148,14 @@ jobs:
           echo "$CREDS" > google_creds.json
 
       - name: Show schedule context
+        env:
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          YOUTUBE_CHANNEL_ID: ${{ secrets.YOUTUBE_CHANNEL_ID }}
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
-          NOW_UTC=$(date -u '+%Y-%m-%d %H:%M:%S')
           echo "=== Pipeline Context ==="
+          NOW_UTC=$(date -u '+%Y-%m-%d %H:%M:%S')
           echo "Triggered at UTC: $NOW_UTC"
           REPORT_DATE=$(date -u -d '12 hours ago' '+%Y-%m-%d')
           echo "Reporting on day: $REPORT_DATE"
@@ -129,11 +165,6 @@ jobs:
           if [ -n "$YOUTUBE_CHANNEL_ID" ]; then echo "YouTube Channel ID: SET"; else echo "YouTube Channel ID: NOT SET"; fi
           if [ -n "$STRIPE_SECRET_KEY" ]; then echo "Stripe Secret Key: SET"; else echo "Stripe Secret Key: NOT SET"; fi
           if [ -n "$GROQ_API_KEY" ]; then echo "Groq API Key: SET"; else echo "Groq API Key: NOT SET"; fi
-        env:
-          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
-          YOUTUBE_CHANNEL_ID: ${{ secrets.YOUTUBE_CHANNEL_ID }}
-          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
 
       - name: Login to KPI Dashboard
         env:
@@ -309,79 +340,47 @@ jobs:
           retention-days: 30
           include-hidden-files: true
 '''
+    with open(".github/workflows/daily_pipeline.yml", "w") as f:
+        f.write(workflow)
+    print("  OK .github/workflows/daily_pipeline.yml")
 
-    with open(workflow_path, 'w') as f:
-        f.write(workflow_content)
-    print(f"  Written {workflow_path}")
-
-    print("Step 5: Writing updated .gitignore...")
-
-    gitignore_additions = """
-# YouTube data files (force-include)
-!data_output/youtube_channel.json
-!data_output/youtube_videos.json
-!data_output/youtube_daily.json
-!data_output/youtube_cache.json
-!data_output/youtube_analytics.json
-!data_output/ga4_traffic_cache.json
-!data_output/daily_counts.json
-!data_output/cross_platform_cache.json
-!data_output/linkedin_metrics.json
-!data_output/linkedin_posts.json
-!data_output/linkedin_followers.json
-"""
-
-    with open(".gitignore", "a") as f:
-        existing = open(".gitignore").read()
-        added = []
-        for line in gitignore_additions.strip().split("\n"):
-            if line.strip() and line.strip() not in existing:
-                f.write(line + "\n")
-                added.append(line.strip())
-        if added:
-            print(f"  Added {len(added)} force-include entries to .gitignore")
-        else:
-            print("  .gitignore already up to date")
-
-    print("Step 6: Updating ga4_connector.py with env var fallback...")
-
-    ga4_patch = '''
-    # Try GOOGLE_CREDS_JSON env var (pipeline uses this)
-    _env_creds = os.environ.get("GOOGLE_CREDS_JSON", "").strip()
-    if _env_creds:
-        try:
-            d = json.loads(_env_creds)
-            if "private_key" in d:
-                d["private_key"] = d["private_key"].replace("\\n", "\\n")
-            return service_account.Credentials.from_service_account_info(d, scopes=SCOPES)
-        except Exception:
-            pass
-'''
-
-    with open("ga4_connector.py", "r") as f:
-        ga4_content = f.read()
-
-    if "GOOGLE_CREDS_JSON env var" not in ga4_content:
-        ga4_content = ga4_content.replace(
-            '    # Fall back to local file\n    try:',
-            ga4_patch + '    # Fall back to local file\n    try:'
-        )
-        with open("ga4_connector.py", "w") as f:
-            f.write(ga4_content)
-        print("  Added GOOGLE_CREDS_JSON env var fallback to ga4_connector.py")
-    else:
-        print("  ga4_connector.py already has env var fallback")
-
-    print("Step 7: Cleaning up old files...")
-
-    cleanup_files = [
-        "apply_v81_fixes.py", "apply_v82_fixes.py",
-        "v81_fixes.patch", "v82_app.py.b64", "v82_reporting_engine.py.b64",
-        "v82_linkedin_connector.py.b64", "v82_youtube_connector.py.b64",
-        "v82_ga4_connector.py.b64", "fix_daily_yml.sh", "fix_and_deploy.py",
-        "CHANGES_SUMMARY.md", "FIX_SUMMARY_v7.1.md", "SESSION_SUMMARY.md",
+    print("Step 4: Updating .gitignore...")
+    gitignore_additions = [
+        "!data_output/youtube_channel.json",
+        "!data_output/youtube_videos.json",
+        "!data_output/youtube_daily.json",
+        "!data_output/youtube_cache.json",
+        "!data_output/youtube_analytics.json",
+        "!data_output/ga4_traffic_cache.json",
+        "!data_output/daily_counts.json",
+        "!data_output/cross_platform_cache.json",
+        "!data_output/linkedin_metrics.json",
+        "!data_output/linkedin_posts.json",
+        "!data_output/linkedin_followers.json",
     ]
-    for f in cleanup_files:
+    with open(".gitignore", "r") as f:
+        existing = f.read()
+    added = []
+    for line in gitignore_additions:
+        if line.strip() and line.strip() not in existing:
+            added.append(line)
+    if added:
+        with open(".gitignore", "a") as f:
+            f.write("\n".join(added) + "\n")
+        print(f"  Added {len(added)} entries")
+    else:
+        print("  Already up to date")
+
+    print("Step 5: Cleaning up old files...")
+    cleanup = [
+        "apply_v81_fixes.py", "apply_v82_fixes.py", "fix_and_deploy.py",
+        "fix_daily_yml.sh", "v81_fixes.patch", "CHANGES_SUMMARY.md",
+        "FIX_SUMMARY_v7.1.md", "SESSION_SUMMARY.md",
+        "v82_app.py.b64", "v82_reporting_engine.py.b64",
+        "v82_linkedin_connector.py.b64", "v82_youtube_connector.py.b64",
+        "v82_ga4_connector.py.b64",
+    ]
+    for f in cleanup:
         if os.path.exists(f):
             try:
                 os.remove(f)
@@ -389,16 +388,16 @@ jobs:
             except Exception:
                 pass
 
-    print("Step 8: Committing changes...")
+    print("Step 6: Committing...")
     run("git add -A")
     ok_clean, _, _ = run("git diff --cached --quiet")
     if not ok_clean:
-        run('git commit -m "v8.3: Pipeline fix - add YouTube/GA4/LinkedIn/Stripe env vars, commit data files, GA4 env fallback, cleanup"')
+        run('git commit -m "v8.3: Fix paid count, YouTube public analytics, LinkedIn engagement scrape, full Playwright analytics, pipeline env vars, GA4 env fallback"')
         print("  Committed")
     else:
-        print("  No changes to commit")
+        print("  No changes")
 
-    print("Step 9: Pushing to GitHub...")
+    print("Step 7: Pushing to GitHub...")
     pushed = False
     for attempt in range(5):
         ok, out, err = run("git push origin main")
@@ -417,35 +416,30 @@ jobs:
         print("DEPLOYED SUCCESSFULLY!")
         print("=" * 60)
         print()
-        print("  What was fixed:")
-        print("  1. Pipeline now passes YouTube API key + channel ID")
-        print("  2. Pipeline now passes GA4 property ID")
-        print("  3. Pipeline now passes Stripe secret key")
-        print("  4. Pipeline now passes LinkedIn cookies (if set)")
-        print("  5. Pipeline now passes Groq API key")
-        print("  6. Pipeline now COMMITS YouTube/GA4/LinkedIn data files")
-        print("  7. Pipeline has dual cron schedule (00:00 + 12:00 UTC)")
-        print("  8. GA4 connector reads creds from env var in pipeline")
-        print("  9. Old deploy/patch files cleaned up")
+        print("  Fixes deployed:")
+        print("  1. Paid count: verified against Verified_STRIPE (ACCEPTED only)")
+        print("  2. YouTube: per-video analytics works WITHOUT OAuth")
+        print("  3. LinkedIn: engagement scraped from HTML aria-labels")
+        print("  4. LinkedIn: full Playwright analytics scraper added")
+        print("  5. Pipeline: all env vars (YouTube/GA4/LinkedIn/Stripe/Groq)")
+        print("  6. Pipeline: commits YouTube/GA4/LinkedIn data files")
+        print("  7. GA4: GOOGLE_CREDS_JSON env var fallback")
+        print("  8. LinkedIn: default company page URL fallback")
+        print("  9. LinkedIn: improved post scoring algorithm")
         print()
-        print("  NEXT STEPS:")
+        print("  IMPORTANT: Add these GitHub Secrets if not set:")
+        print("  https://github.com/fozayelibnayaz/eagle3d-kpi-automation/settings/secrets/actions")
+        print("  - YOUTUBE_API_KEY")
+        print("  - YOUTUBE_CHANNEL_ID")
+        print("  - STRIPE_SECRET_KEY")
+        print("  - GROQ_API_KEY")
+        print("  - LINKEDIN_COOKIES_JSON (export from browser)")
         print()
-        print("  1. Add these GitHub Secrets (if not already set):")
-        print("     https://github.com/fozayelibnayaz/eagle3d-kpi-automation/settings/secrets/actions")
-        print("     - YOUTUBE_API_KEY (from Google Cloud Console)")
-        print("     - YOUTUBE_CHANNEL_ID (UCxxxxx)")
-        print("     - STRIPE_SECRET_KEY (sk_live_xxxx)")
-        print("     - GROQ_API_KEY (from groq.com)")
-        print("     Optional:")
-        print("     - YOUTUBE_OAUTH_TOKEN, YOUTUBE_REFRESH_TOKEN")
-        print("     - YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET")
+        print("  Then trigger pipeline:")
+        print("  https://github.com/fozayelibnayaz/eagle3d-kpi-automation/actions")
         print()
-        print("  2. Trigger pipeline manually:")
-        print("     https://github.com/fozayelibnayaz/eagle3d-kpi-automation/actions")
-        print("     -> Daily KPI Pipeline -> Run workflow")
-        print()
-        print("  3. Streamlit Cloud will rebuild in ~60-90 seconds:")
-        print("     https://eagle3d-kpi-automation.streamlit.app/")
+        print("  Streamlit rebuilds in ~90s:")
+        print("  https://eagle3d-kpi-automation.streamlit.app/")
         print()
     else:
         print("\n  PUSH FAILED - Try: git push origin main --force")

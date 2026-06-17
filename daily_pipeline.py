@@ -157,6 +157,7 @@ def main():
     def s6():
         from linkedin_connector import (
             scrape_public_metrics, scrape_with_playwright, scrape_with_cookies,
+            scrape_analytics_playwright,
             has_cookies, is_configured, get_status,
             save_manual_entry, save_posts, get_manual_history,
         )
@@ -251,15 +252,15 @@ def main():
         log("LinkedIn: Starting daily scrape...")
         result = {}
         if has_cookies():
-            # Try Playwright first (best data), fall back to cookie-based urllib
+            # Try the full analytics Playwright scraper first (gets ALL data + Sheets write)
             try:
-                log("LinkedIn: Trying authenticated Playwright scrape...")
-                result = scrape_with_playwright(historical=False)
+                log("LinkedIn: Trying full analytics Playwright scrape...")
+                result = scrape_analytics_playwright()
                 if result.get("error") or not result.get("followers"):
-                    log("LinkedIn: Playwright failed or incomplete — trying cookie-based urllib...")
-                    result = scrape_with_cookies()
+                    log("LinkedIn: Full analytics failed, trying basic Playwright...")
+                    result = scrape_with_playwright(historical=False)
                 else:
-                    log("LinkedIn: Playwright scrape successful")
+                    log("LinkedIn: Full analytics scrape successful")
             except ImportError:
                 log("LinkedIn: Playwright not available — using cookie-based urllib...")
                 result = scrape_with_cookies()
