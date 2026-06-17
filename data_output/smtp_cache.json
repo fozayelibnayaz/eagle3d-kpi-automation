@@ -794,6 +794,11 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "cristianadrianmedina@gmail.com": {
+    "checked_at": "2026-06-17T15:40:02.488826",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
   "crubixone@gmail.com": {
     "checked_at": "2026-06-17T10:12:01.137984",
     "detail": "smtp_accepted_250",
@@ -2876,6 +2881,11 @@
   },
   "rafsantahsin29@gmail.com": {
     "checked_at": "2026-06-02T16:35:22.590318",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
+  "rahmansaminur51@gmail.com": {
+    "checked_at": "2026-06-17T15:40:02.252401",
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
