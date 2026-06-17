@@ -1,4 +1,30 @@
 {
+  "3dv.academy": {
+    "checked_at": "2026-06-17T10:12:02.942963",
+    "domain": "3dv.academy",
+    "domain_age_days": null,
+    "has_a_record": true,
+    "has_dmarc": false,
+    "has_spf": true,
+    "is_disposable": false,
+    "is_major_provider": false,
+    "mx_ok": true,
+    "mx_records": [
+      [
+        1,
+        "aspmx.l.google.com"
+      ],
+      [
+        5,
+        "alt1.aspmx.l.google.com"
+      ],
+      [
+        5,
+        "alt2.aspmx.l.google.com"
+      ]
+    ],
+    "reputation_score": 0.35
+  },
   "4kprojects.com": {
     "checked_at": "2026-05-18T21:06:40.557255",
     "domain": "4kprojects.com",
@@ -832,6 +858,24 @@
     ],
     "reputation_score": 0.35
   },
+  "ebedix.com": {
+    "checked_at": "2026-06-17T10:09:10.449026",
+    "domain": "ebedix.com",
+    "domain_age_days": null,
+    "has_a_record": true,
+    "has_dmarc": true,
+    "has_spf": true,
+    "is_disposable": false,
+    "is_major_provider": false,
+    "mx_ok": true,
+    "mx_records": [
+      [
+        0,
+        "ebedix-com.mail.protection.outlook.com"
+      ]
+    ],
+    "reputation_score": 0.45
+  },
   "eleganza.ai": {
     "checked_at": "2026-05-18T20:27:39.029218",
     "domain": "eleganza.ai",
@@ -1377,6 +1421,24 @@
       [
         30,
         "mx30.antispam.mailspamprotection.com"
+      ]
+    ],
+    "reputation_score": 0.45
+  },
+  "hacettepe.edu.tr": {
+    "checked_at": "2026-06-17T10:08:59.844939",
+    "domain": "hacettepe.edu.tr",
+    "domain_age_days": null,
+    "has_a_record": true,
+    "has_dmarc": true,
+    "has_spf": true,
+    "is_disposable": false,
+    "is_major_provider": false,
+    "mx_ok": true,
+    "mx_records": [
+      [
+        0,
+        "mail.hacettepe.edu.tr"
       ]
     ],
     "reputation_score": 0.45
@@ -2342,6 +2404,32 @@
       ]
     ],
     "reputation_score": 0.45
+  },
+  "my.caslv.org": {
+    "checked_at": "2026-06-17T10:09:04.646670",
+    "domain": "my.caslv.org",
+    "domain_age_days": null,
+    "has_a_record": false,
+    "has_dmarc": false,
+    "has_spf": false,
+    "is_disposable": false,
+    "is_major_provider": false,
+    "mx_ok": true,
+    "mx_records": [
+      [
+        10,
+        "aspmx.l.google.com"
+      ],
+      [
+        20,
+        "alt1.aspmx.l.google.com"
+      ],
+      [
+        30,
+        "alt2.aspmx.l.google.com"
+      ]
+    ],
+    "reputation_score": 0.2
   },
   "naver.com": {
     "checked_at": "2026-05-18T20:27:50.204443",
@@ -3319,6 +3407,28 @@
       ]
     ],
     "reputation_score": 0.45
+  },
+  "snocv.com": {
+    "checked_at": "2026-06-17T10:08:44.836021",
+    "domain": "snocv.com",
+    "domain_age_days": null,
+    "has_a_record": false,
+    "has_dmarc": false,
+    "has_spf": true,
+    "is_disposable": false,
+    "is_major_provider": false,
+    "mx_ok": true,
+    "mx_records": [
+      [
+        10,
+        "mail.wabblywabble.com"
+      ],
+      [
+        10,
+        "mail.wallywatts.com"
+      ]
+    ],
+    "reputation_score": 0.3
   },
   "soclecollections.com": {
     "checked_at": "2026-05-18T21:00:11.301618",

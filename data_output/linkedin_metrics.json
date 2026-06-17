@@ -1,12 +1,7 @@
 {
-  "company_page": "https://www.linkedin.com/company/eagle-3d-streaming/",
-  "scraped_at": "2026-06-17T05:22:21.902534",
+  "scraped_at": "2026-06-17T10:12:34.528136",
   "demo": false,
-  "company_name": "Eagle 3D Streaming",
-  "company_url": "https://www.linkedin.com/company/eagle-3d-streaming",
-  "followers": 2551,
-  "employees": "31",
-  "description": "Eagle 3D Streaming",
+  "source": "playwright_authenticated",
   "posts": [
     {
       "title": "",
@@ -120,7 +115,11 @@
     }
   ],
   "post_count": 10,
-  "total_post_likes": 44,
-  "total_post_comments": 2,
-  "_cached_at": "2026-06-17T05:22:21.925803"
+  "total_likes": 44,
+  "total_comments": 2,
+  "total_reposts": 0,
+  "company_page": "https://www.linkedin.com/company/eagle-3d-streaming/",
+  "followers": 2551,
+  "company_name": "Eagle 3D Streaming",
+  "_cached_at": "2026-06-17T10:13:13.210090"
 }
