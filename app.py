@@ -247,33 +247,44 @@ def _get_app_password():
 _APP_PASSWORD = _get_app_password()
 
 def _check_auth():
-    """Simple password-gate for the dashboard. Only allows access after correct password."""
+    """Password-gate for the dashboard with proper centered login UI."""
     if "authenticated" not in st.session_state:
         st.session_state["authenticated"] = False
     if st.session_state["authenticated"]:
         return True
-    # Login screen
+    # Login screen — hide sidebar, centered panel
+    st.markdown("""
+    <style>
+    [data-testid="stSidebar"] {display: none !important;}
+    [data-testid="stSidebarNav"] {display: none !important;}
+    .block-container {padding-top: 8rem !important;}
+    </style>
+    """, unsafe_allow_html=True)
+
+    # Centered login card
     _login_logo = ""
     if LOGO_B64:
-        _login_logo = f'<img src="data:image/png;base64,{LOGO_B64}" style="width:80px;height:auto;border-radius:12px;margin-bottom:0.5rem;">'
+        _login_logo = f'<img src="data:image/png;base64,{LOGO_B64}" style="width:72px;height:auto;border-radius:14px;margin-bottom:0.8rem;">'
     else:
-        _login_logo = '<div style="font-size:3rem;">🦅</div>'
+        _login_logo = '<div style="font-size:2.8rem;margin-bottom:0.5rem;">🦅</div>'
     st.markdown(f"""
     <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;
-                min-height:60vh;text-align:center;">
+                min-height:50vh;text-align:center;">
         {_login_logo}
-        <div style="font-size:1.6rem;font-weight:800;color:var(--accent);margin-bottom:0.3rem;">
+        <div style="font-size:1.8rem;font-weight:800;color:#00D4FF;margin-bottom:0.3rem;">
             Eagle Analytics Hub</div>
-        <div style="font-size:0.9rem;color:var(--text-sec, #94A3C1);margin-bottom:2rem;">
+        <div style="font-size:0.85rem;color:#94A3C1;margin-bottom:0.2rem;">
+            Eagle 3D Streaming — Unified Command Center</div>
+        <div style="font-size:0.75rem;color:#5B6B85;margin-bottom:2rem;">
             Secure Dashboard — Authentication Required</div>
     </div>
     """, unsafe_allow_html=True)
-    _cols = st.columns([2, 1, 2])
+    _cols = st.columns([3, 2, 3])
     with _cols[1]:
-        _pwd = st.text_input("🔒 Enter Password", type="password", key="_auth_pwd",
-                             placeholder="Password...")
+        _pwd = st.text_input("Password", type="password", key="_auth_pwd",
+                             placeholder="Enter password...")
         _login_btn = st.button("🔓 Sign In", use_container_width=True, key="_auth_btn")
-        if _login_btn or _pwd:
+        if _login_btn:
             if _pwd == _APP_PASSWORD:
                 st.session_state["authenticated"] = True
                 st.toast("✅ Access granted", icon="🦅")
@@ -675,33 +686,26 @@ with st.sidebar:
 
     st.markdown("---")
 
-    # Navigation — 4 primary platform groups
-    _nav_section = st.radio(
-        "Platform",
-        ["📊 KPI System", "🌐 Analytics", "📺 YouTube", "💼 LinkedIn"],
+    # Navigation — flat list (reliable across Streamlit versions)
+    page = st.radio(
+        "Navigation",
+        [
+            "📊 Dashboard",
+            "🔍 Browse Data",
+            "✏️ Manual Override",
+            "🚦 Traffic Intel",
+            "🔬 EDA Lab",
+            "📺 YouTube",
+            "💼 LinkedIn",
+            "🔗 Cross-Platform",
+            "🤖 Ask AI",
+            "🔮 Predictions",
+            "📋 Reports",
+            "🔔 Alerts",
+        ],
         label_visibility="collapsed",
-        key="nav_section",
+        key="nav_page",
     )
-    st.markdown("---")
-    if _nav_section == "📊 KPI System":
-        page = st.radio("KPI", [
-            "📊 Dashboard", "🔍 Browse Data", "✏️ Manual Override",
-        ], label_visibility="collapsed", key="nav_kpi")
-    elif _nav_section == "🌐 Analytics":
-        page = st.radio("GA", [
-            "🚦 Traffic Intel", "🔬 EDA Lab", "🤖 Ask AI",
-            "🔮 Predictions", "📋 Reports", "🔔 Alerts",
-        ], label_visibility="collapsed", key="nav_ga")
-    elif _nav_section == "📺 YouTube":
-        page = st.radio("YT", [
-            "📺 YouTube", "🔗 Cross-Platform", "🤖 Ask AI",
-            "🔮 Predictions", "📋 Reports", "🔔 Alerts",
-        ], label_visibility="collapsed", key="nav_yt")
-    else:
-        page = st.radio("LI", [
-            "💼 LinkedIn", "🔗 Cross-Platform", "🤖 Ask AI",
-            "🔮 Predictions", "📋 Reports", "🔔 Alerts",
-        ], label_visibility="collapsed", key="nav_li")
 
     st.markdown("---")
 
@@ -930,6 +934,44 @@ prev_kpi = (
     if enable_comp and comp_s
     else pd.DataFrame()
 )
+
+# ── HARD OVERRIDE: Always count paid from Verified_STRIPE ACCEPTED rows directly ──
+# This ensures the paid count is ALWAYS correct regardless of Daily_Counts column mismatches
+if not stripe_raw.empty:
+    _hard_direct_paid = sum(
+        1 for _, r in stripe_raw.iterrows()
+        if str(r.get("final_status", str(r.get("Final_Status", "")))).upper() == "ACCEPTED"
+    )
+    _kpi_paid_sum = int(kpi_all["paid_customers"].sum()) if not kpi_all.empty and "paid_customers" in kpi_all.columns else 0
+    if _kpi_paid_sum != _hard_direct_paid:
+        # Rebuild paid_customers from Verified_STRIPE directly
+        _paid_by_date = {}
+        for _, r in stripe_raw.iterrows():
+            _fs = str(r.get("final_status", str(r.get("Final_Status", "")))).upper()
+            if _fs == "ACCEPTED":
+                _pd = parse_to_date(r.get("First payment", "") or r.get("row_date_used", "") or r.get("Created", ""))
+                if _pd:
+                    _ds = _pd.strftime("%Y-%m-%d")
+                    _paid_by_date[_ds] = _paid_by_date.get(_ds, 0) + 1
+        # Also count rows without parseable dates (add to earliest date or today)
+        _dated_count = sum(_paid_by_date.values())
+        _undated = _hard_direct_paid - _dated_count
+        if _undated > 0:
+            _today_ds = datetime.now().strftime("%Y-%m-%d")
+            _paid_by_date[_today_ds] = _paid_by_date.get(_today_ds, 0) + _undated
+        # Zero out and rebuild
+        if not kpi_all.empty and "paid_customers" in kpi_all.columns:
+            kpi_all["paid_customers"] = 0
+            for _ds, _cnt in _paid_by_date.items():
+                _mask = kpi_all["date"] == _ds
+                if _mask.any():
+                    kpi_all.loc[_mask, "paid_customers"] = _cnt
+                else:
+                    _new = {"date": _ds, "signups": 0, "first_uploads": 0, "paid_customers": _cnt}
+                    kpi_all = pd.concat([kpi_all, pd.DataFrame([_new])], ignore_index=True)
+            # Re-filter
+            kpi = filter_kpi(kpi_all, p_start, p_end)
+            prev_kpi = filter_kpi(kpi_all, comp_s, comp_e) if enable_comp and comp_s else pd.DataFrame()
 
 free_rows = free_raw.copy()
 upload_rows = upload_raw.copy()
@@ -1195,45 +1237,14 @@ if page == "📊 Dashboard":
     else:
         st.warning("⚠️ No KPI data loaded. Check Settings → Secrets Status.")
 
-cs = km(kpi, "signups")
-cu = km(kpi, "first_uploads")
-cp = km(kpi, "paid_customers")
-ps = km(prev_kpi, "signups")
-pu = km(prev_kpi, "first_uploads")
-pp = km(prev_kpi, "paid_customers")
+    cs = km(kpi, "signups")
+    cu = km(kpi, "first_uploads")
+    cp = km(kpi, "paid_customers")
+    ps = km(prev_kpi, "signups")
+    pu = km(prev_kpi, "first_uploads")
+    pp = km(prev_kpi, "paid_customers")
 
-# ── VERIFICATION: Ensure cp (paid count) matches ACCEPTED-only from Verified_STRIPE ──
-# This prevents Method 2 Daily_Counts from using a "total" column instead of "accepted"
-if not stripe_raw.empty and "final_status" in stripe_raw.columns:
-    _direct_paid = sum(1 for _, r in stripe_raw.iterrows()
-                       if str(r.get("final_status", "")).upper() == "ACCEPTED")
-    _kpi_paid_all = int(kpi_all["paid_customers"].sum()) if not kpi_all.empty and "paid_customers" in kpi_all.columns else 0
-    if _kpi_paid_all != _direct_paid:
-        # kpi_all has wrong paid count — rebuild paid_customers from Verified_STRIPE directly
-        if not kpi_all.empty and "paid_customers" in kpi_all.columns:
-            # Recount paid per date from stripe_raw
-            _paid_by_date = {}
-            for _, r in stripe_raw.iterrows():
-                if str(r.get("final_status", "")).upper() == "ACCEPTED":
-                    _pd = parse_to_date(r.get("First payment", "") or r.get("row_date_used", "") or r.get("Created", ""))
-                    if _pd:
-                        _ds = _pd.strftime("%Y-%m-%d")
-                        _paid_by_date[_ds] = _paid_by_date.get(_ds, 0) + 1
-            # Zero out existing, then fill from recount
-            kpi_all["paid_customers"] = 0
-            for _ds, _cnt in _paid_by_date.items():
-                _mask = kpi_all["date"] == _ds
-                if _mask.any():
-                    kpi_all.loc[_mask, "paid_customers"] = _cnt
-                else:
-                    _new = {"date": _ds, "signups": 0, "first_uploads": 0, "paid_customers": _cnt}
-                    kpi_all = pd.concat([kpi_all, pd.DataFrame([_new])], ignore_index=True)
-            # Re-filter
-            kpi = filter_kpi(kpi_all, p_start, p_end)
-            prev_kpi = filter_kpi(kpi_all, comp_s, comp_e) if enable_comp and comp_s else pd.DataFrame()
-            cp = km(kpi, "paid_customers")
-            pp = km(prev_kpi, "paid_customers")
-
+    # Paid count is already verified via hard override above
     s2u = (cu / cs * 100) if cs > 0 else 0
     u2p = (cp / cu * 100) if cu > 0 else 0
     s2p = (cp / cs * 100) if cs > 0 else 0
@@ -3981,20 +3992,37 @@ elif page == "💼 LinkedIn":
         with _lc1:
             st.metric("👥 Followers", f"{_li_stats['followers']:,}")
         with _lc2:
-            st.metric("👁️ Impressions", f"{_li_stats['total_impressions']:,}")
+            _imp_delta = _li_stats.get("impressions_change_pct", "")
+            st.metric("👁️ Impressions", f"{_li_stats['total_impressions']:,}", delta=_imp_delta if _imp_delta else None)
         with _lc3:
-            st.metric("👍 Total Likes", f"{_li_stats['total_likes']:,}")
+            _react_delta = _li_stats.get("reactions_change_pct", "")
+            st.metric("👍 Reactions", f"{_li_stats['total_likes']:,}", delta=_react_delta if _react_delta else None)
         with _lc4:
-            st.metric("💬 Total Comments", f"{_li_stats['total_comments']:,}")
+            _comm_delta = _li_stats.get("comments_change_pct", "")
+            st.metric("💬 Comments", f"{_li_stats['total_comments']:,}", delta=_comm_delta if _comm_delta else None)
 
-        _lc5, _lc6, _lc7 = st.columns(3)
+        _lc5, _lc6, _lc7, _lc8 = st.columns(4)
         with _lc5:
-            st.metric("🔄 Reposts", f"{_li_stats['total_reposts']:,}")
+            _rep_delta = _li_stats.get("reposts_change_pct", "")
+            st.metric("🔄 Reposts", f"{_li_stats['total_reposts']:,}", delta=_rep_delta if _rep_delta else None)
         with _lc6:
-            st.metric("📊 Avg Engagement", f"{_li_stats['avg_engagement_rate']:.1f}%")
+            st.metric("👆 Clicks", f"{_li_stats.get('total_clicks', 0):,}")
         with _lc7:
-            _eng_label, _ = get_score_label(int(_li_stats['avg_engagement_rate'] * 10))
-            st.metric("Engagement Level", _eng_label)
+            st.metric("📊 Avg Engagement", f"{_li_stats['avg_engagement_rate']:.1f}%")
+        with _lc8:
+            st.metric("📊 Avg CTR", f"{_li_stats.get('avg_ctr', 0):.2f}%")
+
+        # ── Highlights period info ──
+        _li_cached = get_cached_metrics()
+        _highlights_range = ""
+        if _li_cached and _li_cached.get("scraped_at"):
+            try:
+                _sa = _li_cached["scraped_at"][:10]
+                _highlights_range = f"Data as of {_sa}"
+            except Exception:
+                pass
+        if _highlights_range:
+            st.caption(f"📈 {_highlights_range} | Source: Pipeline authenticated scrape")
 
         # ── Top & Worst posts ──
         _li_posts = get_posts()
@@ -4009,7 +4037,7 @@ elif page == "💼 LinkedIn":
             if _best:
                 _b_label, _b_color = get_score_label(_best.get("_score", 0))
                 st.markdown(f"**{_best.get('title', 'Untitled')[:100]}**")
-                _bm1, _bm2, _bm3, _bm4 = st.columns(4)
+                _bm1, _bm2, _bm3, _bm4, _bm5 = st.columns(5)
                 with _bm1:
                     st.metric("Impressions", f"{_best.get('impressions', 0):,}")
                 with _bm2:
@@ -4017,6 +4045,8 @@ elif page == "💼 LinkedIn":
                 with _bm3:
                     st.metric("Comments", f"{_best.get('comments', 0):,}")
                 with _bm4:
+                    st.metric("Clicks", f"{_best.get('clicks', 0):,}")
+                with _bm5:
                     st.metric("Score", f"{_best.get('_score', 0)}/100 {_b_label}")
 
             st.markdown("#### 💀 Worst Performing")
@@ -4024,7 +4054,7 @@ elif page == "💼 LinkedIn":
             if _worst:
                 _w_label, _w_color = get_score_label(_worst.get("_score", 0))
                 st.markdown(f"**{_worst.get('title', 'Untitled')[:100]}**")
-                _wm1, _wm2, _wm3, _wm4 = st.columns(4)
+                _wm1, _wm2, _wm3, _wm4, _wm5 = st.columns(5)
                 with _wm1:
                     st.metric("Impressions", f"{_worst.get('impressions', 0):,}")
                 with _wm2:
@@ -4032,6 +4062,8 @@ elif page == "💼 LinkedIn":
                 with _wm3:
                     st.metric("Comments", f"{_worst.get('comments', 0):,}")
                 with _wm4:
+                    st.metric("Clicks", f"{_worst.get('clicks', 0):,}")
+                with _wm5:
                     st.metric("Score", f"{_worst.get('_score', 0)}/100 {_w_label}")
 
         # ── Historical trends ──
@@ -4134,44 +4166,74 @@ elif page == "💼 LinkedIn":
                 _likes = post.get("likes", 0)
                 _comments = post.get("comments", 0)
                 _reposts = post.get("reposts", 0)
-                _eng = 0.0
-                if _imp > 0:
+                _clicks = post.get("clicks", 0)
+                _follows = post.get("follows", 0)
+                _views = post.get("views", 0)
+                _ctr = post.get("ctr", 0)
+                _eng = post.get("engagement_rate", 0)
+                if not _eng and _imp > 0:
                     _eng = (_likes + _comments * 3 + _reposts * 2) / _imp * 100
+                _post_type = post.get("post_type", "")
+                _audience = post.get("audience", "")
 
-                with st.expander(f"#{i+1} — {_title} — Score: {_score}/100 {_label}"):
-                    _pc1, _pc2, _pc3, _pc4, _pc5 = st.columns(5)
+                _card_title = f"#{i+1} — {_title} — Score: {_score}/100 {_label}"
+                if _post_type:
+                    _card_title += f" [{_post_type}]"
+                with st.expander(_card_title):
+                    _pc1, _pc2, _pc3, _pc4 = st.columns(4)
                     with _pc1:
                         st.metric("👁️ Impressions", f"{_imp:,}")
                     with _pc2:
-                        st.metric("👍 Likes", f"{_likes:,}")
+                        st.metric("👍 Reactions", f"{_likes:,}")
                     with _pc3:
                         st.metric("💬 Comments", f"{_comments:,}")
                     with _pc4:
                         st.metric("🔄 Reposts", f"{_reposts:,}")
+                    _pc5, _pc6, _pc7, _pc8 = st.columns(4)
                     with _pc5:
-                        st.metric("📊 Engagement", f"{_eng:.1f}%")
+                        st.metric("👆 Clicks", f"{_clicks:,}")
+                    with _pc6:
+                        st.metric("📊 CTR", f"{_ctr:.2f}%" if _ctr else "—")
+                    with _pc7:
+                        st.metric("➕ Follows", f"{_follows:,}" if _follows else "—")
+                    with _pc8:
+                        st.metric("📈 Engagement", f"{_eng:.2f}%")
+                    if _views > 0:
+                        st.caption(f"👁️ Views: {_views:,}")
+                    if _audience:
+                        st.caption(f"👥 Audience: {_audience}")
 
                     if post.get("urn"):
                         st.caption(f"URN: {post['urn']}")
                     if _title:
                         st.markdown(f"**Full text:** {post.get('title', '')}")
 
-            # Posts table
-            with st.expander("📋 Posts Data Table"):
+            # Posts table — Content Engagement (matching LinkedIn admin format)
+            with st.expander("📋 Content Engagement Table"):
                 _posts_df_data = []
                 for p in _li_posts_sorted:
-                    _imp = p.get("impressions", 0)
-                    _likes = p.get("likes", 0)
-                    _comments = p.get("comments", 0)
-                    _reposts = p.get("reposts", 0)
-                    _eng = (_likes + _comments * 3 + _reposts * 2) / max(1, _imp) * 100 if _imp > 0 else 0
+                    _p_imp = p.get("impressions", 0)
+                    _p_likes = p.get("likes", 0)
+                    _p_comments = p.get("comments", 0)
+                    _p_reposts = p.get("reposts", 0)
+                    _p_clicks = p.get("clicks", 0)
+                    _p_follows = p.get("follows", 0)
+                    _p_ctr = p.get("ctr", 0)
+                    _p_eng = p.get("engagement_rate", 0)
+                    if not _p_eng and _p_imp > 0:
+                        _p_eng = round((_p_likes + _p_comments * 3 + _p_reposts * 2) / max(1, _p_imp) * 100, 2)
                     _posts_df_data.append({
-                        "Title": p.get("title", "")[:80],
-                        "Impressions": _imp,
-                        "Likes": _likes,
-                        "Comments": _comments,
-                        "Reposts": _reposts,
-                        "Engagement %": round(_eng, 2),
+                        "Title": p.get("title", "")[:60],
+                        "Type": p.get("post_type", ""),
+                        "Audience": p.get("audience", ""),
+                        "Impressions": _p_imp,
+                        "Clicks": _p_clicks,
+                        "CTR": f"{_p_ctr:.2f}%" if _p_ctr else "—",
+                        "Reactions": _p_likes,
+                        "Comments": _p_comments,
+                        "Reposts": _p_reposts,
+                        "Follows": _p_follows,
+                        "Eng. Rate": f"{_p_eng:.2f}%" if _p_eng else "—",
                         "Score": p.get("_score", 0),
                     })
                 if _posts_df_data:
@@ -4936,8 +4998,8 @@ elif page == "⚙️ Settings":
                         st.error(f"❌ Stripe API error: {_e}")
         elif not _stripe_api_key:
             with st.expander("⚪ Stripe API Verification (Not Connected)"):
-                st.info("💡 Add `STRIPE_SECRET_KEY` (your `sk_live_...` or `sk_test_...` key) to Streamlit secrets for live Stripe verification.")
-                st.caption("This uses the official Stripe API to verify that your sheet data matches actual payment data.")
+                st.info("💡 Add `STRIPE_SECRET_KEY` to Streamlit secrets for optional live Stripe API verification (cross-check sheet data).")
+                st.caption("Stripe data is already scraped via session cookies (`STRIPE_COOKIES_JSON`). The API key is only for verification.")
 
         with st.expander("🔍 Stripe Details — Accept/Reject Breakdown"):
             if "category" in stripe_raw.columns:

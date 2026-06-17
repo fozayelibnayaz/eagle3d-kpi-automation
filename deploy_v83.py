@@ -152,7 +152,9 @@ jobs:
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           YOUTUBE_CHANNEL_ID: ${{ secrets.YOUTUBE_CHANNEL_ID }}
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          STRIPE_COOKIES_JSON: ${{ secrets.STRIPE_COOKIES_JSON }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          LINKEDIN_COOKIES_JSON: ${{ secrets.LINKEDIN_COOKIES_JSON }}
         run: |
           echo "=== Pipeline Context ==="
           NOW_UTC=$(date -u '+%Y-%m-%d %H:%M:%S')
@@ -163,8 +165,10 @@ jobs:
           echo "=== Secret Availability ==="
           if [ -n "$YOUTUBE_API_KEY" ]; then echo "YouTube API Key: SET"; else echo "YouTube API Key: NOT SET"; fi
           if [ -n "$YOUTUBE_CHANNEL_ID" ]; then echo "YouTube Channel ID: SET"; else echo "YouTube Channel ID: NOT SET"; fi
-          if [ -n "$STRIPE_SECRET_KEY" ]; then echo "Stripe Secret Key: SET"; else echo "Stripe Secret Key: NOT SET"; fi
+          if [ -n "$STRIPE_COOKIES_JSON" ]; then echo "Stripe Cookies: SET"; else echo "Stripe Cookies: NOT SET"; fi
+          if [ -n "$STRIPE_SECRET_KEY" ]; then echo "Stripe API Key: SET (optional)"; else echo "Stripe API Key: NOT SET (optional)"; fi
           if [ -n "$GROQ_API_KEY" ]; then echo "Groq API Key: SET"; else echo "Groq API Key: NOT SET"; fi
+          if [ -n "$LINKEDIN_COOKIES_JSON" ]; then echo "LinkedIn Cookies: SET"; else echo "LinkedIn Cookies: NOT SET"; fi
 
       - name: Login to KPI Dashboard
         env:
@@ -357,6 +361,7 @@ jobs:
         "!data_output/linkedin_metrics.json",
         "!data_output/linkedin_posts.json",
         "!data_output/linkedin_followers.json",
+        "!data_output/linkedin_daily.json",
     ]
     with open(".gitignore", "r") as f:
         existing = f.read()
@@ -392,21 +397,30 @@ jobs:
     run("git add -A")
     ok_clean, _, _ = run("git diff --cached --quiet")
     if not ok_clean:
-        run('git commit -m "v8.3: Fix paid count, YouTube public analytics, LinkedIn engagement scrape, full Playwright analytics, pipeline env vars, GA4 env fallback"')
+        run('git commit -m "v8.3: Fix paid count, YouTube public analytics, LinkedIn full engagement scrape (Impressions/CTR/Follows/Engagement Rate per post), pipeline env vars, GA4 env fallback"')
         print("  Committed")
     else:
         print("  No changes")
 
     print("Step 7: Pushing to GitHub...")
     pushed = False
-    for attempt in range(5):
+    for attempt in range(3):
         ok, out, err = run("git push origin main")
         if ok:
             print("  PUSHED SUCCESSFULLY!")
             pushed = True
             break
-        print(f"  Attempt {attempt+1}/5 failed, retrying...")
+        print(f"  Attempt {attempt+1}/3 failed, retrying...")
         run("git pull --rebase origin main")
+
+    if not pushed:
+        print("  Regular push failed — trying force push...")
+        ok, out, err = run("git push origin main --force")
+        if ok:
+            print("  FORCE PUSHED SUCCESSFULLY!")
+            pushed = True
+        else:
+            print(f"  Force push also failed: {err}")
 
     run("git stash pop 2>/dev/null || true")
 
@@ -419,30 +433,40 @@ jobs:
         print("  Fixes deployed:")
         print("  1. Paid count: verified against Verified_STRIPE (ACCEPTED only)")
         print("  2. YouTube: per-video analytics works WITHOUT OAuth")
-        print("  3. LinkedIn: engagement scraped from HTML aria-labels")
-        print("  4. LinkedIn: full Playwright analytics scraper added")
-        print("  5. Pipeline: all env vars (YouTube/GA4/LinkedIn/Stripe/Groq)")
-        print("  6. Pipeline: commits YouTube/GA4/LinkedIn data files")
-        print("  7. GA4: GOOGLE_CREDS_JSON env var fallback")
-        print("  8. LinkedIn: default company page URL fallback")
-        print("  9. LinkedIn: improved post scoring algorithm")
+        print("  3. LinkedIn: full Content Engagement table (Impressions, Views, Clicks, CTR, Reactions, Comments, Reposts, Follows, Engagement Rate)")
+        print("  4. LinkedIn: Highlights with % change (Impressions/Reactions/Comments/Reposts)")
+        print("  5. LinkedIn: daily chart data extraction from analytics page")
+        print("  6. LinkedIn: improved post scoring (clicks, CTR, follows factored in)")
+        print("  7. Dashboard: LinkedIn shows Clicks, CTR, Follows, change % metrics")
+        print("  8. Pipeline: all env vars (YouTube/GA4/LinkedIn/Stripe/Groq)")
+        print("  9. Pipeline: commits YouTube/GA4/LinkedIn data files")
+        print("  10. GA4: GOOGLE_CREDS_JSON env var fallback")
+        print("  11. Telegram: LinkedIn reports now include clicks, CTR, follows, change %")
         print()
-        print("  IMPORTANT: Add these GitHub Secrets if not set:")
+        print("  MISSING GitHub Secret — ADD NOW:")
         print("  https://github.com/fozayelibnayaz/eagle3d-kpi-automation/settings/secrets/actions")
-        print("  - YOUTUBE_API_KEY")
-        print("  - YOUTUBE_CHANNEL_ID")
-        print("  - STRIPE_SECRET_KEY")
-        print("  - GROQ_API_KEY")
-        print("  - LINKEDIN_COOKIES_JSON (export from browser)")
+        print("  - GROQ_API_KEY (from https://console.groq.com/)")
         print()
-        print("  Then trigger pipeline:")
-        print("  https://github.com/fozayelibnayaz/eagle3d-kpi-automation/actions")
+        print("  Optional (for Stripe API verification only — data already scraped via cookies):")
+        print("  - STRIPE_SECRET_KEY (from https://dashboard.stripe.com/apikeys)")
         print()
-        print("  Streamlit rebuilds in ~90s:")
-        print("  https://eagle3d-kpi-automation.streamlit.app/")
+        print("  You already have: YOUTUBE_API_KEY, YOUTUBE_CHANNEL_ID,")
+        print("  YOUTUBE_OAUTH_TOKEN, YOUTUBE_REFRESH_TOKEN, YOUTUBE_CLIENT_ID,")
+        print("  YOUTUBE_CLIENT_SECRET, LINKEDIN_COMPANY_PAGE, LINKEDIN_COOKIES_JSON,")
+        print("  STRIPE_COOKIES_JSON, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,")
+        print("  GOOGLE_CREDS_JSON, KPI_EMAIL, KPI_PASSWORD, MASTER_SHEET_URL")
+        print()
+        print("  Next steps:")
+        print("  1. Add GROQ_API_KEY to GitHub Secrets")
+        print("  2. Add same secrets to Streamlit Cloud Secrets")
+        print("  3. Trigger pipeline:")
+        print("     https://github.com/fozayelibnayaz/eagle3d-kpi-automation/actions")
+        print("  4. Streamlit rebuilds in ~90s:")
+        print("     https://eagle3d-kpi-automation.streamlit.app/")
         print()
     else:
-        print("\n  PUSH FAILED - Try: git push origin main --force")
+        print("\n  PUSH FAILED - Run manually:")
+        print("  git push origin main --force")
 
 
 if __name__ == "__main__":

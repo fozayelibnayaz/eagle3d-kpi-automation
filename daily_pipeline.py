@@ -346,10 +346,18 @@ def main():
                     _entry["post_comments"] = sum(p.get("comments", 0) for p in _posts)
                     _entry["post_reposts"] = sum(p.get("reposts", 0) for p in _posts)
                     _entry["post_impressions"] = sum(p.get("impressions", 0) for p in _posts)
+                    _entry["post_clicks"] = sum(p.get("clicks", 0) for p in _posts)
+                    _entry["post_follows"] = sum(p.get("follows", 0) for p in _posts)
+                    _entry["post_views"] = sum(p.get("views", 0) for p in _posts)
                     _total_imp = max(_entry.get("impressions", 0), _entry.get("post_impressions", 0))
                     _total_eng = _entry.get("post_likes", 0) + _entry.get("post_comments", 0) + _entry.get("post_reposts", 0)
                     if _total_imp > 0:
                         _entry["engagement_rate"] = round(_total_eng / _total_imp * 100, 2)
+                    # Highlights change percentages
+                    for _hk in ("impressions_change_pct", "reactions_change_pct",
+                                "comments_change_pct", "reposts_change_pct"):
+                        if result.get(_hk):
+                            _entry[_hk] = result[_hk]
 
                 save_manual_entry(_entry)
                 log(f"LinkedIn: Auto-saved daily entry — followers={_entry.get('followers', 0)}, posts={_entry.get('posts', 0)}")
@@ -371,10 +379,15 @@ def main():
                     "Likes": _entry.get("likes", 0),
                     "Comments": _entry.get("comments", 0),
                     "Shares": _entry.get("shares", 0),
+                    "Reposts": _entry.get("post_reposts", 0),
+                    "Clicks": _entry.get("post_clicks", 0),
+                    "Follows": _entry.get("post_follows", 0),
                     "Posts": _entry.get("posts", 0),
                     "Post Likes": _entry.get("post_likes", 0),
                     "Post Comments": _entry.get("post_comments", 0),
                     "Engagement Rate": _entry.get("engagement_rate", 0),
+                    "Impressions Change": _entry.get("impressions_change_pct", ""),
+                    "Reactions Change": _entry.get("reactions_change_pct", ""),
                     "Source": result.get("source", "public" if not has_cookies() else "authenticated"),
                     "Last Updated": datetime.now().strftime("%Y-%m-%d %H:%M UTC"),
                 }
@@ -391,16 +404,23 @@ def main():
                 try:
                     from sheets_writer import write_tab_data as _wtd
                     _post_rows = []
-                    for p in _posts[:20]:  # Top 20 posts
+                    for p in _posts[:25]:  # Top 25 posts
                         _post_rows.append({
                             "Date": p.get("published_at", "")[:10] if p.get("published_at") else _today,
-                            "Title": (p.get("title", "") or p.get("text", ""))[:100],
+                            "Title": (p.get("title", "") or p.get("text", ""))[:200],
+                            "Post Type": p.get("post_type", ""),
+                            "Audience": p.get("audience", ""),
                             "Likes": p.get("likes", 0),
                             "Comments": p.get("comments", 0),
-                            "Shares": p.get("shares", 0) or p.get("reposts", 0),
+                            "Reposts": p.get("reposts", 0),
+                            "Clicks": p.get("clicks", 0),
+                            "Follows": p.get("follows", 0),
+                            "CTR": p.get("ctr", 0),
+                            "Engagement Rate": p.get("engagement_rate", 0),
                             "Impressions": p.get("impressions", 0),
+                            "Views": p.get("views", 0),
                             "URL": p.get("url", ""),
-                            "Source": p.get("source", "linkedin"),
+                            "Source": p.get("source", "playwright"),
                         })
                     if _post_rows:
                         _pw = _wtd("LinkedIn_Posts", _post_rows)

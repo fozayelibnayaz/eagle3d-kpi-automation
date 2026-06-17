@@ -438,9 +438,10 @@ def scrape_with_playwright(historical: bool = False) -> Dict[str, Any]:
             )
 
             if isinstance(cookies, list):
+                import html as _html
                 formatted = [{
                     "name": c.get("name", ""),
-                    "value": c.get("value", ""),
+                    "value": _html.unescape(str(c.get("value", ""))),
                     "domain": c.get("domain", ".linkedin.com"),
                     "path": c.get("path", "/"),
                 } for c in cookies]
@@ -533,71 +534,87 @@ def _extract_followers_from_page(html: str) -> Dict[str, Any]:
 
 
 def _extract_posts_from_page(page) -> List[Dict[str, Any]]:
-    """Extract post data from LinkedIn admin posts page."""
+    """Extract post data from LinkedIn admin posts page.
+    Enhanced to capture full engagement: impressions, views, clicks, CTR,
+    reactions, comments, reposts, follows, engagement rate per post.
+    """
     posts = page.evaluate("""
         () => {
-            const postElements = document.querySelectorAll('[data-urn], .update-components-text, .feed-shared-update-v2');
             const results = [];
             const seen = new Set();
             
-            // Try to find post containers with engagement data
-            document.querySelectorAll('article, [class*="update"], [class*="post"]').forEach(el => {
+            // Method 1: Look for structured post cards/rows
+            // LinkedIn admin posts page has cards with engagement data
+            document.querySelectorAll('article, [class*="update"], [class*="post"], [class*="feed-shared"]').forEach(el => {
                 const text = el.innerText || '';
                 if (text.length < 10) return;
                 
-                // Extract post URN/ID
                 const urn = el.getAttribute('data-urn') || el.getAttribute('data-id') || '';
                 if (seen.has(urn) && urn) return;
                 if (urn) seen.add(urn);
                 
-                // Extract engagement numbers from text
-                const likeMatch = text.match(/(\\d[\\d,]*)\\s*likes?/i) || text.match(/like.*?(\\d[\\d,]*)/i);
-                const commentMatch = text.match(/(\\d[\\d,]*)\\s*comments?/i) || text.match(/comment.*?(\\d[\\d,]*)/i);
-                const repostMatch = text.match(/(\\d[\\d,]*)\\s*reposts?/i) || text.match(/repost.*?(\\d[\\d,]*)/i);
-                const impressionMatch = text.match(/(\\d[\\d,]*)\\s*impressions?/i);
-                const viewMatch = text.match(/(\\d[\\d,]*)\\s*views?/i);
+                // Extract all numeric engagement data
+                const likeMatch = text.match(/(\\\\d[\\\\d,]*)\\\\s*(?:likes?|reactions?)/i) || text.match(/(?:likes?|reactions?).*?(\\\\d[\\\\d,]*)/i);
+                const commentMatch = text.match(/(\\\\d[\\\\d,]*)\\\\s*comments?/i) || text.match(/comments?.*?(\\\\d[\\\\d,]*)/i);
+                const repostMatch = text.match(/(\\\\d[\\\\d,]*)\\\\s*reposts?/i) || text.match(/reposts?.*?(\\\\d[\\\\d,]*)/i);
+                const impressionMatch = text.match(/(\\\\d[\\\\d,]*)\\\\s*impressions?/i);
+                const viewMatch = text.match(/(\\\\d[\\\\d,]*)\\\\s*views?/i);
+                const clickMatch = text.match(/(\\\\d[\\\\d,]*)\\\\s*clicks?/i);
+                const followMatch = text.match(/(\\\\d[\\\\d,]*)\\\\s*follows?/i);
+                const ctrMatch = text.match(/([\\\\d.]+)%\\\\s*(?:CTR|click-through)/i);
+                const engMatch = text.match(/([\\\\d.]+)%\\\\s*engagement/i);
                 
-                // Get first line as title
-                const lines = text.split('\\n').filter(l => l.trim().length > 3);
-                const title = lines.slice(0, 2).join(' ').substring(0, 200);
+                // Get first meaningful lines as title
+                const lines = text.split('\\\\n').filter(l => l.trim().length > 3);
+                const title = lines.slice(0, 2).join(' ').substring(0, 300);
                 
                 const post = {
                     urn: urn,
                     title: title,
+                    impressions: impressionMatch ? parseInt(impressionMatch[1].replace(/,/g, '')) : 0,
+                    views: viewMatch ? parseInt(viewMatch[1].replace(/,/g, '')) : 0,
+                    clicks: clickMatch ? parseInt(clickMatch[1].replace(/,/g, '')) : 0,
+                    ctr: ctrMatch ? parseFloat(ctrMatch[1]) : 0,
                     likes: likeMatch ? parseInt(likeMatch[1].replace(/,/g, '')) : 0,
                     comments: commentMatch ? parseInt(commentMatch[1].replace(/,/g, '')) : 0,
                     reposts: repostMatch ? parseInt(repostMatch[1].replace(/,/g, '')) : 0,
-                    impressions: impressionMatch ? parseInt(impressionMatch[1].replace(/,/g, '')) : (viewMatch ? parseInt(viewMatch[1].replace(/,/g, '')) : 0),
+                    follows: followMatch ? parseInt(followMatch[1].replace(/,/g, '')) : 0,
+                    engagement_rate: engMatch ? parseFloat(engMatch[1]) : 0,
                 };
                 
-                if (post.title || post.urn) {
+                if (post.title || post.urn || post.impressions > 0 || post.likes > 0) {
                     results.push(post);
                 }
             });
             
-            // If no posts found via article elements, try broader approach
+            // Method 2: If no structured cards found, parse from page text
             if (results.length === 0) {
                 const allText = document.body.innerText;
-                const blocks = allText.split(/\\n{3,}/);
+                const blocks = allText.split(/\\\\n{3,}/);
                 blocks.forEach(block => {
                     if (block.length < 20) return;
-                    const likeMatch = block.match(/(\\d[\\d,]*)\\s*likes?/i);
-                    const commentMatch = block.match(/(\\d[\\d,]*)\\s*comments?/i);
-                    if (likeMatch || commentMatch) {
-                        const lines = block.split('\\n').filter(l => l.trim().length > 3);
+                    const likeMatch = block.match(/(\\\\d[\\\\d,]*)\\\\s*(?:likes?|reactions?)/i);
+                    const commentMatch = block.match(/(\\\\d[\\\\d,]*)\\\\s*comments?/i);
+                    const impressionMatch = block.match(/(\\\\d[\\\\d,]*)\\\\s*impressions?/i);
+                    const engMatch = block.match(/([\\\\d.]+)%\\\\s*engagement/i);
+                    
+                    if (likeMatch || commentMatch || impressionMatch) {
+                        const lines = block.split('\\\\n').filter(l => l.trim().length > 3);
                         results.push({
                             urn: '',
-                            title: lines.slice(0, 2).join(' ').substring(0, 200),
+                            title: lines.slice(0, 2).join(' ').substring(0, 300),
+                            impressions: impressionMatch ? parseInt(impressionMatch[1].replace(/,/g, '')) : 0,
+                            views: 0, clicks: 0, ctr: 0,
                             likes: likeMatch ? parseInt(likeMatch[1].replace(/,/g, '')) : 0,
                             comments: commentMatch ? parseInt(commentMatch[1].replace(/,/g, '')) : 0,
-                            reposts: 0,
-                            impressions: 0,
+                            reposts: 0, follows: 0,
+                            engagement_rate: engMatch ? parseFloat(engMatch[1]) : 0,
                         });
                     }
                 });
             }
             
-            return results.slice(0, 50);  // Max 50 posts
+            return results.slice(0, 50);
         }
     """)
     return posts if posts else []
@@ -637,7 +654,10 @@ def scrape_via_api() -> Dict[str, Any]:
 
 def scrape_analytics_playwright() -> Dict[str, Any]:
     """Scrape FULL LinkedIn analytics using Playwright with authenticated session.
-    Gets: daily visitor metrics, follower trends, post engagement, historical data.
+    Gets: Highlights (Impressions, Reactions, Comments, Reposts with % change),
+          Content Engagement table per post (Impressions, Views, Clicks, CTR,
+          Reactions, Comments, Reposts, Follows, Engagement Rate),
+          daily visitor metrics, follower trends, historical data.
     Stores results in Google Sheets for dashboard display.
     Called by daily pipeline when LINKEDIN_COOKIES_JSON is configured.
     """
@@ -665,14 +685,15 @@ def scrape_analytics_playwright() -> Dict[str, Any]:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             context = browser.new_context(
-                user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+                user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
                 viewport={"width": 1920, "height": 1080}
             )
 
             if isinstance(cookies, list):
+                import html as _html
                 formatted = [{
                     "name": c.get("name", ""),
-                    "value": c.get("value", ""),
+                    "value": _html.unescape(str(c.get("value", ""))),
                     "domain": c.get("domain", ".linkedin.com"),
                     "path": c.get("path", "/"),
                 } for c in cookies]
@@ -680,70 +701,129 @@ def scrape_analytics_playwright() -> Dict[str, Any]:
 
             page = context.new_page()
 
-            # ── 1. Visitor Analytics ──
+            # ── 1. Analytics Overview — Highlights ──
+            # This page shows: Impressions, Reactions, Comments, Reposts with % changes
             try:
-                analytics_url = company_page.rstrip("/") + "/admin/analytics/visitors/"
+                analytics_url = company_page.rstrip("/") + "/admin/analytics/"
                 page.goto(analytics_url, wait_until="networkidle", timeout=30000)
-                time.sleep(4)
-                visitor_html = page.content()
-                visitor_data = _extract_analytics_from_page(visitor_html)
-                result.update(visitor_data)
+                time.sleep(5)
+                # Extract highlights from the overview page
+                highlights = _extract_highlights_from_page(page)
+                if highlights:
+                    result.update(highlights)
+                    print(f"[LinkedIn] Analytics Highlights: {highlights}")
+
+                # Also extract from page text for any missed metrics
                 page_text = page.inner_text("body")
                 _vis = _extract_metrics_from_text(page_text)
                 for k, v in _vis.items():
                     if v and (k not in result or result.get(k, 0) == 0):
                         result[k] = v
+
+                # Also try JSON data from HTML source
+                visitor_html = page.content()
+                visitor_data = _extract_analytics_from_page(visitor_html)
+                result.update(visitor_data)
+            except Exception as e:
+                print(f"[LinkedIn] Analytics overview failed: {e}")
+
+            # ── 2. Visitor Analytics ──
+            try:
+                visitor_url = company_page.rstrip("/") + "/admin/analytics/visitors/"
+                page.goto(visitor_url, wait_until="networkidle", timeout=30000)
+                time.sleep(4)
+                visitor_html = page.content()
+                visitor_data = _extract_analytics_from_page(visitor_html)
+                for k, v in visitor_data.items():
+                    if v and (k not in result or result.get(k, 0) == 0):
+                        result[k] = v
+                page_text = page.inner_text("body")
+                _vis = _extract_metrics_from_text(page_text)
+                for k, v in _vis.items():
+                    if v and (k not in result or result.get(k, 0) == 0):
+                        result[k] = v
+
+                # Extract visitor chart data (daily impressions line chart)
+                visitor_chart = _extract_daily_chart_from_page(page)
+                if visitor_chart:
+                    result["daily_visitor_chart"] = visitor_chart
+                    print(f"[LinkedIn] Visitor chart: {len(visitor_chart)} days")
+
                 print(f"[LinkedIn] Visitor analytics: {visitor_data}")
             except Exception as e:
                 print(f"[LinkedIn] Visitor analytics failed: {e}")
 
-            # ── 2. Follower Data ──
+            # ── 3. Follower Data ──
             try:
                 follower_url = company_page.rstrip("/") + "/admin/analytics/followers/"
                 page.goto(follower_url, wait_until="networkidle", timeout=30000)
                 time.sleep(3)
                 follower_html = page.content()
                 followers = _extract_followers_from_page(follower_html)
-                result.update(followers)
+                for k, v in followers.items():
+                    if v and (k not in result or result.get(k, 0) == 0):
+                        result[k] = v
                 page_text = page.inner_text("body")
                 f_text = _extract_metrics_from_text(page_text)
                 for k, v in f_text.items():
                     if v and (k not in result or result.get(k, 0) == 0):
                         result[k] = v
+                # Save follower snapshot
+                _save_json(LI_FOLLOWERS_CACHE, {"followers": result.get("followers", 0),
+                                                 "organicFollowers": result.get("organicFollowers", 0),
+                                                 "totalFollowers": result.get("totalFollowers", 0),
+                                                 "scraped_at": datetime.now().isoformat()})
                 print(f"[LinkedIn] Followers: {followers}")
             except Exception as e:
                 print(f"[LinkedIn] Follower scrape failed: {e}")
 
-            # ── 3. Posts with Full Engagement ──
+            # ── 4. Posts with FULL Content Engagement Table ──
+            # This is the critical page — it shows the Content Engagement table
+            # with: Post title, Post type, Audience, Impressions, Views, Clicks,
+            # CTR, Reactions, Comments, Reposts, Follows, Engagement rate
             try:
                 posts_url = company_page.rstrip("/") + "/admin/posts/"
                 page.goto(posts_url, wait_until="networkidle", timeout=30000)
-                time.sleep(3)
-                for _ in range(8):
-                    page.evaluate("window.scrollBy(0, 1500)")
+                time.sleep(4)
+                # Scroll to load more posts
+                for _ in range(10):
+                    page.evaluate("window.scrollBy(0, 2000)")
                     time.sleep(1.5)
-                posts = _extract_posts_from_page(page)
+
+                # PRIMARY: Extract Content Engagement table (the structured table)
+                posts = _extract_content_engagement_table(page)
+
+                # SECONDARY: If no table found, try extracting from page text
+                if not posts:
+                    posts = _extract_posts_from_page(page)
+
+                # TERTIARY: If still no posts, try HTML extraction
                 if not posts:
                     posts = _extract_posts_from_html(page.content())
-                # Enrich with public scrape data
-                pub = scrape_public_metrics()
-                pub_posts = pub.get("posts", [])
-                if pub_posts and posts:
-                    _pub_by_url = {}
-                    for pp in pub_posts:
-                        url = pp.get("url", "")
-                        if url:
-                            _pub_by_url[url] = pp
-                    for post in posts:
-                        p_url = post.get("url", "")
-                        if p_url and p_url in _pub_by_url:
-                            pp = _pub_by_url[p_url]
-                            if not post.get("text") and pp.get("text"):
-                                post["text"] = pp["text"]
-                            if not post.get("published_at") and pp.get("published_at"):
-                                post["published_at"] = pp["published_at"]
-                if not posts and pub_posts:
-                    posts = pub_posts
+
+                # Enrich with public scrape data for text/dates/URLs
+                try:
+                    pub = scrape_public_metrics()
+                    pub_posts = pub.get("posts", [])
+                    if pub_posts and posts:
+                        _pub_by_url = {}
+                        for pp in pub_posts:
+                            url = pp.get("url", "")
+                            if url:
+                                _pub_by_url[url] = pp
+                        for post in posts:
+                            p_url = post.get("url", "")
+                            if p_url and p_url in _pub_by_url:
+                                pp = _pub_by_url[p_url]
+                                if not post.get("text") and pp.get("text"):
+                                    post["text"] = pp["text"]
+                                if not post.get("published_at") and pp.get("published_at"):
+                                    post["published_at"] = pp["published_at"]
+                    if not posts and pub_posts:
+                        posts = pub_posts
+                except Exception as e:
+                    print(f"[LinkedIn] Public enrichment failed (non-fatal): {e}")
+
                 result["posts"] = posts
                 result["post_count"] = len(posts)
                 result["total_likes"] = sum(p.get("likes", 0) for p in posts)
@@ -754,11 +834,11 @@ def scrape_analytics_playwright() -> Dict[str, Any]:
                     result["total_impressions"] = max(result.get("total_impressions", 0), total_imp)
                     total_eng = result["total_likes"] + result["total_comments"] + result["total_reposts"]
                     result["engagement_rate"] = round(total_eng / total_imp * 100, 2)
-                print(f"[LinkedIn] Scraped {len(posts)} posts with engagement")
+                print(f"[LinkedIn] Scraped {len(posts)} posts with full engagement data")
             except Exception as e:
                 print(f"[LinkedIn] Posts scrape failed: {e}")
 
-            # ── 4. Page overview ──
+            # ── 5. Page overview (fallback for company info) ──
             try:
                 page.goto(company_page, wait_until="networkidle", timeout=30000)
                 time.sleep(2)
@@ -803,8 +883,13 @@ def scrape_analytics_playwright() -> Dict[str, Any]:
             "Likes": result.get("total_likes", 0) or result.get("likeCount", 0),
             "Comments": result.get("total_comments", 0) or result.get("commentCount", 0),
             "Shares": result.get("shareCount", 0),
+            "Reposts": result.get("total_reposts", 0),
             "Posts": result.get("post_count", 0),
             "Engagement Rate": result.get("engagement_rate", 0),
+            "Impressions Change": result.get("impressions_change_pct", ""),
+            "Reactions Change": result.get("reactions_change_pct", ""),
+            "Comments Change": result.get("comments_change_pct", ""),
+            "Reposts Change": result.get("reposts_change_pct", ""),
             "Source": result.get("source", "playwright"),
             "Last Updated": datetime.now().strftime("%Y-%m-%d %H:%M UTC"),
         }
@@ -814,22 +899,29 @@ def scrape_analytics_playwright() -> Dict[str, Any]:
     except Exception as e:
         print(f"[LinkedIn] Sheets write error (non-fatal): {e}")
 
-    # ── Write posts to Sheets ──
+    # ── Write posts to Sheets (with FULL engagement data) ──
     posts = result.get("posts", [])
     if posts:
         try:
             from sheets_writer import write_tab_data as _wtd
             _post_rows = []
-            for p in posts[:20]:
+            for p in posts[:25]:
                 _post_rows.append({
                     "Date": p.get("published_at", "")[:10] if p.get("published_at") else "",
-                    "Title": (p.get("title", "") or p.get("text", ""))[:100],
+                    "Title": (p.get("title", "") or p.get("text", ""))[:200],
+                    "Post Type": p.get("post_type", ""),
+                    "Audience": p.get("audience", ""),
+                    "Impressions": p.get("impressions", 0),
+                    "Views": p.get("views", 0),
+                    "Clicks": p.get("clicks", 0),
+                    "CTR": p.get("ctr", 0),
                     "Likes": p.get("likes", 0),
                     "Comments": p.get("comments", 0),
-                    "Shares": p.get("shares", 0) or p.get("reposts", 0),
-                    "Impressions": p.get("impressions", 0),
+                    "Reposts": p.get("reposts", 0),
+                    "Follows": p.get("follows", 0),
+                    "Engagement Rate": p.get("engagement_rate", 0),
                     "URL": p.get("url", ""),
-                    "Source": p.get("source", "linkedin"),
+                    "Source": p.get("source", "playwright"),
                 })
             if _post_rows:
                 _pw = _wtd("LinkedIn_Posts", _post_rows)
@@ -839,6 +931,539 @@ def scrape_analytics_playwright() -> Dict[str, Any]:
             print(f"[LinkedIn] Posts sheet write error (non-fatal): {e}")
 
     return result
+
+
+def _extract_highlights_from_page(page) -> Dict[str, Any]:
+    """Extract Highlights section from LinkedIn admin/analytics/ page.
+    Gets: Impressions, Reactions, Comments, Reposts with % change.
+    The highlights section shows cards like:
+      2,910  Impressions
+      56.1%
+    where 56.1% is the period-over-period change.
+    """
+    result = {}
+    try:
+        highlights = page.evaluate("""
+            () => {
+                const result = {};
+                const bodyText = document.body.innerText;
+                
+                // Method 1: Find highlight cards with metric name + value + change %
+                // LinkedIn shows cards like: "2,910\\nImpressions\\n56.1%"
+                const metricPatterns = [
+                    { name: 'impressions', label: 'Impressions' },
+                    { name: 'reactions', label: 'Reactions' },
+                    { name: 'comments', label: 'Comments' },
+                    { name: 'reposts', label: 'Reposts' },
+                    { name: 'followers', label: 'Followers' },
+                    { name: 'clicks', label: 'Clicks' },
+                    { name: 'likes', label: 'Likes' },
+                    { name: 'views', label: 'Views' },
+                    { name: 'engagement', label: 'Engagement' },
+                ];
+                
+                for (const mp of metricPatterns) {
+                    // Look for pattern like "2,910\nImpressions\n56.1%"
+                    const regex = new RegExp(
+                        '(\\\\d[\\\\d,]*)\\\\s*\\\\n\\\\s*' + mp.label + '\\\\s*\\\\n\\\\s*([\\\\d.]+%|—)',
+                        'gi'
+                    );
+                    const match = regex.exec(bodyText);
+                    if (match) {
+                        result[mp.name] = parseInt(match[1].replace(/,/g, ''), 10);
+                        const changeStr = match[2].trim();
+                        result[mp.name + '_change_pct'] = changeStr;
+                    }
+                    
+                    // Also try: "Impressions\n2,910\n56.1%"
+                    const regex2 = new RegExp(
+                        mp.label + '\\\\s*\\\\n\\\\s*(\\\\d[\\\\d,]*)\\\\s*\\\\n\\\\s*([\\\\d.]+%|—)',
+                        'gi'
+                    );
+                    const match2 = regex2.exec(bodyText);
+                    if (match2 && !result[mp.name]) {
+                        result[mp.name] = parseInt(match2[1].replace(/,/g, ''), 10);
+                        result[mp.name + '_change_pct'] = match2[2].trim();
+                    }
+                }
+                
+                // Method 2: Look for structured data in the page HTML
+                // LinkedIn often stores data in data-attributes or embedded JSON
+                const allElements = document.querySelectorAll('[class*="highlight"], [class*="metric"], [class*="statistic"], [class*="overview"]');
+                allElements.forEach(el => {
+                    const text = el.innerText || '';
+                    for (const mp of metricPatterns) {
+                        const valMatch = text.match(new RegExp('(\\\\d[\\\\d,]+)\\\\s*' + mp.label, 'i'));
+                        if (valMatch && !result[mp.name]) {
+                            result[mp.name] = parseInt(valMatch[1].replace(/,/g, ''), 10);
+                            const changeMatch = text.match(/([\\d.]+%)/);
+                            if (changeMatch) {
+                                result[mp.name + '_change_pct'] = changeMatch[1];
+                            }
+                        }
+                    }
+                });
+                
+                return result;
+            }
+        """)
+        if highlights:
+            result.update(highlights)
+    except Exception as e:
+        print(f"[LinkedIn] Highlights extraction error: {e}")
+
+    # Also try from page text directly
+    try:
+        page_text = page.inner_text("body")
+        # Find blocks like: "2,910\nImpressions\n56.1%"
+        for metric_name, label in [("impressions", "Impressions"), ("reactions", "Reactions"),
+                                     ("comments", "Comments"), ("reposts", "Reposts"),
+                                     ("likes", "Likes"), ("clicks", "Clicks")]:
+            # Pattern: number \n label \n percentage
+            pat = rf'(\d[\d,]*)\s*\n\s*{label}\s*\n\s*([\d.]+%)'
+            m = re.search(pat, page_text, re.IGNORECASE)
+            if m and not result.get(metric_name):
+                result[metric_name] = int(m.group(1).replace(",", ""))
+                result[f"{metric_name}_change_pct"] = m.group(2)
+            # Reverse pattern: label \n number \n percentage
+            pat2 = rf'{label}\s*\n\s*(\d[\d,]*)\s*\n\s*([\d.]+%)'
+            m2 = re.search(pat2, page_text, re.IGNORECASE)
+            if m2 and not result.get(metric_name):
+                result[metric_name] = int(m2.group(1).replace(",", ""))
+                result[f"{metric_name}_change_pct"] = m2.group(2)
+    except Exception:
+        pass
+
+    # Map to result keys
+    if "impressions" in result:
+        result["total_impressions"] = result["impressions"]
+        result["impressionCount"] = result["impressions"]
+    if "reactions" in result:
+        result["likeCount"] = result["reactions"]
+        result["total_likes"] = result["reactions"]
+    if "comments" in result:
+        result["commentCount"] = result["comments"]
+        result["total_comments"] = result["comments"]
+    if "reposts" in result:
+        result["shareCount"] = result["reposts"]
+        result["total_reposts"] = result["reposts"]
+
+    return result
+
+
+def _extract_content_engagement_table(page) -> List[Dict[str, Any]]:
+    """Extract the Content Engagement table from LinkedIn /admin/posts/ page.
+    
+    The table looks like:
+    Post title | Post type | Audience | Impressions | Views | Clicks | CTR | Reactions | Comments | Reposts | Follows | Engagement rate
+    
+    Example row from user's data:
+    Image | All followers | 396 | - | 12 | 3.03% | 5 | 0 | 0 | - | 4.29%
+    """
+    posts = []
+    try:
+        # PRIMARY METHOD: JavaScript extraction of the table
+        posts = page.evaluate("""
+            () => {
+                const results = [];
+                const seen = new Set();
+                
+                // Method 1: Find the Content Engagement table
+                // LinkedIn uses various table structures — try all of them
+                const tables = document.querySelectorAll('table');
+                for (const table of tables) {
+                    const rows = table.querySelectorAll('tr');
+                    if (rows.length < 2) continue;
+                    
+                    // Get header columns to understand column positions
+                    const headerCells = rows[0].querySelectorAll('th, td');
+                    const headers = Array.from(headerCells).map(c => (c.innerText || '').trim().toLowerCase());
+                    
+                    // Only process if it looks like an engagement table
+                    if (!headers.some(h => h.includes('impressions') || h.includes('engagement') || h.includes('reactions'))) continue;
+                    
+                    for (let i = 1; i < rows.length; i++) {
+                        const cells = rows[i].querySelectorAll('td');
+                        if (cells.length < 4) continue;
+                        
+                        const cellTexts = Array.from(cells).map(c => (c.innerText || '').trim());
+                        
+                        // Find the post title (usually first cell with substantial text)
+                        let title = '';
+                        let titleIdx = 0;
+                        for (let j = 0; j < cellTexts.length; j++) {
+                            if (cellTexts[j].length > 15) {
+                                title = cellTexts[j].substring(0, 300);
+                                titleIdx = j;
+                                break;
+                            }
+                        }
+                        
+                        if (!title && cellTexts.length > 0) {
+                            title = cellTexts[0].substring(0, 300);
+                            titleIdx = 0;
+                        }
+                        
+                        // Parse numeric values from remaining cells
+                        const post = {
+                            title: title.replace(/\\n/g, ' ').substring(0, 300),
+                            impressions: 0, views: 0, clicks: 0, ctr: 0,
+                            likes: 0, comments: 0, reposts: 0, follows: 0,
+                            engagement_rate: 0, post_type: '', audience: '',
+                        };
+                        
+                        // Map by header names
+                        for (let j = 0; j < headers.length && j < cellTexts.length; j++) {
+                            const h = headers[j];
+                            const val = cellTexts[j];
+                            const numVal = parseFloat(val.replace(/,/g, '')) || 0;
+                            
+                            if (h.includes('impression')) post.impressions = numVal;
+                            else if (h.includes('view') && !h.includes('unique')) post.views = numVal;
+                            else if (h.includes('click') && !h.includes('unique')) post.clicks = numVal;
+                            else if (h.includes('ctr') || h.includes('click through')) post.ctr = parseFloat(val) || 0;
+                            else if (h.includes('reaction') || h.includes('like')) post.likes = numVal;
+                            else if (h.includes('comment')) post.comments = numVal;
+                            else if (h.includes('repost') || h.includes('share')) post.reposts = numVal;
+                            else if (h.includes('follow')) post.follows = numVal;
+                            else if (h.includes('engagement') && (h.includes('rate') || h.includes('%'))) post.engagement_rate = parseFloat(val) || 0;
+                            else if (h.includes('type') || h.includes('post type')) post.post_type = val;
+                            else if (h.includes('audience')) post.audience = val;
+                        }
+                        
+                        // Dedup by title
+                        const dedupKey = post.title.substring(0, 50);
+                        if (seen.has(dedupKey)) continue;
+                        seen.add(dedupKey);
+                        
+                        if (post.title || post.impressions > 0 || post.likes > 0) {
+                            results.push(post);
+                        }
+                    }
+                }
+                
+                // Method 2: If no table found, parse from the page text
+                // LinkedIn sometimes uses div-based tables
+                if (results.length === 0) {
+                    const bodyText = document.body.innerText;
+                    // Split into blocks — each post in the admin page has its own section
+                    const blocks = bodyText.split(/\\n{3,}/);
+                    
+                    let currentPost = null;
+                    for (const block of blocks) {
+                        const lines = block.split('\\n').map(l => l.trim()).filter(l => l.length > 0);
+                        if (lines.length < 3) continue;
+                        
+                        // Look for blocks that contain post-like data
+                        // Pattern: Title text, followed by date, then engagement numbers
+                        const hasImpressions = lines.some(l => /^\\d[\\d,]*$/.test(l) && parseInt(l.replace(/,/g, '')) > 10);
+                        const hasEngagementWord = lines.some(l => /impressions?|reactions?|comments?|reposts?|engagement/i.test(l));
+                        const hasPct = lines.some(l => /^[\d.]+%$/.test(l));
+                        
+                        if (hasImpressions || hasEngagementWord || hasPct) {
+                            const post = {
+                                title: '', impressions: 0, views: 0, clicks: 0,
+                                ctr: 0, likes: 0, comments: 0, reposts: 0,
+                                follows: 0, engagement_rate: 0, post_type: '',
+                                audience: '',
+                            };
+                            
+                            // Extract values by looking for patterns
+                            for (let i = 0; i < lines.length; i++) {
+                                const line = lines[i];
+                                const nextLine = lines[i + 1] || '';
+                                
+                                // Title is typically the first long text line
+                                if (!post.title && line.length > 30 && !/^\\d/.test(line)) {
+                                    post.title = line.substring(0, 300);
+                                    continue;
+                                }
+                                
+                                // Pattern: number followed by label
+                                if (/^\\d[\\d,]*$/.test(line) && nextLine) {
+                                    const num = parseInt(line.replace(/,/g, ''), 10);
+                                    const nl = nextLine.toLowerCase();
+                                    if (nl.includes('impression')) post.impressions = num;
+                                    else if (nl.includes('view')) post.views = num;
+                                    else if (nl.includes('click')) post.clicks = num;
+                                    else if (nl.includes('reaction') || nl.includes('like')) post.likes = num;
+                                    else if (nl.includes('comment')) post.comments = num;
+                                    else if (nl.includes('repost') || nl.includes('share')) post.reposts = num;
+                                    else if (nl.includes('follow')) post.follows = num;
+                                }
+                                
+                                // CTR and engagement rate
+                                if (/^[\\d.]+%$/.test(line) && nextLine) {
+                                    const pct = parseFloat(line);
+                                    const nl = nextLine.toLowerCase();
+                                    if (nl.includes('ctr') || nl.includes('click')) post.ctr = pct;
+                                    else if (nl.includes('engagement')) post.engagement_rate = pct;
+                                }
+                                
+                                // Post type
+                                if (/image|video|article|document|carousel|poll|text/i.test(line) && line.length < 20) {
+                                    post.post_type = line;
+                                }
+                                // Audience
+                                if (line.toLowerCase().includes('follower') && line.length < 30) {
+                                    post.audience = line;
+                                }
+                                // Date
+                                if (/\\d{1,2}\\/\\d{1,2}\\/\\d{4}/.test(line) || /\\w+ \\d{1,2}, \\d{4}/.test(line)) {
+                                    post.published_at = line;
+                                }
+                            }
+                            
+                            if (post.title || post.impressions > 0 || post.likes > 0) {
+                                const dedupKey = (post.title || '').substring(0, 50) + '_' + post.impressions;
+                                if (!seen.has(dedupKey)) {
+                                    seen.add(dedupKey);
+                                    results.push(post);
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Method 3: Parse structured div rows (LinkedIn often uses these)
+                if (results.length === 0) {
+                    // Find all row-like containers
+                    const rowContainers = document.querySelectorAll(
+                        '[class*="feed"], [class*="post"], [class*="update"], [class*="content-engagement"]'
+                    );
+                    rowContainers.forEach(el => {
+                        const text = el.innerText || '';
+                        if (text.length < 20) return;
+                        
+                        const post = {
+                            title: '', impressions: 0, views: 0, clicks: 0,
+                            ctr: 0, likes: 0, comments: 0, reposts: 0,
+                            follows: 0, engagement_rate: 0, post_type: '',
+                            audience: '',
+                        };
+                        
+                        // Extract impression-like numbers
+                        const impMatch = text.match(/(\\d[\\d,]*)\\s*(?:\\n|\\s)Impressions/i);
+                        if (impMatch) post.impressions = parseInt(impMatch[1].replace(/,/g, ''), 10);
+                        
+                        const reactMatch = text.match(/(\\d[\\d,]*)\\s*(?:\\n|\\s)Reactions/i);
+                        if (reactMatch) post.likes = parseInt(reactMatch[1].replace(/,/g, ''), 10);
+                        
+                        const commMatch = text.match(/(\\d[\\d,]*)\\s*(?:\\n|\\s)Comments/i);
+                        if (commMatch) post.comments = parseInt(commMatch[1].replace(/,/g, ''), 10);
+                        
+                        const repMatch = text.match(/(\\d[\\d,]*)\\s*(?:\\n|\\s)Reposts/i);
+                        if (repMatch) post.reposts = parseInt(repMatch[1].replace(/,/g, ''), 10);
+                        
+                        const engMatch = text.match(/([\\d.]+)%\\s*(?:\\n|\\s)Engagement/i);
+                        if (engMatch) post.engagement_rate = parseFloat(engMatch[1]);
+                        
+                        // First meaningful text as title
+                        const lines = text.split('\\n').filter(l => l.trim().length > 10);
+                        if (lines.length > 0) post.title = lines[0].substring(0, 300);
+                        
+                        if (post.impressions > 0 || post.likes > 0) {
+                            const dedupKey = (post.title || '').substring(0, 50);
+                            if (!seen.has(dedupKey)) {
+                                seen.add(dedupKey);
+                                results.push(post);
+                            }
+                        }
+                    });
+                }
+                
+                return results.slice(0, 50);
+            }
+        """)
+    except Exception as e:
+        print(f"[LinkedIn] Content Engagement table JS error: {e}")
+
+    # FALLBACK: Parse from page text if JS didn't find anything
+    if not posts:
+        try:
+            posts = _parse_content_engagement_from_text(page.inner_text("body"))
+        except Exception as e:
+            print(f"[LinkedIn] Content Engagement text parse error: {e}")
+
+    return posts if posts else []
+
+
+def _parse_content_engagement_from_text(page_text: str) -> List[Dict[str, Any]]:
+    """Parse the Content Engagement table from page text output.
+    LinkedIn's /admin/posts/ page has text like:
+    
+    Content engagement
+    Time range: Jun 2, 2026 - Jun 16, 2026
+    Show: 10
+    
+    Post title text...
+    Posted by ...
+    6/12/2026
+    Image    All followers    396    -    12    3.03%    5    0    0    -    4.29%
+    
+    Where the tab-separated row is:
+    Post_type  Audience  Impressions  Views  Clicks  CTR  Reactions  Comments  Reposts  Follows  Engagement_rate
+    """
+    posts = []
+    lines = page_text.split("\n")
+    seen = set()
+
+    # Find the "Content engagement" section
+    ce_start = -1
+    for i, line in enumerate(lines):
+        if "content engagement" in line.lower():
+            ce_start = i
+            break
+
+    if ce_start < 0:
+        return []
+
+    # After finding "Content engagement", parse post blocks
+    # Each post block has: title lines, date line, then a tab/space-delimited metrics row
+    current_title_lines = []
+    current_date = ""
+    i = ce_start + 1
+
+    while i < len(lines):
+        line = lines[i].strip()
+        if not line:
+            i += 1
+            continue
+
+        # Check if this line looks like a metrics row
+        # Pattern: Image/Video/Article   All followers   NUMBER   -/NUMBER   NUMBER   X.XX%   NUMBER   NUMBER   NUMBER   -/NUMBER   X.XX%
+        metrics_match = re.match(
+            r'^(Image|Video|Article|Document|Carousel|Poll|Text|Event|Live)\s+(All followers|Followers|Targeted)\s+(\d[\d,]*)\s+([\d,—-]+)\s+([\d,—-]+)\s+([\d.]+%|—)\s+(\d[\d,]*)\s+(\d[\d,]*)\s+(\d[\d,]*)\s+([\d,—-]+)\s+([\d.]+%|—)',
+            line, re.IGNORECASE
+        )
+
+        if metrics_match:
+            post = {
+                "title": " ".join(current_title_lines).strip()[:300],
+                "published_at": current_date,
+                "post_type": metrics_match.group(1),
+                "audience": metrics_match.group(2),
+                "impressions": int(metrics_match.group(3).replace(",", "")) if metrics_match.group(3) not in ("—", "-") else 0,
+                "views": int(metrics_match.group(4).replace(",", "")) if metrics_match.group(4) not in ("—", "-") else 0,
+                "clicks": int(metrics_match.group(5).replace(",", "")) if metrics_match.group(5) not in ("—", "-") else 0,
+                "ctr": float(metrics_match.group(6).rstrip("%")) if metrics_match.group(6) not in ("—", "-") else 0,
+                "likes": int(metrics_match.group(7).replace(",", "")) if metrics_match.group(7) not in ("—", "-") else 0,
+                "comments": int(metrics_match.group(8).replace(",", "")) if metrics_match.group(8) not in ("—", "-") else 0,
+                "reposts": int(metrics_match.group(9).replace(",", "")) if metrics_match.group(9) not in ("—", "-") else 0,
+                "follows": int(metrics_match.group(10).replace(",", "")) if metrics_match.group(10) not in ("—", "-") else 0,
+                "engagement_rate": float(metrics_match.group(11).rstrip("%")) if metrics_match.group(11) not in ("—", "-") else 0,
+            }
+            dedup_key = post["title"][:50]
+            if dedup_key not in seen:
+                seen.add(dedup_key)
+                posts.append(post)
+            current_title_lines = []
+            current_date = ""
+        elif re.match(r"\d{1,2}/\d{1,2}/\d{4}", line):
+            # Date line like "6/12/2026"
+            current_date = line
+        elif "Posted by" in line or "Boost" in line or "Get up to" in line:
+            # Skip these lines
+            pass
+        elif line.startswith("Time range:") or line.startswith("Show:"):
+            # Skip header lines
+            pass
+        elif line.lower().startswith(("image", "video", "article")):
+            # Might be a metrics line with different format — try flexible parsing
+            parts = line.split()
+            if len(parts) >= 8:
+                # Try to extract numbers from the parts
+                post = {
+                    "title": " ".join(current_title_lines).strip()[:300],
+                    "published_at": current_date,
+                    "post_type": parts[0],
+                    "audience": parts[1] if len(parts) > 1 else "",
+                }
+                # Find numbers in the remaining parts
+                num_idx = 2
+                metrics_keys = ["impressions", "views", "clicks", "ctr", "likes", "comments", "reposts", "follows", "engagement_rate"]
+                for mk in metrics_keys:
+                    if num_idx < len(parts):
+                        val = parts[num_idx].rstrip("%").replace(",", "").replace("—", "0").replace("-", "0")
+                        try:
+                            post[mk] = float(val) if mk in ("ctr", "engagement_rate") else int(float(val))
+                        except (ValueError, TypeError):
+                            post[mk] = 0
+                        num_idx += 1
+                    else:
+                        post[mk] = 0
+                dedup_key = post["title"][:50]
+                if dedup_key not in seen:
+                    seen.add(dedup_key)
+                    posts.append(post)
+                current_title_lines = []
+                current_date = ""
+        elif len(line) > 15 and not line.startswith("Post") and not line.startswith("Content"):
+            # Likely a post title
+            current_title_lines.append(line)
+        i += 1
+
+    return posts
+
+
+def _extract_daily_chart_from_page(page) -> List[Dict[str, Any]]:
+    """Extract daily chart data from LinkedIn analytics page.
+    LinkedIn shows line charts with daily data (Organic vs Sponsored impressions).
+    The data is often in embedded JSON or can be extracted from SVG/canvas elements.
+    """
+    daily_data = []
+    try:
+        chart_data = page.evaluate("""
+            () => {
+                const results = [];
+                // Try to find chart data in embedded JSON
+                const scripts = document.querySelectorAll('script');
+                for (const script of scripts) {
+                    const text = script.textContent || '';
+                    // Look for time series data patterns
+                    const matches = text.match(/"date"\s*:\s*"(\d{4}-\d{2}-\d{2})"[^}]*"value"\s*:\s*(\d+)/g);
+                    if (matches) {
+                        for (const m of matches) {
+                            const dateMatch = m.match(/"date"\s*:\s*"(\d{4}-\d{2}-\d{2})"/);
+                            const valueMatch = m.match(/"value"\s*:\s*(\d+)/);
+                            if (dateMatch && valueMatch) {
+                                results.push({
+                                    date: dateMatch[1],
+                                    impressions: parseInt(valueMatch[1], 10)
+                                });
+                            }
+                        }
+                    }
+                }
+                
+                // Also try to find data in __NEXT_DATA__ or similar hydration
+                const nextData = document.getElementById('__NEXT_DATA__');
+                if (nextData) {
+                    try {
+                        const parsed = JSON.parse(nextData.textContent);
+                        const jsonStr = JSON.stringify(parsed);
+                        const dateValues = jsonStr.match(/"date"\s*:\s*"(\d{4}-\d{2}-\d{2})"[^}]*"organicImpressions"\s*:\s*(\d+)/g);
+                        if (dateValues) {
+                            for (const dv of dateValues) {
+                                const dm = dv.match(/"date"\s*:\s*"(\d{4}-\d{2}-\d{2})"/);
+                                const im = dv.match(/"organicImpressions"\s*:\s*(\d+)/);
+                                if (dm && im) {
+                                    results.push({ date: dm[1], impressions: parseInt(im[1], 10), type: 'organic' });
+                                }
+                            }
+                        }
+                    } catch(e) {}
+                }
+                
+                return results;
+            }
+        """)
+        if chart_data:
+            daily_data = chart_data
+    except Exception as e:
+        print(f"[LinkedIn] Daily chart extraction error: {e}")
+
+    return daily_data
 
 
 def _extract_metrics_from_text(text: str) -> Dict[str, Any]:
@@ -883,8 +1508,9 @@ def scrape_with_cookies() -> Dict[str, Any]:
     cookie_str = ""
     if cookies_json:
         try:
+            import html as _html
             cookies = json.loads(cookies_json) if isinstance(cookies_json, str) else cookies_json
-            cookie_str = "; ".join(f"{c['name']}={c['value']}" for c in cookies if c.get("name") and c.get("value"))
+            cookie_str = "; ".join(f"{c['name']}={_html.unescape(str(c['value']))}" for c in cookies if c.get("name") and c.get("value"))
         except Exception:
             pass
 
@@ -1037,6 +1663,7 @@ def calculate_post_score(post: Dict[str, Any]) -> int:
     """Calculate engagement score 0-100 for a LinkedIn post.
     When impressions are available: uses engagement rate benchmarks.
     When only likes/comments available: uses follower ratio + absolute engagement.
+    Also factors in clicks, CTR, follows, and engagement_rate when available.
     """
     impressions = post.get("impressions", 0) or 0
     likes = post.get("likes", 0) or 0
@@ -1044,26 +1671,47 @@ def calculate_post_score(post: Dict[str, Any]) -> int:
     reposts = post.get("reposts", 0) or 0
     shares = post.get("shares", 0) or 0
     total_reposts = reposts + shares
+    clicks = post.get("clicks", 0) or 0
+    follows = post.get("follows", 0) or 0
+    ctr = post.get("ctr", 0) or 0
+    eng_rate_raw = post.get("engagement_rate", 0) or 0
 
-    if likes == 0 and comments == 0 and total_reposts == 0:
+    if likes == 0 and comments == 0 and total_reposts == 0 and clicks == 0 and follows == 0:
         return 0
+
+    # If the post already has a computed engagement_rate from LinkedIn, use it directly
+    if eng_rate_raw > 0:
+        # LinkedIn's own engagement rate is authoritative
+        if eng_rate_raw >= 8: score = 90 + min(10, int(eng_rate_raw))
+        elif eng_rate_raw >= 5: score = 75 + int((eng_rate_raw - 5) / 3 * 15)
+        elif eng_rate_raw >= 3: score = 55 + int((eng_rate_raw - 3) / 2 * 20)
+        elif eng_rate_raw >= 2: score = 40 + int((eng_rate_raw - 2) * 15)
+        elif eng_rate_raw >= 1: score = 25 + int((eng_rate_raw - 1) * 15)
+        else: score = int(eng_rate_raw * 25)
+        # Bonus for clicks and follows
+        if clicks > 0 and impressions > 0:
+            click_bonus = min(5, int(clicks / impressions * 100))
+            score += click_bonus
+        if follows > 0:
+            score += min(5, follows)
+        return min(100, max(0, score))
 
     if impressions > 0:
         # Full data: engagement rate based scoring
-        eng_rate = (likes + comments * 3 + total_reposts * 2) / impressions * 100
+        eng_rate = (likes + comments * 3 + total_reposts * 2 + clicks) / impressions * 100
         if eng_rate >= 6: score = 80 + min(20, int(eng_rate))
         elif eng_rate >= 4: score = 60 + int((eng_rate - 4) / 2 * 20)
         elif eng_rate >= 2: score = 40 + int((eng_rate - 2) / 2 * 20)
         elif eng_rate >= 1: score = 20 + int((eng_rate - 1) * 20)
         else: score = int(eng_rate * 20)
+        # CTR bonus
+        if ctr > 0:
+            score += min(10, int(ctr * 2))
+        # Follows bonus
+        if follows > 0:
+            score += min(5, follows)
     else:
         # No impressions — score from likes/comments relative to followers
-        total_engagement = likes + comments * 3 + total_reposts * 2
-        # Benchmark: typical LinkedIn post gets ~1-2% of followers engaging
-        # 5+ likes on a 2500-follower page = ~0.2% (below average)
-        # 10+ likes = ~0.4% (average)
-        # 20+ likes = ~0.8% (good)
-        # 50+ likes = ~2% (great)
         score = 0
         # Likes component (0-50 points)
         if likes >= 50: score += 50
@@ -1071,15 +1719,19 @@ def calculate_post_score(post: Dict[str, Any]) -> int:
         elif likes >= 10: score += 25 + int((likes - 10) / 10 * 10)
         elif likes >= 5: score += 15 + int((likes - 5) / 5 * 10)
         elif likes >= 1: score += 5 + int((likes - 1) / 4 * 10)
-        # Comments component (0-30 points)
-        if comments >= 10: score += 30
-        elif comments >= 5: score += 20 + int((comments - 5) / 5 * 10)
-        elif comments >= 2: score += 10 + int((comments - 2) / 3 * 10)
+        # Comments component (0-25 points)
+        if comments >= 10: score += 25
+        elif comments >= 5: score += 18 + int((comments - 5) / 5 * 7)
+        elif comments >= 2: score += 8 + int((comments - 2) / 3 * 10)
         elif comments >= 1: score += 5
-        # Reposts component (0-20 points)
-        if total_reposts >= 5: score += 20
-        elif total_reposts >= 2: score += 10 + int((total_reposts - 2) / 3 * 10)
-        elif total_reposts >= 1: score += 5
+        # Reposts component (0-15 points)
+        if total_reposts >= 5: score += 15
+        elif total_reposts >= 2: score += 8 + int((total_reposts - 2) / 3 * 7)
+        elif total_reposts >= 1: score += 4
+        # Clicks component (0-10 points)
+        if clicks >= 20: score += 10
+        elif clicks >= 5: score += 5 + int((clicks - 5) / 15 * 5)
+        elif clicks >= 1: score += 2
 
     return min(100, max(0, score))
 
@@ -1227,7 +1879,10 @@ def get_status() -> Dict[str, Any]:
 
 
 def get_aggregate_stats() -> Dict[str, Any]:
-    """Get aggregate LinkedIn stats from all sources."""
+    """Get aggregate LinkedIn stats from all sources.
+    Includes: followers, impressions, likes, comments, reposts, clicks, CTR,
+    follows, engagement rate, change percentages from Highlights.
+    """
     stats = {
         "followers": 0,
         "company_name": "",
@@ -1237,9 +1892,17 @@ def get_aggregate_stats() -> Dict[str, Any]:
         "total_likes": 0,
         "total_comments": 0,
         "total_reposts": 0,
-        "post_count": 0,
+        "total_clicks": 0,
+        "total_follows": 0,
+        "total_views": 0,
         "avg_engagement_rate": 0.0,
+        "avg_ctr": 0.0,
+        "post_count": 0,
         "connected": False,
+        "impressions_change_pct": "",
+        "reactions_change_pct": "",
+        "comments_change_pct": "",
+        "reposts_change_pct": "",
     }
 
     # From cached metrics
@@ -1249,8 +1912,13 @@ def get_aggregate_stats() -> Dict[str, Any]:
         stats["company_name"] = cached.get("company_name", "")
         stats["industry"] = cached.get("industry", "")
         stats["employees"] = cached.get("employees", "")
-        stats["total_impressions"] = cached.get("impressionCount", 0)
+        stats["total_impressions"] = cached.get("impressionCount", 0) or cached.get("total_impressions", 0)
         stats["connected"] = True
+        # Highlights change percentages
+        for _ck in ("impressions_change_pct", "reactions_change_pct",
+                     "comments_change_pct", "reposts_change_pct"):
+            if cached.get(_ck):
+                stats[_ck] = cached[_ck]
 
     # From posts
     posts = get_posts()
@@ -1259,11 +1927,22 @@ def get_aggregate_stats() -> Dict[str, Any]:
         stats["total_likes"] = sum(p.get("likes", 0) for p in posts)
         stats["total_comments"] = sum(p.get("comments", 0) for p in posts)
         stats["total_reposts"] = sum(p.get("reposts", 0) for p in posts)
+        stats["total_clicks"] = sum(p.get("clicks", 0) for p in posts)
+        stats["total_follows"] = sum(p.get("follows", 0) for p in posts)
+        stats["total_views"] = sum(p.get("views", 0) for p in posts)
         total_imp = sum(p.get("impressions", 0) for p in posts)
         if total_imp > 0:
             stats["total_impressions"] = max(stats["total_impressions"], total_imp)
             total_eng = stats["total_likes"] + stats["total_comments"] + stats["total_reposts"]
             stats["avg_engagement_rate"] = round(total_eng / total_imp * 100, 2) if total_imp > 0 else 0.0
+            stats["avg_ctr"] = round(stats["total_clicks"] / total_imp * 100, 2) if total_imp > 0 else 0.0
+        # If posts have engagement_rate field, use average of those
+        _er_vals = [p.get("engagement_rate", 0) for p in posts if p.get("engagement_rate", 0) > 0]
+        if _er_vals:
+            stats["avg_engagement_rate"] = round(sum(_er_vals) / len(_er_vals), 2)
+        _ctr_vals = [p.get("ctr", 0) for p in posts if p.get("ctr", 0) > 0]
+        if _ctr_vals:
+            stats["avg_ctr"] = round(sum(_ctr_vals) / len(_ctr_vals), 2)
         stats["connected"] = True
 
     # From daily history

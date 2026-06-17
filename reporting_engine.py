@@ -845,6 +845,9 @@ def build_linkedin_stats():
         "history_days": 0, "prev_month_followers": 0,
         "description": "", "total_reposts": 0, "total_shares": 0,
         "recent_posts": [],
+        "total_clicks": 0, "total_follows": 0, "avg_ctr": 0.0,
+        "impressions_change_pct": "", "reactions_change_pct": "",
+        "comments_change_pct": "", "reposts_change_pct": "",
     }
     cur_month_str = datetime.now().strftime("%Y-%m")
     prev_month_str = (datetime.now().replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
@@ -864,6 +867,12 @@ def build_linkedin_stats():
             result["connected"] = True
             result["total_impressions"] = si(metrics.get("impressionCount", 0))
 
+            # Highlights change percentages
+            for _hk in ("impressions_change_pct", "reactions_change_pct",
+                        "comments_change_pct", "reposts_change_pct"):
+                if metrics.get(_hk):
+                    result[_hk] = metrics[_hk]
+
             # ── Read posts from linkedin_metrics.json if get_posts() is empty ──
             posts = []
             try:
@@ -880,6 +889,11 @@ def build_linkedin_stats():
                 result["total_comments"] = sum(p.get("comments", 0) for p in posts)
                 result["total_reposts"] = sum(p.get("reposts", 0) for p in posts)
                 result["total_shares"] = sum(p.get("shares", 0) for p in posts)
+                result["total_clicks"] = sum(p.get("clicks", 0) for p in posts)
+                result["total_follows"] = sum(p.get("follows", 0) for p in posts)
+                _ctr_vals = [p.get("ctr", 0) for p in posts if p.get("ctr", 0) > 0]
+                if _ctr_vals:
+                    result["avg_ctr"] = round(sum(_ctr_vals) / len(_ctr_vals), 2)
                 result["total_impressions"] = max(result["total_impressions"],
                     sum(p.get("impressions", 0) for p in posts))
                 # Top posts by engagement
@@ -1430,11 +1444,24 @@ def build_telegram_linkedin_section(li):
     if li["industry"]:
         section += f"│ 🏭 {escape_html(li['industry'])}\n"
     if li.get("total_impressions", 0) > 0:
-        section += f"│ 👁 Impressions: <code>{li['total_impressions']:,}</code>\n"
+        _imp_change = li.get("impressions_change_pct", "")
+        _imp_note = f" ({_imp_change})" if _imp_change else ""
+        section += f"│ 👁 Impressions: <code>{li['total_impressions']:,}</code>{_imp_note}\n"
+    if li.get("total_clicks", 0) > 0:
+        section += f"│ 👆 Clicks: <code>{li['total_clicks']:,}</code>"
+        if li.get("avg_ctr", 0) > 0:
+            section += f" (CTR <code>{li['avg_ctr']:.1f}%</code>)"
+        section += "\n"
     if li.get("post_count", 0) > 0:
-        section += f"│ 📝 Posts: <code>{li['post_count']}</code> | 👍 <code>{li.get('total_likes', 0):,}</code> | 💬 <code>{li.get('total_comments', 0):,}</code>\n"
+        _react_change = li.get("reactions_change_pct", "")
+        _react_note = f" ({_react_change})" if _react_change else ""
+        section += f"│ 📝 Posts: <code>{li['post_count']}</code> | 👍 <code>{li.get('total_likes', 0):,}</code>{_react_note} | 💬 <code>{li.get('total_comments', 0):,}</code>\n"
     if li.get("total_reposts", 0) > 0:
-        section += f"│ 🔁 Reposts: <code>{li['total_reposts']:,}</code>\n"
+        _rep_change = li.get("reposts_change_pct", "")
+        _rep_note = f" ({_rep_change})" if _rep_change else ""
+        section += f"│ 🔁 Reposts: <code>{li['total_reposts']:,}</code>{_rep_note}\n"
+    if li.get("total_follows", 0) > 0:
+        section += f"│ ➕ Follows: <code>{li['total_follows']:,}</code>\n"
     if li.get("top_posts"):
         section += "│ 🔥 <b>Top Posts:</b>\n"
         for p in li["top_posts"][:3]:
