@@ -3,7 +3,7 @@ Eagle Analytics Hub — Unified KPI & Analytics Dashboard v7
 =================================================
 All-in-one: KPI, GA4, YouTube, LinkedIn, Cross-Platform Correlation
 Dark/light mode, AI-powered analytics, Telegram alerts.
-Pages: Dashboard, Traffic Intel, Ask AI, Predictions,
+Pages: Dashboard, Google Analytics, YouTube, LinkedIn, Cross-Platform, Ask AI, Predictions,
 Reports, Alerts, EDA Lab, Browse Data, Settings.
 """
 
@@ -96,9 +96,33 @@ def _css():
         --green:{T['green']}; --yellow:{T['yellow']}; --red:{T['red']};
     }}
 
-    /* ═══ APP BACKGROUND ═══ */
+    /* ═══ GLOBAL ═══ */
     .stApp {{ background: var(--bg) !important; }}
     .stMarkdown, .stText {{ color: var(--text); }}
+    html {{ scroll-behavior: smooth; }}
+
+    /* ═══ FADE-IN ANIMATION ═══ */
+    @keyframes fadeInUp {{
+        from {{ opacity: 0; transform: translateY(18px); }}
+        to {{ opacity: 1; transform: translateY(0); }}
+    }}
+    @keyframes glowPulse {{
+        0%, 100% {{ box-shadow: 0 0 8px {T['accent']}10; }}
+        50% {{ box-shadow: 0 0 20px {T['accent']}25; }}
+    }}
+    @keyframes shimmer {{
+        0% {{ background-position: -200% 0; }}
+        100% {{ background-position: 200% 0; }}
+    }}
+    .kpi, .sec-head, .stDataFrame, .alert-card, .comp-box {{
+        animation: fadeInUp 0.45s ease-out both;
+    }}
+    .kpi:nth-child(1) {{ animation-delay: 0.02s; }}
+    .kpi:nth-child(2) {{ animation-delay: 0.06s; }}
+    .kpi:nth-child(3) {{ animation-delay: 0.10s; }}
+    .kpi:nth-child(4) {{ animation-delay: 0.14s; }}
+    .kpi:nth-child(5) {{ animation-delay: 0.18s; }}
+    .kpi:nth-child(6) {{ animation-delay: 0.22s; }}
 
     /* ═══ SIDEBAR ═══ */
     [data-testid="stSidebar"] {{
@@ -106,21 +130,26 @@ def _css():
         border-right: 1px solid var(--border) !important;
     }}
     [data-testid="stSidebarNav"] {{ display: none !important; }}
-    [data-testid="stSidebar"] label[data-baseweb="radio"] {{
-        color: var(--text-sec); font-size: 0.85rem; font-weight: 500;
-        padding: 9px 14px; border-radius: 10px;
-        border: 1px solid transparent; margin: 2px 0;
-        transition: all 0.15s;
+    [data-testid="stSidebar"] .stButton button {{
+        color: var(--text-sec); font-size: 0.82rem; font-weight: 500;
+        padding: 8px 14px; border-radius: 10px;
+        border: 1px solid transparent; margin: 1px 0;
+        transition: all 0.2s ease; background: transparent;
     }}
-    [data-testid="stSidebar"] label[data-baseweb="radio"]:hover {{
-        background: var(--card-alt); border-color: var(--border);
+    [data-testid="stSidebar"] .stButton button:hover {{
+        background: var(--card-alt) !important;
+        border-color: var(--border) !important;
+        transform: translateX(3px);
+        color: var(--text) !important;
     }}
-    [data-testid="stSidebar"] [aria-checked="true"] {{
+    [data-testid="stSidebar"] .stButton button:active {{
         background: linear-gradient(135deg, {T['accent']}22, {T['accent2']}18) !important;
         border-color: var(--accent) !important;
+        color: var(--accent) !important;
     }}
-    [data-testid="stSidebar"] [aria-checked="true"] + div {{
-        color: var(--accent) !important; font-weight: 700 !important;
+    [data-testid="stSidebar"] .streamlit-expanderHeader {{
+        font-size: 0.75rem; font-weight: 700; letter-spacing: 0.5px;
+        color: var(--muted); text-transform: uppercase;
     }}
 
     /* ═══ KPI GRID ═══ */
@@ -133,11 +162,20 @@ def _css():
         background: linear-gradient(145deg, var(--card), var(--card-alt));
         border: 1px solid var(--border); border-radius: 14px;
         padding: 18px 14px; text-align: center;
-        transition: all 0.2s; position: relative; overflow: hidden;
+        transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        position: relative; overflow: hidden;
     }}
+    .kpi::before {{
+        content: ''; position: absolute; top: 0; left: -100%;
+        width: 100%; height: 100%;
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.03), transparent);
+        transition: left 0.6s;
+    }}
+    .kpi:hover::before {{ left: 100%; }}
     .kpi:hover {{
-        transform: translateY(-2px);
-        box-shadow: 0 6px 24px {T['accent']}18;
+        transform: translateY(-3px) scale(1.02);
+        box-shadow: 0 8px 32px {T['accent']}20;
+        border-color: var(--accent);
     }}
     .kpi-val {{
         font-size: 1.8rem; font-weight: 800;
@@ -207,18 +245,74 @@ def _css():
         border-radius: 10px; overflow: hidden;
     }}
 
+    /* ═══ BUTTONS & INPUTS ═══ */
+    .stButton button {{
+        border-radius: 10px !important;
+        font-weight: 600 !important;
+        transition: all 0.2s ease !important;
+    }}
+    .stButton button:hover {{
+        transform: translateY(-1px);
+        box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+    }}
+    .stTextInput input, .stSelectbox, .stDateInput, .stNumberInput {{
+        border-radius: 8px !important;
+    }}
+
+    /* ═══ TABS ═══ */
+    .stTabs [data-baseweb="tab-list"] {{
+        gap: 2px; border-radius: 10px;
+        background: var(--card-alt);
+        padding: 4px;
+    }}
+    .stTabs [data-baseweb="tab"] {{
+        border-radius: 8px !important;
+        padding: 6px 16px !important;
+        font-size: 0.82rem !important;
+        transition: all 0.2s;
+    }}
+    .stTabs [aria-selected="true"] {{
+        background: var(--card) !important;
+        border-color: var(--accent) !important;
+    }}
+
+    /* ═══ METRIC CARDS ═══ */
+    [data-testid="stMetric"] {{
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 12px 16px;
+        transition: all 0.2s;
+    }}
+    [data-testid="stMetric"]:hover {{
+        border-color: var(--accent);
+        box-shadow: 0 4px 16px {T['accent']}12;
+    }}
+
     /* ═══ RESPONSIVE ═══ */
+    @media (max-width: 1024px) {{
+        .kpi-grid {{
+            grid-template-columns: repeat(3, 1fr); gap: 10px;
+        }}
+    }}
     @media (max-width: 768px) {{
         .kpi-grid {{
             grid-template-columns: repeat(2, 1fr); gap: 8px;
         }}
-        .kpi-val {{ font-size: 1.3rem; }}
+        .kpi-val {{ font-size: 1.4rem; }}
+        [data-testid="stMetric"] {{ padding: 8px 10px; }}
     }}
     @media (max-width: 480px) {{
         .kpi-grid {{
             grid-template-columns: 1fr 1fr; gap: 6px;
         }}
         .kpi-val {{ font-size: 1.1rem; }}
+        .kpi {{ padding: 10px 8px; }}
+        .stTabs [data-baseweb="tab"] {{ padding: 4px 10px !important; font-size: 0.7rem !important; }}
+        [data-testid="column"] {{ min-width: auto !important; }}
+    }}
+    @media (max-width: 360px) {{
+        .kpi-grid {{ grid-template-columns: 1fr; }}
     }}
 
     /* ═══ CLEANUP ═══ */
@@ -690,8 +784,8 @@ with st.sidebar:
     if "nav_page" not in st.session_state:
         st.session_state["nav_page"] = "📊 Dashboard"
 
+    _SYS_PAGES = {"📈 Google Analytics", "📺 YouTube", "💼 LinkedIn", "🔗 Cross-Platform"}
     _KPI_PAGES = {"📊 Dashboard", "🔍 Browse Data", "🔬 EDA Lab", "✏️ Manual Override", "📋 Reports", "🔔 Alerts"}
-    _TRAFFIC_PAGES = {"🚦 Traffic Intel", "📺 YouTube", "💼 LinkedIn", "🔗 Cross-Platform"}
     _AI_PAGES = {"🤖 Ask AI", "🔮 Predictions", "🧠 AI Tools"}
 
     page = st.session_state["nav_page"]
@@ -704,12 +798,25 @@ with st.sidebar:
                 st.session_state["nav_page"] = _key
                 st.rerun()
 
-    with st.expander("🚦 Traffic Intel", expanded=page in _TRAFFIC_PAGES):
-        for _label, _key in [("Google Analytics", "🚦 Traffic Intel"), ("YouTube", "📺 YouTube"),
-                             ("LinkedIn", "💼 LinkedIn"), ("Cross-Platform", "🔗 Cross-Platform")]:
-            if st.button(_label, use_container_width=True, key=f"nav_{_key}"):
-                st.session_state["nav_page"] = _key
-                st.rerun()
+    with st.expander("📈 Google Analytics", expanded=page == "📈 Google Analytics"):
+        if st.button("📈 Google Analytics", use_container_width=True, key="nav_ga"):
+            st.session_state["nav_page"] = "📈 Google Analytics"
+            st.rerun()
+
+    with st.expander("📺 YouTube", expanded=page == "📺 YouTube"):
+        if st.button("📺 YouTube", use_container_width=True, key="nav_yt"):
+            st.session_state["nav_page"] = "📺 YouTube"
+            st.rerun()
+
+    with st.expander("💼 LinkedIn", expanded=page == "💼 LinkedIn"):
+        if st.button("💼 LinkedIn", use_container_width=True, key="nav_li"):
+            st.session_state["nav_page"] = "💼 LinkedIn"
+            st.rerun()
+
+    with st.expander("🔗 Cross-Platform", expanded=page == "🔗 Cross-Platform"):
+        if st.button("🔗 Cross-Platform", use_container_width=True, key="nav_cp"):
+            st.session_state["nav_page"] = "🔗 Cross-Platform"
+            st.rerun()
 
     with st.expander("🤖 AI & Insights", expanded=page in _AI_PAGES):
         for _label, _key in [("AI Tools", "🧠 AI Tools"), ("Ask AI", "🤖 Ask AI"), ("Predictions", "🔮 Predictions")]:
@@ -1197,6 +1304,23 @@ if _ov_changed_total > 0 and not kpi_all.empty:
             else pd.DataFrame()
         )
 
+# ── FINAL PAID OVERRIDE: Force paid count to match Verified_STRIPE ACCEPTED for this period ──
+_correct_paid = None
+if not stripe_raw.empty and "final_status" in stripe_raw.columns:
+    try:
+        _fs_s = stripe_raw["final_status"].astype(str).str.upper()
+        _stripe_acc = stripe_raw[_fs_s == "ACCEPTED"].copy()
+        if not _stripe_acc.empty:
+            _stripe_acc["_paid_date"] = _stripe_acc.apply(
+                lambda r: parse_to_date(r.get("First payment", "") or r.get("row_date_used", "") or r.get("Created", "")),
+                axis=1
+            )
+            _stripe_acc = _stripe_acc.dropna(subset=["_paid_date"])
+            _s_acc_period = _stripe_acc[(_stripe_acc["_paid_date"] >= p_start) & (_stripe_acc["_paid_date"] <= p_end)]
+            _correct_paid = len(_s_acc_period)
+    except Exception:
+        pass
+
 leads_df = pd.DataFrame()
 if "kpi_bridge" in MOD and not free_rows.empty:
     try:
@@ -1370,12 +1494,12 @@ if page == "📊 Dashboard":
 
     cs = km(kpi, "signups")
     cu = km(kpi, "first_uploads")
-    cp = km(kpi, "paid_customers")
+    cp = _correct_paid if _correct_paid is not None else km(kpi, "paid_customers")
     ps = km(prev_kpi, "signups")
     pu = km(prev_kpi, "first_uploads")
     pp = km(prev_kpi, "paid_customers")
 
-    # Paid count is already verified via hard override above
+    # Paid count is verified from Verified_STRIPE ACCEPTED rows
     s2u = (cu / cs * 100) if cs > 0 else 0
     u2p = (cp / cu * 100) if cu > 0 else 0
     s2p = (cp / cs * 100) if cs > 0 else 0
@@ -1762,9 +1886,9 @@ if page == "📊 Dashboard":
 # ═══════════════════════════════════════════════════════════════
 # PAGE: 🚦 TRAFFIC INTEL
 # ═══════════════════════════════════════════════════════════════
-elif page == "🚦 Traffic Intel":
+elif page == "📈 Google Analytics":
     st.markdown(
-        '<div class="sec-head">🚦 Traffic Intelligence Hub</div>',
+        '<div class="sec-head">📈 Google Analytics Hub</div>',
         unsafe_allow_html=True,
     )
     try:
