@@ -36,6 +36,17 @@ def _get_credentials():
     except Exception:
         pass
 
+
+    # Try GOOGLE_CREDS_JSON env var (pipeline uses this)
+    _env_creds = os.environ.get("GOOGLE_CREDS_JSON", "").strip()
+    if _env_creds:
+        try:
+            d = json.loads(_env_creds)
+            if "private_key" in d:
+                d["private_key"] = d["private_key"].replace("\n", "\n")
+            return service_account.Credentials.from_service_account_info(d, scopes=SCOPES)
+        except Exception:
+            pass
     # Fall back to local file
     try:
         return service_account.Credentials.from_service_account_file(
