@@ -1,5 +1,5 @@
 {
-  "scraped_at": "2026-06-18T05:07:12.466832",
+  "scraped_at": "2026-06-17T17:15:51.834092",
   "demo": false,
   "source": "playwright_authenticated",
   "posts": [
@@ -118,8 +118,7 @@
   "total_likes": 45,
   "total_comments": 2,
   "total_reposts": 0,
-  "company_page": "https://www.linkedin.com/company/eagle-3d-streaming/",
-  "followers": 2552,
+  "followers": 2551,
   "company_name": "Eagle 3D Streaming",
-  "_cached_at": "2026-06-18T05:07:50.920973"
+  "_cached_at": "2026-06-17T17:18:15.395448"
 }

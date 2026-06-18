@@ -747,7 +747,12 @@ def filter_kpi(df, s, e):
     if df is None or df.empty or "date" not in df.columns:
         return pd.DataFrame()
     d = df.copy()
-    d["_d"] = pd.to_datetime(d["date"], errors="coerce").dt.date
+    d["date"] = d["date"].astype(str)
+    # Try multiple parse strategies
+    _parsed = pd.to_datetime(d["date"], errors="coerce", infer_datetime_format=True)
+    if _parsed.isna().all() and d["date"].str.match(r"^\d{5}$").any():
+        _parsed = pd.to_datetime(d["date"].apply(lambda x: f"{x[:4]}-{x[4:6]}-{x[6:8]}"), errors="coerce")
+    d["_d"] = _parsed.dt.date
     d = d.dropna(subset=["_d"])
     return d[(d["_d"] >= s) & (d["_d"] <= e)].drop(columns=["_d"])
 
@@ -1057,24 +1062,21 @@ if not free_raw.empty:
     if _rows:
         kpi_all = pd.DataFrame(_rows)
 
-# ── METHOD 2: Read pre-aggregated Daily_Counts (supplement only — if Method 1 had no data) ──
-if kpi_all.empty and not counts_raw.empty:
+# ── METHOD 2: Read pre-aggregated Daily_Counts (PRIMARY source — most reliable) ──
+if not counts_raw.empty:
     df = counts_raw.copy()
-    # Find date column
     dc = next((c for c in df.columns if "date" in c.lower()), None)
     if dc:
         df = df.rename(columns={dc: "date"})
-        # Robust column matching: prefer exact matches, avoid detail columns
         _col_map = {}
         for c in df.columns:
             cl = c.lower()
-            if cl in ("signups_accepted", "signup_accepted"):
+            if cl in ("signups_accepted", "signup_accepted", "signups"):
                 _col_map[c] = "signups"
-            elif cl in ("firstuploads_accepted", "first_upload_accepted"):
+            elif cl in ("firstuploads_accepted", "first_upload_accepted", "first_uploads"):
                 _col_map[c] = "first_uploads"
-            elif cl in ("paidsubscribers_accepted", "paid_accepted"):
+            elif cl in ("paidsubscribers_accepted", "paid_accepted", "paid_customers"):
                 _col_map[c] = "paid_customers"
-        # Fallback fuzzy matching only for unmatched target columns
         for col, pats in [
             ("signups", ["signups_accepted", "signup", "free", "sign_up"]),
             ("first_uploads", ["firstuploads_accepted", "first_upload", "upload_accepted"]),
@@ -1085,7 +1087,6 @@ if kpi_all.empty and not counts_raw.empty:
                     if c in _col_map:
                         continue
                     if any(p in c.lower() for p in pats):
-                        # Skip detail/text columns
                         if "detail" in c.lower() or "email" in c.lower():
                             continue
                         _col_map[c] = col
@@ -1096,7 +1097,24 @@ if kpi_all.empty and not counts_raw.empty:
         for c in nc:
             df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0).astype(int)
         if all(c in df.columns for c in ["date", "signups"]):
-            kpi_all = df[["date"] + nc].copy()
+            _dc_kpi = df[["date"] + nc].copy()
+            # If kpi_all is empty (Method 1 failed), use Daily_Counts as-is
+            if kpi_all.empty:
+                kpi_all = _dc_kpi
+            else:
+                # Merge: Daily_Counts overwrites Method 1 for matching dates, adds new dates
+                _dc_kpi["date"] = _dc_kpi["date"].astype(str)
+                kpi_all["date"] = kpi_all["date"].astype(str)
+                _existing_dates = set(kpi_all["date"])
+                _new_rows = _dc_kpi[~_dc_kpi["date"].isin(_existing_dates)]
+                for _ds in _existing_dates.intersection(set(_dc_kpi["date"])):
+                    _mask = kpi_all["date"] == _ds
+                    for _c in nc:
+                        _dc_val = _dc_kpi.loc[_dc_kpi["date"] == _ds, _c].values
+                        if len(_dc_val) > 0:
+                            kpi_all.loc[_mask, _c] = _dc_val[0]
+                if not _new_rows.empty:
+                    kpi_all = pd.concat([kpi_all, _new_rows], ignore_index=True)
 
 # ── METHOD 3: Historical JSON fallback ──
 if kpi_all.empty:
@@ -1135,6 +1153,7 @@ prev_kpi = (
 
 # ── HARD OVERRIDE: Always count paid from Verified_STRIPE ACCEPTED rows directly ──
 # This ensures the paid count is ALWAYS correct regardless of Daily_Counts column mismatches
+# FIX: Never zeros existing paid data — only supplements/overwrites for dates with new ACCEPTED rows
 if not stripe_raw.empty:
     _hard_direct_paid = sum(
         1 for _, r in stripe_raw.iterrows()
@@ -1142,7 +1161,6 @@ if not stripe_raw.empty:
     )
     _kpi_paid_sum = int(kpi_all["paid_customers"].sum()) if not kpi_all.empty and "paid_customers" in kpi_all.columns else 0
     if _kpi_paid_sum != _hard_direct_paid:
-        # Rebuild paid_customers from Verified_STRIPE directly
         _paid_by_date = {}
         for _, r in stripe_raw.iterrows():
             _fs = str(r.get("final_status", str(r.get("Final_Status", "")))).upper()
@@ -1151,17 +1169,16 @@ if not stripe_raw.empty:
                 if _pd:
                     _ds = _pd.strftime("%Y-%m-%d")
                     _paid_by_date[_ds] = _paid_by_date.get(_ds, 0) + 1
-        # Also count rows without parseable dates (add to earliest date or today)
         _dated_count = sum(_paid_by_date.values())
         _undated = _hard_direct_paid - _dated_count
         if _undated > 0:
             _today_ds = datetime.now().strftime("%Y-%m-%d")
             _paid_by_date[_today_ds] = _paid_by_date.get(_today_ds, 0) + _undated
-        # Zero out and rebuild
+        # Apply paid counts per date — only update dates that have ACCEPTED rows
+        # Never zero out existing data for dates without ACCEPTED rows
         if not kpi_all.empty and "paid_customers" in kpi_all.columns:
-            kpi_all["paid_customers"] = 0
             for _ds, _cnt in _paid_by_date.items():
-                _mask = kpi_all["date"] == _ds
+                _mask = kpi_all["date"] == _ds if "date" in kpi_all.columns else pd.Series([False])
                 if _mask.any():
                     kpi_all.loc[_mask, "paid_customers"] = _cnt
                 else:
