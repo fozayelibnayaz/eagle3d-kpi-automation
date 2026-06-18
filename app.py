@@ -749,7 +749,7 @@ def filter_kpi(df, s, e):
     d = df.copy()
     d["date"] = d["date"].astype(str)
     # Try multiple parse strategies
-    _parsed = pd.to_datetime(d["date"], errors="coerce", infer_datetime_format=True)
+    _parsed = pd.to_datetime(d["date"], errors="coerce")
     if _parsed.isna().all() and d["date"].str.match(r"^\d{5}$").any():
         _parsed = pd.to_datetime(d["date"].apply(lambda x: f"{x[:4]}-{x[4:6]}-{x[6:8]}"), errors="coerce")
     d["_d"] = _parsed.dt.date
