@@ -296,14 +296,35 @@ def smtp_verify(email, mx_records):
     """
     Direct SMTP RCPT TO check.
     Returns: ("ok"|"reject"|"unknown"|"error", detail)
+    Uses DOMAIN-LEVEL caching — checks once per domain, reuses for all emails on same domain.
     """
+    _domain = email.split("@", 1)[-1].lower() if "@" in email else email
+    # Skip SMTP for well-known accepting domains — saves 90%+ of checks
+    _known_ok = {"gmail.com", "yahoo.com", "hotmail.com", "outlook.com", "live.com",
+                  "icloud.com", "me.com", "protonmail.com", "proton.me", "aol.com",
+                  "mail.com", "zoho.com", "yandex.com", "gmx.com", "fastmail.com",
+                  "rediffmail.com", "qq.com", "163.com", "126.com", "sina.com",
+                  "eagle3d.com", "eagle3d.ai", "eagle3d.io", "eagle3d.stream"}
+    if _domain in _known_ok:
+        return ("ok", "known_domain_cache")
     cache = _smtp_cache()
+    # Check domain-level cache first
+    _domain_key = f"@domain:{_domain}"
+    _domain_cached = cache.get(_domain_key)
+    if _domain_cached:
+        try:
+            _dc = datetime.fromisoformat(_domain_cached["checked_at"])
+            if (datetime.now() - _dc).days < SMTP_CACHE_DAYS:
+                return _domain_cached["status"], _domain_cached.get("detail", "domain_cached")
+        except Exception:
+            pass
+    # Also check email-level cache (backward compat)
     cached = cache.get(email)
     if cached:
         try:
             checked = datetime.fromisoformat(cached["checked_at"])
             if (datetime.now() - checked).days < SMTP_CACHE_DAYS:
-                return cached["status"], cached.get("detail", "cached")
+                return cached["status"], cached.get("detail", "email_cached")
         except Exception:
             pass
 
@@ -313,7 +334,7 @@ def smtp_verify(email, mx_records):
         result = ("unknown", "no_attempt")
         for pref, mx_host in mx_records[:2]:
             try:
-                with smtplib.SMTP(mx_host, 25, timeout=10) as smtp:
+                with smtplib.SMTP(mx_host, 25, timeout=4) as smtp:
                     smtp.helo("verifier.eagle3d.local")
                     smtp.mail("verify@eagle3d.local")
                     code, msg = smtp.rcpt(email)
@@ -336,6 +357,12 @@ def smtp_verify(email, mx_records):
                 result = ("unknown", f"smtp_error_{type(e).__name__}")
 
     cache[email] = {
+        "status":     result[0],
+        "detail":     result[1],
+        "checked_at": datetime.now().isoformat(),
+    }
+    # Also cache at domain level
+    cache[_domain_key] = {
         "status":     result[0],
         "detail":     result[1],
         "checked_at": datetime.now().isoformat(),
