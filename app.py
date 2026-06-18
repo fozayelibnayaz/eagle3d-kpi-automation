@@ -13,7 +13,13 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
-import json, os, tempfile, re, base64, sys
+import json
+import os
+import tempfile
+import re
+import base64
+import sys
+from pathlib import Path
 from email.utils import parsedate_to_datetime
 
 # ═══════════════════════════════════════════════════════════════
@@ -378,6 +384,8 @@ _css()
 # ═══════════════════════════════════════════════════════════════
 # AUTHENTICATION GATE
 # ═══════════════════════════════════════════════════════════════
+
+
 def _get_app_password():
     """Get password from secrets first, then fallback to default."""
     try:
@@ -389,7 +397,9 @@ def _get_app_password():
         pass
     return os.environ.get("APP_PASSWORD", "eagleanalytics")
 
+
 _APP_PASSWORD = _get_app_password()
+
 
 def _check_auth():
     """Password-gate for the dashboard with proper centered login UI."""
@@ -439,12 +449,15 @@ def _check_auth():
         st.caption("🔒 This dashboard is private and password-protected.")
     return False
 
+
 if not _check_auth():
     st.stop()
+
 
 # ═══════════════════════════════════════════════════════════════
 # COMPATIBILITY HELPERS
 # ═══════════════════════════════════════════════════════════════
+
 
 def _pc(fig, **kwargs):
     """Plot chart — handles both old and new Streamlit API."""
@@ -894,10 +907,18 @@ with st.sidebar:
         if st.button("🚀 Run Pipeline", use_container_width=True, key="nav_pipeline"):
             try:
                 import urllib.request
-                _url = f"https://api.github.com/repos/{_repo}/actions/workflows/daily_pipeline.yml/dispatches"
+                _url = (
+                    f"https://api.github.com/repos/{_repo}"
+                    "/actions/workflows/daily_pipeline.yml/dispatches"
+                )
                 _data = json.dumps({"ref": "main"}).encode()
-                _req = urllib.request.Request(_url, data=_data, method="POST",
-                    headers={"Authorization": f"token {_gh_tok}", "Accept": "application/vnd.github+json"})
+                _req = urllib.request.Request(
+                    _url, data=_data, method="POST",
+                    headers={
+                        "Authorization": f"token {_gh_tok}",
+                        "Accept": "application/vnd.github+json"
+                    }
+                )
                 with urllib.request.urlopen(_req, timeout=10) as _r:
                     if _r.status in (200, 204):
                         st.toast("🚀 Pipeline triggered! Refresh in ~5 min")
@@ -981,8 +1002,8 @@ with st.sidebar:
                 lines.append(f"⚠️ GEMINI key found ({_dbg['gemini_len']} chars) but invalid")
             if not lines:
                 lines.append("⚠️ No AI keys in secrets — using rule-based")
-            for l in lines:
-                st.caption(l)
+            for line in lines:
+                st.caption(line)
     st.caption(f"🦅 Eagle Analytics Hub v7.2 | {datetime.now().strftime('%H:%M')}")
     # Logout button
     if st.button("🔒 Sign Out", key="_auth_logout", use_container_width=True):
@@ -1018,13 +1039,25 @@ if not st.session_state.get(_auto_trigger_key):
             try:
                 import urllib.request
                 _repo = "fozayelibnayaz/eagle3d-kpi-automation"
-                _url = f"https://api.github.com/repos/{_repo}/actions/workflows/daily_pipeline.yml/dispatches"
+                _url = (
+                    f"https://api.github.com/repos/{_repo}"
+                    "/actions/workflows/daily_pipeline.yml/dispatches"
+                )
                 _data = json.dumps({"ref": "main"}).encode()
-                _req = urllib.request.Request(_url, data=_data, method="POST",
-                    headers={"Authorization": f"token {_gh_tok}", "Accept": "application/vnd.github+json"})
+                _req = urllib.request.Request(
+                    _url, data=_data, method="POST",
+                    headers={
+                        "Authorization": f"token {_gh_tok}",
+                        "Accept": "application/vnd.github+json"
+                    }
+                )
                 with urllib.request.urlopen(_req, timeout=10) as _r:
                     if _r.status in (200, 204):
-                        st.toast("🚀 Auto-triggered daily pipeline (data was stale) — refresh in ~5 min for updated numbers", icon="🔄")
+                        st.toast(
+                            "🚀 Auto-triggered daily pipeline (data was stale) "
+                            "— refresh in ~5 min for updated numbers",
+                            icon="🔄"
+                        )
             except Exception:
                 pass  # Silently fail — user can trigger manually
     st.session_state[_auto_trigger_key] = True
@@ -1437,6 +1470,7 @@ if "ga4_connector" in MOD:
         except Exception:
             pass
 
+
 # ── Time-to-Conversion Analytics ──
 def _build_time_to_conversion(free_df, upload_df, stripe_df=None, mode="signup_to_upload", ledger_path=None):
     """Build time-to-conversion analytics for a given funnel stage.
@@ -1564,6 +1598,7 @@ def _build_time_to_conversion(free_df, upload_df, stripe_df=None, mode="signup_t
     ).reset_index().sort_values("start_month")
     _monthly.rename(columns={"start_month": "month"}, inplace=True)
     return _stats, _hist_df, _monthly, _rows, _st_label, _en_label
+
 
 period_label = f"{fd(p_start)} to {fd(p_end)}"
 
@@ -1724,6 +1759,7 @@ if page == "📊 Dashboard":
     _month_p = int(_month_kpi["paid_customers"].sum()) if not _month_kpi.empty and "paid_customers" in _month_kpi.columns else 0
 
     _goals_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data_output", "monthly_goals.json")
+
     def _load_goals():
         if os.path.exists(_goals_file):
             try:
@@ -1732,6 +1768,7 @@ if page == "📊 Dashboard":
             except Exception:
                 pass
         return {}
+
     def _save_goals(data):
         os.makedirs(os.path.dirname(_goals_file), exist_ok=True)
         with open(_goals_file, "w") as _gf:
@@ -1967,6 +2004,7 @@ if page == "📊 Dashboard":
     # ── Time-to-Conversion Analytics ──
     _ledger_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data_output", "first_upload_ledger.json")
     # Build all 3 conversion types with defensive wrappers
+
     def _ttc_safe(fn, *a, **kw):
         try:
             return fn(*a, **kw)
@@ -1989,9 +2027,9 @@ if page == "📊 Dashboard":
         with _tc3:
             st.metric("Mean (Days)", _st["mean_days"])
         with _tc4:
-            st.metric(f"Within 7d", f'{_st["pct_7d"]}%')
+            st.metric("Within 7d", f"{_st['pct_7d']}%")
         with _tc5:
-            st.metric(f"Within 30d", f'{_st["pct_30d"]}%')
+            st.metric("Within 30d", f"{_st['pct_30d']}%")
         _tt_ch1, _tt_ch2 = st.columns([2, 1])
         with _tt_ch1:
             if not _hist.empty:
@@ -2015,7 +2053,7 @@ if page == "📊 Dashboard":
         if not _monthly.empty:
             st.markdown(f"**Monthly Cohort — Median Days to {_en_label}**")
             fig = px.bar(_monthly, x="month", y="median_days",
-                         title=f"Median Days by Month",
+                         title="Median Days by Month",
                          labels={"month": "Month", "median_days": "Median Days"},
                          color="median_days", color_continuous_scale="Viridis", text_auto=True)
             fig.update_layout(height=350, **CT(), margin=dict(l=0, r=0, t=40, b=0))
@@ -2363,7 +2401,7 @@ elif page == "🧠 AI Tools":
                 if _needs_input:
                     _stub = " 🔤"
                 st.markdown(f"""
-                <div onclick="navigator.clipboard.writeText('{_tid}').then(() => {{}})" 
+                <div onclick="navigator.clipboard.writeText('{_tid}').then(() => {{}})"
                      style="padding:12px;border-radius:10px;border:1px solid {_COLORS.get(_tcolor,'#555')}33;
                      background:{_COLORS.get(_tcolor,'#555')}11;cursor:pointer;margin:4px 0;
                      transition:all 0.15s ease;"
@@ -2428,7 +2466,7 @@ elif page == "🧠 AI Tools":
                                       f"Videos: {len(_vids)}",
                                       f"Total Views: {_ch_info.get('total_views',0):,}"]
                         if _vids:
-                            _scored = sorted(_vids, key=lambda v: v.get('views',0), reverse=True)
+                            _scored = sorted(_vids, key=lambda v: v.get('views', 0), reverse=True)
                             _ctx_parts.append("\nTOP 20 VIDEOS:")
                             for v in _scored[:20]:
                                 _ctx_parts.append(f"- {v.get('title','?')[:50]} | V:{v.get('views',0)} L:{v.get('likes',0)} C:{v.get('comments',0)}")
@@ -2505,10 +2543,10 @@ elif page == "🔮 Predictions":
         st.stop()
 
     st.markdown(
-        f'<div class="comp-box">'
-        f'<b>ℹ️</b> <b style="color:var(--green);">Current Total = REAL DATA</b> '
-        f'from pipeline. '
-        f'<b style="color:var(--accent);">Predicted = ML FORECASTS</b>.</div>',
+        '<div class="comp-box">'
+        '<b>ℹ️</b> <b style="color:var(--green);">Current Total = REAL DATA</b> '
+        'from pipeline. '
+        '<b style="color:var(--accent);">Predicted = ML FORECASTS</b>.</div>',
         unsafe_allow_html=True,
     )
 
@@ -3216,7 +3254,7 @@ elif page == "🔍 Browse Data":
 
     def _apply_browse_filters(df, label):
         """Apply date, status, and search filters to a dataframe.
-        
+
         Smart date column detection:
         1. Tries ALL date-related columns in the data
         2. Picks the column with the highest parse rate
@@ -3229,7 +3267,7 @@ elif page == "🔍 Browse Data":
             # ── Smart date column detection ──
             _date_candidates = []
             _parse_rates = {}
-            
+
             # Scan ALL columns that could contain dates
             for _cand in fl.columns:
                 _cl = _cand.lower().strip()
@@ -3240,15 +3278,15 @@ elif page == "🔍 Browse Data":
                 elif any(k in _cl for k in ["created", "upload date", "date"]):
                     if not any(x in _cl for x in ["detail", "last", "scraped", "processed", "__", "verify"]):
                         _date_candidates.append(_cand)
-            
+
             # Always include row_date_used (process_data sets this in YYYY-MM-DD)
             if "row_date_used" in fl.columns and "row_date_used" not in _date_candidates:
                 _date_candidates.append("row_date_used")
-            
+
             # Also include __scraped_date__ as absolute last resort
             if "__scraped_date__" in fl.columns and "__scraped_date__" not in _date_candidates:
                 _date_candidates.append("__scraped_date__")
-            
+
             # Pick the best column: highest parse rate with >0% success
             _best_col = None
             _best_rate = 0
@@ -3265,14 +3303,14 @@ elif page == "🔍 Browse Data":
                             _best_col = _dc
                     except Exception:
                         _parse_rates[_dc] = (0, 0)
-            
+
             # If best column has 0% parse rate, try Account Created On as absolute fallback
             if _best_rate == 0 and "Account Created On" in fl.columns:
                 _best_col = "Account Created On"
                 _parsed = fl["Account Created On"].apply(parse_to_date)
                 _best_rate = int(_parsed.notna().sum()) / _total_rows
                 _parse_rates["Account Created On"] = (int(_parsed.notna().sum()), _best_rate)
-            
+
             if _best_col and _best_rate > 0:
                 fl["_parsed_date"] = fl[_best_col].apply(parse_to_date)
                 _has_date = fl["_parsed_date"].notna()
@@ -3487,6 +3525,7 @@ elif page == "✏️ Manual Override":
         os.path.dirname(os.path.abspath(__file__)),
         "data_output", "manual_kpi_data.json",
     )
+
     def _load_manual():
         if os.path.exists(MANUAL_DATA_FILE):
             try:
@@ -3495,6 +3534,7 @@ elif page == "✏️ Manual Override":
             except Exception:
                 pass
         return {"daily": []}
+
     def _save_manual(data):
         os.makedirs(os.path.dirname(MANUAL_DATA_FILE), exist_ok=True)
         with open(MANUAL_DATA_FILE, "w") as _f:
@@ -3656,9 +3696,9 @@ elif page == "📺 YouTube":
             get_revenue, get_revenue_daily, get_top_videos, get_search_terms,
             get_views_by_playback, get_sharing_services, get_playlist_analytics,
             get_video_analytics_batch, get_retention_curve,
-            calculate_performance_score, get_engagement_rating, get_retention_rating,
+            calculate_performance_score, get_engagement_rating,
             diagnose_video, get_score_label, format_number,
-            is_configured, has_analytics_access, get_status, _format_duration,
+            has_analytics_access, get_status, _format_duration,
         )
     except Exception as e:
         st.error(f"YouTube connector not loaded: {e}")
@@ -3815,7 +3855,8 @@ elif page == "📺 YouTube":
             _comp_views = _comp_watch = _comp_subs_g = _comp_subs_l = 0
 
         def _pct(v, p):
-            if p == 0: return None
+            if p == 0:
+                return None
             return f"{((v - p) / p * 100):+.1f}%"
 
         # KPI row (matching Vercel: Total Views, Subscribers, Total Likes, Comments, Engagement, Shares)
@@ -4712,11 +4753,11 @@ elif page == "💼 LinkedIn":
     )
     try:
         from linkedin_connector import (
-            scrape_public_metrics, scrape_with_cookies, get_cached_metrics, get_manual_history,
+            scrape_public_metrics, get_cached_metrics, get_manual_history,
             save_manual_entry, import_csv_data, get_status,
-            scrape_with_playwright, get_posts, save_posts,
+            get_posts, save_posts,
             calculate_post_score, get_score_label, get_aggregate_stats,
-            _get_company_page, has_cookies,
+            _get_company_page,
         )
     except Exception as e:
         st.error(f"LinkedIn connector not loaded: {e}")
@@ -4865,7 +4906,7 @@ elif page == "💼 LinkedIn":
                     x=_li_hist["date"], y=_li_hist[_li_metric],
                     mode="lines+markers", name=_li_metric,
                     line=dict(color=T["accent"], width=2),
-                    fill="tozeroy", fillcolor=f"rgba(100,180,255,0.1)",
+                    fill="tozeroy", fillcolor="rgba(100,180,255,0.1)",
                 ))
                 fig.update_layout(
                     title=f"LinkedIn {_li_metric.title()} Over Time",
@@ -4919,7 +4960,6 @@ elif page == "💼 LinkedIn":
             # Try to scrape public data right now
             with st.spinner("🔄 Loading LinkedIn posts from public data..."):
                 try:
-                    from linkedin_connector import scrape_public_metrics
                     _live = scrape_public_metrics()
                     if _live and _live.get("posts"):
                         _li_posts = _live["posts"]
@@ -5042,7 +5082,7 @@ elif page == "💼 LinkedIn":
                         x=_li_hist["date"], y=_li_hist["followers"],
                         mode="lines+markers", name="Followers",
                         line=dict(color=T["accent"], width=2),
-                        fill="tozeroy", fillcolor=f"rgba(100,180,255,0.1)",
+                        fill="tozeroy", fillcolor="rgba(100,180,255,0.1)",
                     ))
                     fig.update_layout(title="👥 Followers Over Time", height=350, **CT(), margin=dict(l=0, r=0, t=40, b=0))
                     _pc(fig)
@@ -5110,7 +5150,7 @@ elif page == "💼 LinkedIn":
                 x=_li_hist["date"], y=_li_hist["followers"],
                 mode="lines+markers", name="Followers",
                 line=dict(color=T["accent"], width=2),
-                fill="tozeroy", fillcolor=f"rgba(100,180,255,0.1)",
+                fill="tozeroy", fillcolor="rgba(100,180,255,0.1)",
             ))
             fig.update_layout(title="Follower Count Over Time", height=400, **CT(), margin=dict(l=0, r=0, t=40, b=0))
             _pc(fig)
@@ -5279,18 +5319,14 @@ elif page == "🔗 Cross-Platform":
         from cross_platform_engine import (
             build_unified_timeline, compute_correlations,
             compute_attribution, compute_cross_platform_funnel,
-            compute_platform_comparison, compute_growth_analysis,
+            compute_growth_analysis,
             generate_cross_insights,
         )
-        from youtube_connector import get_channel_info, get_daily_analytics, is_configured as yt_ok, get_status as yt_st
-        from linkedin_connector import get_cached_metrics, get_manual_history, is_configured as li_ok, get_status as li_st
+        from youtube_connector import get_channel_info, get_daily_analytics
+        from linkedin_connector import get_cached_metrics, get_manual_history
     except Exception as e:
         st.error(f"Cross-platform engine not loaded: {e}")
         st.stop()
-
-    # ── Platform Status ──
-    _yt_s = yt_st()
-    _li_s = li_st()
     _ga4_ok = bool(os.environ.get("GA4_PROPERTY_ID") or True)  # GA4 is already configured
 
     _ps1, _ps2, _ps3, _ps4 = st.columns(4)
@@ -5300,9 +5336,11 @@ elif page == "🔗 Cross-Platform":
     with _ps2:
         st.metric("GA4 Traffic", "✅" if _ga4_ok else "❌")
     with _ps3:
-        st.metric("YouTube", "✅" if _yt_s["configured"] else "❌")
+        _yt_status = get_status()
+        st.metric("YouTube", "✅" if _yt_status["configured"] else "❌")
     with _ps4:
-        st.metric("LinkedIn", "✅" if _li_s["configured"] else "❌")
+        _li_status = get_status()
+        st.metric("LinkedIn", "✅" if _li_status["configured"] else "❌")
 
     st.markdown("---")
 
@@ -5324,7 +5362,7 @@ elif page == "🔗 Cross-Platform":
         pass
 
     # Get YouTube data
-    if _yt_s["configured"]:
+    if _yt_status["configured"]:
         try:
             _yt_daily = get_daily_analytics(_cp_start, _cp_end)
         except Exception:
@@ -5505,7 +5543,7 @@ elif page == "🔗 Cross-Platform":
 
     with _cp_tabs[3]:  # Funnel
         st.markdown("#### 📊 Cross-Platform Funnel")
-        _yt_info = get_channel_info() if _yt_s["configured"] else {}
+        _yt_info = get_channel_info() if _yt_status["configured"] else {}
         _li_metrics = get_cached_metrics()
 
         _yt_views = int(_unified.filter(like="yt_views").sum().sum()) if not _unified.empty else 0
@@ -5764,8 +5802,9 @@ elif page == "⚙️ Settings":
                                 _sa = _resp.data[-1].id
                         _api_total = len(_all_pi)
                         _api_accepted = sum(1 for i in _all_pi if i.status == "succeeded")
-                        _api_declined = sum(1 for i in _all_pi if i.status in 
-                                           ["requires_payment_method", "canceled", "payment_failed"])
+                        _api_declined = sum(
+                            1 for i in _all_pi if i.status in ["requires_payment_method", "canceled", "payment_failed"]
+                        )
                         _api_revenue = sum(i.amount / 100 for i in _all_pi if i.status == "succeeded")
                         _va1, _va2, _va3, _va4 = st.columns(4)
                         with _va1:
@@ -5793,9 +5832,11 @@ elif page == "⚙️ Settings":
                 _df(_cat_counts, height=300)
 
             if _s_has_fp < _s_acc:
-                st.warning(f"⚠️ Only {_s_has_fp}/{_s_acc} ACCEPTED rows have 'First payment' date. "
-                          f"Rows without First payment use 'Created' date instead. "
-                          f"If this seems wrong, check if Stripe scraper is capturing the 'first_payment' column.")
+                st.warning(
+                    f"⚠️ Only {_s_has_fp}/{_s_acc} ACCEPTED rows have 'First payment' date. "
+                    f"Rows without First payment use 'Created' date instead. "
+                    f"If this seems wrong, check if Stripe scraper is capturing the 'first_payment' column."
+                )
 
             st.caption(f"💡 Rows with 'First payment' date: {_s_has_fp} | Rows with 'Total spend' > $0: {_s_has_spend}")
             st.caption("💡 Pipeline must re-run after code update to re-categorize Stripe data with the new logic.")
@@ -5867,8 +5908,10 @@ elif page == "⚙️ Settings":
                     _repo = "fozayelibnayaz/eagle3d-kpi-automation"
                     _url = f"https://api.github.com/repos/{_repo}/actions/workflows/daily_pipeline.yml/dispatches"
                     _data = _json.dumps({"ref": "main"}).encode()
-                    _req = urllib.request.Request(_url, data=_data, method="POST",
-                        headers={"Authorization": f"token {_gh_token}", "Accept": "application/vnd.github+json"})
+                    _req = urllib.request.Request(
+                        _url, data=_data, method="POST",
+                        headers={"Authorization": f"token {_gh_token}", "Accept": "application/vnd.github+json"}
+                    )
                     with urllib.request.urlopen(_req, timeout=15) as _r:
                         if _r.status in (200, 204):
                             st.success("✅ Pipeline triggered! Data updates in ~5 min. Refresh then.")

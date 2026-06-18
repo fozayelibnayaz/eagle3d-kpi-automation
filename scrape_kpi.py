@@ -519,7 +519,16 @@ def extract_table_full(page) -> dict:
                     break;
                 }
             }
-            return {headers, rows, total, footer};
+            // Normalize column names to match pipeline expectations
+            const normalizedHeaders = headers.map(h => {
+                const map = {
+                    "Signup_Date": "Account Created On",
+                    "First_Upload_Date": "Upload Date",
+                    "Payment_Date": "First payment",
+                };
+                return map[h] || h;
+            });
+            return {headers: normalizedHeaders, rows, total, footer};
         }
     """)
 

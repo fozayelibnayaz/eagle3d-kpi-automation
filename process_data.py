@@ -40,15 +40,27 @@ def get_email(row):
 
 def get_scraped_date(row, source):
     if source == "FREE":
-        return parse_date(row.get("Account Created On", ""))
-    if source == "FIRST_UPLOAD":
-        return parse_date(row.get("Upload Date", ""))
-    if source == "STRIPE":
-        for f in ("First payment", "Created", "Created (UTC)"):
+        # Try normalized name first, then legacy
+        for f in ("Account Created On", "Signup_Date"):
             if f in row and row[f]:
                 d = parse_date(row[f])
                 if d:
                     return d
+        return ""
+    if source == "FIRST_UPLOAD":
+        for f in ("Upload Date", "First_Upload_Date"):
+            if f in row and row[f]:
+                d = parse_date(row[f])
+                if d:
+                    return d
+        return ""
+    if source == "STRIPE":
+        for f in ("First payment", "Created", "Created (UTC)", "Payment_Date"):
+            if f in row and row[f]:
+                d = parse_date(row[f])
+                if d:
+                    return d
+        return ""
     return ""
 
 
@@ -67,7 +79,7 @@ def parse_amount(val):
 def categorize_stripe(row):
     email  = get_email(row)
     spend  = parse_amount(row.get("Total spend", "") or row.get("Total Spend", ""))
-    fp     = parse_date(row.get("First payment", ""))
+    fp     = parse_date(row.get("First payment", "") or row.get("Payment_Date", ""))
     cr     = parse_date(row.get("Created", "") or row.get("Created (UTC)", ""))
     d      = fp or cr
 

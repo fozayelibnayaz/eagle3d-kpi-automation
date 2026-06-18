@@ -14,6 +14,11 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "1769591@fcpsschools.net": {
+    "checked_at": "2026-06-18T23:52:37.904540",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "2033.ishon.richardson@my.caslv.org": {
     "checked_at": "2026-06-17T10:09:05.189044",
     "detail": "smtp_accepted_250",
@@ -39,6 +44,1211 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "@domain:4dpipeline.com": {
+    "checked_at": "2026-06-18T23:50:58.922977",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:academiadeartesguerrero.com": {
+    "checked_at": "2026-06-18T23:40:04.431585",
+    "detail": "smtp_error_OSError",
+    "status": "unknown"
+  },
+  "@domain:adventureclub.io": {
+    "checked_at": "2026-06-19T00:00:46.689011",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:aecom.com": {
+    "checked_at": "2026-06-18T22:26:39.960606",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
+  },
+  "@domain:aireal.io": {
+    "checked_at": "2026-06-19T00:03:35.378884",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:alchemysts.co": {
+    "checked_at": "2026-06-18T22:30:23.528305",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
+  "@domain:aldar.com": {
+    "checked_at": "2026-06-18T22:29:38.143136",
+    "detail": "smtp_rejected_550_5.7.1 Service unavailable, Client host [45.114.89.",
+    "status": "reject"
+  },
+  "@domain:alderwin.com": {
+    "checked_at": "2026-06-18T22:26:47.684890",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
+  "@domain:ambiflo.com": {
+    "checked_at": "2026-06-18T22:26:50.735641",
+    "detail": "smtp_rejected_550_5.7.1 Service unavailable, Client host [45.114.89.",
+    "status": "reject"
+  },
+  "@domain:amgistudios.com": {
+    "checked_at": "2026-06-18T23:42:47.742960",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:anderson5.net": {
+    "checked_at": "2026-06-18T23:52:12.902999",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:ansara.co.za": {
+    "checked_at": "2026-06-18T23:51:11.759554",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:antidotemarketing.com": {
+    "checked_at": "2026-06-19T00:07:36.601350",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
+  },
+  "@domain:antix.in": {
+    "checked_at": "2026-06-19T00:06:23.286440",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:anythinklibraries.org": {
+    "checked_at": "2026-06-19T00:02:15.584775",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:anywhereanytime.io": {
+    "checked_at": "2026-06-18T23:36:47.919360",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:appnidea.com": {
+    "checked_at": "2026-06-18T22:29:41.310774",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
+  "@domain:archinord.com": {
+    "checked_at": "2026-06-18T23:39:40.243667",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:archnexus.com": {
+    "checked_at": "2026-06-18T22:29:20.581204",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
+  },
+  "@domain:archvizexperiences.com": {
+    "checked_at": "2026-06-18T23:39:10.864903",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:arecibomedia.com": {
+    "checked_at": "2026-06-18T22:29:36.046564",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
+  "@domain:artbinary.com": {
+    "checked_at": "2026-06-18T23:38:34.770889",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:asestudent.co.za": {
+    "checked_at": "2026-06-18T23:50:20.663717",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
+  },
+  "@domain:athomus.com": {
+    "checked_at": "2026-06-18T22:29:59.191333",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
+  "@domain:augmentworks.com": {
+    "checked_at": "2026-06-18T23:41:44.118939",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
+  },
+  "@domain:avc.ie": {
+    "checked_at": "2026-06-18T23:52:29.125492",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:azibao.com": {
+    "checked_at": "2026-06-18T22:26:24.073749",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
+  },
+  "@domain:b-rex.de": {
+    "checked_at": "2026-06-18T23:54:36.633139",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:bartlettcocke.com": {
+    "checked_at": "2026-06-18T23:41:54.687897",
+    "detail": "smtp_rejected_550_(verifier.eagle3d.local) [45.114.89.161]:60808 is ",
+    "status": "reject"
+  },
+  "@domain:bendthevertecies.se": {
+    "checked_at": "2026-06-18T23:35:31.191122",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:beyondcad.com": {
+    "checked_at": "2026-06-18T23:35:56.553574",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:blackshark.ai": {
+    "checked_at": "2026-06-18T23:38:20.152240",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:blits.ai": {
+    "checked_at": "2026-06-18T23:50:33.007043",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:bnsteps.com": {
+    "checked_at": "2026-06-18T22:27:43.355147",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
+  "@domain:bolton-menk.com": {
+    "checked_at": "2026-06-19T00:06:46.482808",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
+  },
+  "@domain:breeze-animation.com": {
+    "checked_at": "2026-06-19T00:04:26.469853",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:btwnexhibits.com": {
+    "checked_at": "2026-06-18T23:41:35.197904",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:caalcs.com": {
+    "checked_at": "2026-06-18T22:25:53.147924",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
+  "@domain:cassettegroup.com": {
+    "checked_at": "2026-06-18T23:40:45.548599",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:cbre.com": {
+    "checked_at": "2026-06-18T23:39:32.098796",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:celesteypiedra.com": {
+    "checked_at": "2026-06-18T23:51:16.181937",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:cgviz.space": {
+    "checked_at": "2026-06-18T23:51:24.828792",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:cheyul.com": {
+    "checked_at": "2026-06-18T23:51:54.916851",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:chileatiende.cl": {
+    "checked_at": "2026-06-19T00:04:51.873202",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:citchennai.net": {
+    "checked_at": "2026-06-18T23:41:02.551110",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:civitta.com": {
+    "checked_at": "2026-06-18T23:53:25.728263",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:clerhp.com": {
+    "checked_at": "2026-06-19T00:08:02.454122",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:cobim.co.kr": {
+    "checked_at": "2026-06-18T23:35:10.063861",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
+  },
+  "@domain:colmayor.edu.co": {
+    "checked_at": "2026-06-18T22:30:15.462308",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
+  "@domain:corgan.com": {
+    "checked_at": "2026-06-18T23:42:20.790949",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:cresco.co.jp": {
+    "checked_at": "2026-06-18T23:54:11.235406",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:cs-mq.de": {
+    "checked_at": "2026-06-18T22:29:32.244527",
+    "detail": "smtp_rejected_550_5.7.1 Service unavailable, Client host [45.114.89.",
+    "status": "reject"
+  },
+  "@domain:ctrlaltxp.com": {
+    "checked_at": "2026-06-18T22:30:19.178515",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
+  "@domain:cubedots.com": {
+    "checked_at": "2026-06-19T00:03:50.380696",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:dalie.company": {
+    "checked_at": "2026-06-19T00:00:20.935631",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
+  },
+  "@domain:dallara.it": {
+    "checked_at": "2026-06-18T23:39:51.080077",
+    "detail": "smtp_rejected_550_(verifier.eagle3d.local) [45.114.89.174]:60501 is ",
+    "status": "reject"
+  },
+  "@domain:dancreek.com": {
+    "checked_at": "2026-06-18T23:42:16.560855",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:darcstudio.com": {
+    "checked_at": "2026-06-18T22:26:05.815340",
+    "detail": "smtp_rejected_550_5.7.1 Service unavailable, Client host [45.114.89.",
+    "status": "reject"
+  },
+  "@domain:datawebservice.it": {
+    "checked_at": "2026-06-18T23:56:27.302770",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:digihumans.ai": {
+    "checked_at": "2026-06-19T00:00:41.963501",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:dimensionpixels.nl": {
+    "checked_at": "2026-06-18T23:43:21.211633",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:dwellito.com": {
+    "checked_at": "2026-06-18T23:34:21.929933",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:earlybirdvisual.com": {
+    "checked_at": "2026-06-18T23:40:33.334861",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:eisvisual.com": {
+    "checked_at": "2026-06-18T23:54:20.216270",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:ekagroup.com": {
+    "checked_at": "2026-06-18T22:27:15.839511",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
+  },
+  "@domain:elyon.sch.id": {
+    "checked_at": "2026-06-19T00:02:49.562581",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:emberstoke.com": {
+    "checked_at": "2026-06-18T22:29:27.454182",
+    "detail": "smtp_rejected_550_5.7.1 Service unavailable, Client host [45.114.89.",
+    "status": "reject"
+  },
+  "@domain:emht.com": {
+    "checked_at": "2026-06-18T23:52:33.738065",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:enhancedimage.com": {
+    "checked_at": "2026-06-18T23:53:08.268085",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
+  },
+  "@domain:entourageintl.com": {
+    "checked_at": "2026-06-18T23:34:43.547264",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:eosvalve.cl": {
+    "checked_at": "2026-06-19T00:01:06.319755",
+    "detail": "smtp_code_451_Temporary local problem - please try later",
+    "status": "unknown"
+  },
+  "@domain:equashield.com": {
+    "checked_at": "2026-06-19T00:03:14.112754",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:era-co.com": {
+    "checked_at": "2026-06-18T23:40:53.708737",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:espicemedia.com": {
+    "checked_at": "2026-06-18T23:39:59.290522",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:fcpsschools.net": {
+    "checked_at": "2026-06-18T23:52:37.904633",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:flexihouse.co.nz": {
+    "checked_at": "2026-06-18T22:27:01.000700",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
+  "@domain:framitag.com": {
+    "checked_at": "2026-06-18T22:27:05.763870",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
+  "@domain:frego.ch": {
+    "checked_at": "2026-06-18T23:54:45.356037",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:futureinformatics.ch": {
+    "checked_at": "2026-06-19T00:01:46.177371",
+    "detail": "smtp_error_ConnectionRefusedError",
+    "status": "unknown"
+  },
+  "@domain:genexyz.world": {
+    "checked_at": "2026-06-18T23:35:05.229773",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:glasseye.ie": {
+    "checked_at": "2026-06-19T00:05:52.022036",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:glidertech.com": {
+    "checked_at": "2026-06-19T00:05:10.973482",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
+  },
+  "@domain:gmx.de": {
+    "checked_at": "2026-06-19T00:02:28.920053",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:gravityrender.com": {
+    "checked_at": "2026-06-18T23:51:38.672488",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:griphic.com": {
+    "checked_at": "2026-06-18T23:41:35.611184",
+    "detail": "smtp_error_ConnectionRefusedError",
+    "status": "unknown"
+  },
+  "@domain:group2e.com": {
+    "checked_at": "2026-06-19T00:07:40.873550",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:gsmproject.com": {
+    "checked_at": "2026-06-18T23:34:34.260436",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:harmony-ms.com": {
+    "checked_at": "2026-06-19T00:03:01.923542",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:hcl.com": {
+    "checked_at": "2026-06-19T00:04:03.827604",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:hcltech.com": {
+    "checked_at": "2026-06-19T00:02:33.057017",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:herolight.com": {
+    "checked_at": "2026-06-19T00:04:08.865700",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
+  },
+  "@domain:hksinc.com": {
+    "checked_at": "2026-06-18T23:41:52.295389",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:hntb.com": {
+    "checked_at": "2026-06-18T23:51:33.503070",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:hotmail.it": {
+    "checked_at": "2026-06-18T22:30:28.911294",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
+  },
+  "@domain:hotsnow.fi": {
+    "checked_at": "2026-06-18T22:30:06.042331",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
+  "@domain:iconiagroup.com": {
+    "checked_at": "2026-06-19T00:04:18.081664",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:identicube.com": {
+    "checked_at": "2026-06-19T00:03:42.130038",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:imerza.com": {
+    "checked_at": "2026-06-18T23:39:06.643340",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:impactmultimedia.com.au": {
+    "checked_at": "2026-06-19T00:04:35.617652",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
+  },
+  "@domain:inspacexr.com": {
+    "checked_at": "2026-06-19T00:01:22.537746",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:intelionsys.com": {
+    "checked_at": "2026-06-19T00:05:47.536701",
+    "detail": "smtp_rejected_550_(verifier.eagle3d.local) [45.114.89.160]:64259 is ",
+    "status": "reject"
+  },
+  "@domain:interaktivni-vizualizace.cz": {
+    "checked_at": "2026-06-18T22:27:27.364879",
+    "detail": "smtp_code_503_5.5.1 command not expected",
+    "status": "unknown"
+  },
+  "@domain:ironwoodventure.com": {
+    "checked_at": "2026-06-18T23:43:00.765919",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:ishitham.com": {
+    "checked_at": "2026-06-18T23:55:28.106538",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:iwpsglobal.com": {
+    "checked_at": "2026-06-18T23:56:22.783135",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:jacobandco.com": {
+    "checked_at": "2026-06-18T23:50:06.374307",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:kinerama.com": {
+    "checked_at": "2026-06-18T23:41:39.822045",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:kunapak.com": {
+    "checked_at": "2026-06-19T00:05:24.316780",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:kunaverso.com": {
+    "checked_at": "2026-06-19T00:04:30.692129",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:kyonxr.com": {
+    "checked_at": "2026-06-18T22:29:44.690029",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
+  "@domain:labclass.co.uk": {
+    "checked_at": "2026-06-18T23:53:38.860361",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:landscapingbee.com": {
+    "checked_at": "2026-06-18T22:26:57.158270",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
+  "@domain:latitude83aviation.com": {
+    "checked_at": "2026-06-18T23:38:24.399158",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:leap.co.za": {
+    "checked_at": "2026-06-19T00:05:20.078496",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:learningbydoingxr.com": {
+    "checked_at": "2026-06-18T22:26:44.113201",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
+  "@domain:letsfilmit.net": {
+    "checked_at": "2026-06-18T23:42:43.323994",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:likenesslabs.ai": {
+    "checked_at": "2026-06-18T23:36:19.317647",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:live.it": {
+    "checked_at": "2026-06-19T00:07:57.925603",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:livvy.com": {
+    "checked_at": "2026-06-19T00:06:10.721799",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:locationxr.com": {
+    "checked_at": "2026-06-18T23:39:45.027930",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:lunas.pro": {
+    "checked_at": "2026-06-18T23:37:38.323665",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:mail.ru": {
+    "checked_at": "2026-06-19T00:02:45.344581",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:makroyal.com": {
+    "checked_at": "2026-06-18T22:27:19.497088",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
+  "@domain:mappings.ai": {
+    "checked_at": "2026-06-18T23:37:09.292276",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:materna.group": {
+    "checked_at": "2026-06-18T23:55:17.320106",
+    "detail": "smtp_rejected_550_5.7.1 Service unavailable, Client host [45.114.89.",
+    "status": "reject"
+  },
+  "@domain:mc2comunicazione.com": {
+    "checked_at": "2026-06-19T00:01:50.863530",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:mcgee.co.uk": {
+    "checked_at": "2026-06-18T23:35:36.123744",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:menakta.com": {
+    "checked_at": "2026-06-18T22:27:37.309510",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
+  },
+  "@domain:metadrob.com": {
+    "checked_at": "2026-06-18T23:52:50.846300",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:metaworldx.com": {
+    "checked_at": "2026-06-18T22:29:11.352045",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
+  "@domain:mgroup.com.co": {
+    "checked_at": "2026-06-18T23:55:06.832081",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
+  },
+  "@domain:mhnt.co.kr": {
+    "checked_at": "2026-06-18T23:54:15.616558",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:mibi.studio": {
+    "checked_at": "2026-06-18T23:36:23.232302",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
+  "@domain:mindboom.se": {
+    "checked_at": "2026-06-19T00:05:06.489120",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:molotovcocktail.tv": {
+    "checked_at": "2026-06-18T23:54:40.863686",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:motzart.com": {
+    "checked_at": "2026-06-18T23:39:27.282908",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:mousencheese.design": {
+    "checked_at": "2026-06-18T23:38:02.788824",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:movipar.com.br": {
+    "checked_at": "2026-06-18T22:26:30.292958",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
+  },
+  "@domain:mozmail.com": {
+    "checked_at": "2026-06-18T23:55:19.863118",
+    "detail": "smtp_rejected_550_5.7.1 IP address blacklisted by recipient",
+    "status": "reject"
+  },
+  "@domain:mused.com": {
+    "checked_at": "2026-06-18T23:56:39.609082",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:mymedicalhub.com": {
+    "checked_at": "2026-06-18T23:43:08.993634",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:naturedots.com": {
+    "checked_at": "2026-06-19T00:02:20.186348",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:naver.com": {
+    "checked_at": "2026-06-18T23:35:52.352705",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:navi3d.mx": {
+    "checked_at": "2026-06-18T23:34:26.144171",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:navyspade.eu": {
+    "checked_at": "2026-06-18T23:34:09.611116",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:neom.com": {
+    "checked_at": "2026-06-19T00:05:44.830255",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:newoodtechnology.com": {
+    "checked_at": "2026-06-18T23:53:30.018683",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:next-home.pro": {
+    "checked_at": "2026-06-18T22:25:59.606016",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
+  },
+  "@domain:northsouth.edu": {
+    "checked_at": "2026-06-18T23:52:42.662709",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
+  },
+  "@domain:novaconceptsny.com": {
+    "checked_at": "2026-06-19T00:02:03.238041",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:novelsignaturehomes.com": {
+    "checked_at": "2026-06-18T23:42:22.680787",
+    "detail": "smtp_rejected_550_Message rejected! Your ip/hostname (verifier.eagle",
+    "status": "reject"
+  },
+  "@domain:nudgyt.com": {
+    "checked_at": "2026-06-18T22:26:12.901411",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
+  "@domain:obsidiancapitalco.com": {
+    "checked_at": "2026-06-19T00:06:35.630980",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:oglengineering.com": {
+    "checked_at": "2026-06-18T23:55:56.872793",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:ohsee.co.uk": {
+    "checked_at": "2026-06-19T00:05:56.509074",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:oktra.co.uk": {
+    "checked_at": "2026-06-18T23:42:51.962393",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:orange.fr": {
+    "checked_at": "2026-06-18T23:50:02.151031",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:otripi.com": {
+    "checked_at": "2026-06-18T23:40:03.490175",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:ourgeneticlegacy.org": {
+    "checked_at": "2026-06-18T23:37:00.428865",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:outlook.com.au": {
+    "checked_at": "2026-06-19T00:06:59.141962",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:pacifa-decision.com": {
+    "checked_at": "2026-06-18T23:55:44.394056",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:parametrix.com": {
+    "checked_at": "2026-06-18T23:55:01.608688",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:parella.fr": {
+    "checked_at": "2026-06-18T23:55:15.805435",
+    "detail": "smtp_error_ConnectionRefusedError",
+    "status": "unknown"
+  },
+  "@domain:peikko.com": {
+    "checked_at": "2026-06-18T23:56:18.548061",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:pixielab.id": {
+    "checked_at": "2026-06-18T23:42:35.105258",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:pixnreal.com": {
+    "checked_at": "2026-06-18T23:40:16.664814",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:playthecrowd.com": {
+    "checked_at": "2026-06-19T00:00:25.231397",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:plotvis.nl": {
+    "checked_at": "2026-06-19T00:07:45.311102",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:post.com": {
+    "checked_at": "2026-06-19T00:06:15.098792",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:powdermountain.com": {
+    "checked_at": "2026-06-18T23:34:13.752388",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:prestigeav.com": {
+    "checked_at": "2026-06-19T00:03:37.906532",
+    "detail": "smtp_rejected_550_(verifier.eagle3d.local) [45.114.89.166]:63949 is ",
+    "status": "reject"
+  },
+  "@domain:prism3d.ai": {
+    "checked_at": "2026-06-18T23:53:03.750398",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:proicere.co.uk": {
+    "checked_at": "2026-06-18T22:26:09.240338",
+    "detail": "smtp_rejected_550_5.7.1 Service unavailable, Client host [45.114.89.",
+    "status": "reject"
+  },
+  "@domain:proiceredigital.com": {
+    "checked_at": "2026-06-18T23:38:29.487318",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:proinspace.de": {
+    "checked_at": "2026-06-18T23:42:56.486317",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:prospecthilldigital.com": {
+    "checked_at": "2026-06-18T22:26:02.642254",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
+  "@domain:pulsart.agency": {
+    "checked_at": "2026-06-18T22:30:27.561515",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
+  "@domain:pureblink.com": {
+    "checked_at": "2026-06-18T23:38:58.010871",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:qbeiq.de": {
+    "checked_at": "2026-06-18T22:29:06.023155",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
+  },
+  "@domain:raumvisionen.de": {
+    "checked_at": "2026-06-18T23:50:38.145768",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
+  },
+  "@domain:rayadvertising.com": {
+    "checked_at": "2026-06-18T23:50:28.836266",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:realagain.io": {
+    "checked_at": "2026-06-18T23:36:11.165652",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:reptilebasics.com": {
+    "checked_at": "2026-06-18T23:35:22.218479",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:restless.design": {
+    "checked_at": "2026-06-19T00:04:58.235049",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:rolling7graphics.com": {
+    "checked_at": "2026-06-18T23:37:50.543784",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:rubberduck.xyz": {
+    "checked_at": "2026-06-19T00:00:59.038309",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:ruptura.cl": {
+    "checked_at": "2026-06-18T23:37:30.298483",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:rupture.mt": {
+    "checked_at": "2026-06-18T23:50:46.404596",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:saga.com.br": {
+    "checked_at": "2026-06-18T23:38:43.020226",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:saitor.es": {
+    "checked_at": "2026-06-18T23:41:59.859074",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
+  "@domain:shadow.tech": {
+    "checked_at": "2026-06-18T23:33:53.396259",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:shinwon.com": {
+    "checked_at": "2026-06-18T23:37:13.844678",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:sjain.co.in": {
+    "checked_at": "2026-06-18T23:41:30.839403",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:sketsxr.com": {
+    "checked_at": "2026-06-19T00:00:25.759756",
+    "detail": "smtp_error_ConnectionRefusedError",
+    "status": "unknown"
+  },
+  "@domain:skipp.ai": {
+    "checked_at": "2026-06-19T00:00:50.882057",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:smartarchviz.com": {
+    "checked_at": "2026-06-18T23:55:15.018992",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:soclecollections.com": {
+    "checked_at": "2026-06-18T22:30:02.053454",
+    "detail": "smtp_rejected_550_5.1.1 The email account that you tried to reach do",
+    "status": "reject"
+  },
+  "@domain:sportsbiz.com": {
+    "checked_at": "2026-06-19T00:07:31.661218",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:squareone.co.in": {
+    "checked_at": "2026-06-18T22:30:32.278218",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
+  "@domain:srec.ac.in": {
+    "checked_at": "2026-06-18T23:39:19.068371",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:studio3n3.com": {
+    "checked_at": "2026-06-19T00:02:11.435698",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:studiomoore3d.com": {
+    "checked_at": "2026-06-19T00:01:36.761738",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
+  },
+  "@domain:studiopiranese.com": {
+    "checked_at": "2026-06-18T23:35:26.672233",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
+  },
+  "@domain:studiosaf.com": {
+    "checked_at": "2026-06-18T22:26:54.078487",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
+  "@domain:swiftmarketingsolutions.co.uk": {
+    "checked_at": "2026-06-18T23:50:15.437330",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:tarakos.de": {
+    "checked_at": "2026-06-18T23:36:06.949919",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:thelios.com": {
+    "checked_at": "2026-06-18T22:29:54.143284",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
+  },
+  "@domain:tiltlabs.io": {
+    "checked_at": "2026-06-18T23:54:32.392864",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:timelogica.com": {
+    "checked_at": "2026-06-19T00:05:15.232543",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:tutanota.com": {
+    "checked_at": "2026-06-19T00:01:45.381772",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:uhd.edu.iq": {
+    "checked_at": "2026-06-19T00:03:58.513576",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:ukho.gov.uk": {
+    "checked_at": "2026-06-19T00:08:06.855653",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:unilapse.com": {
+    "checked_at": "2026-06-19T00:03:18.375963",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:uppteam.com": {
+    "checked_at": "2026-06-18T23:39:49.292098",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:ursheredworlds.com": {
+    "checked_at": "2026-06-19T00:01:30.757809",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:usiku.africa": {
+    "checked_at": "2026-06-19T00:01:41.216403",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:ut.edu.vn": {
+    "checked_at": "2026-06-19T00:05:36.631428",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:v-lab.uk": {
+    "checked_at": "2026-06-18T23:55:52.623061",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:vaars.co.uk": {
+    "checked_at": "2026-06-19T00:06:54.901221",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:vection-technologies.com": {
+    "checked_at": "2026-06-19T00:07:53.488678",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:villascapital.com.co": {
+    "checked_at": "2026-06-18T23:38:51.421210",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:visimir.com": {
+    "checked_at": "2026-06-18T23:33:43.969647",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
+  },
+  "@domain:visionanddesign.co.uk": {
+    "checked_at": "2026-06-18T23:37:22.068061",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:visualdynamics3d.com": {
+    "checked_at": "2026-06-18T23:34:55.769072",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:vreality.fr": {
+    "checked_at": "2026-06-18T23:43:26.396190",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:vrtxlabs.com": {
+    "checked_at": "2026-06-18T23:49:49.867473",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:vsensestudio.com": {
+    "checked_at": "2026-06-19T00:06:01.359347",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
+  },
+  "@domain:vustudio.com": {
+    "checked_at": "2026-06-18T23:56:05.027102",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:walla.com": {
+    "checked_at": "2026-06-18T23:42:26.908653",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:wdg.consulting": {
+    "checked_at": "2026-06-18T23:51:20.588087",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:web.de": {
+    "checked_at": "2026-06-19T00:03:27.176435",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:werft6.com": {
+    "checked_at": "2026-06-18T23:56:09.849407",
+    "detail": "smtp_rejected_554_5.7.1 Service unavailable; Client host [45.114.89.",
+    "status": "reject"
+  },
+  "@domain:wilhelm-media.at": {
+    "checked_at": "2026-06-19T00:04:13.603350",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:wsp.com": {
+    "checked_at": "2026-06-18T22:25:49.217814",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:xrbs.mx": {
+    "checked_at": "2026-06-18T23:36:02.214585",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
+  },
+  "@domain:yahoo.fr": {
+    "checked_at": "2026-06-18T23:53:17.449965",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:yandex.ru": {
+    "checked_at": "2026-06-18T23:41:14.600962",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:yordstudio.com": {
+    "checked_at": "2026-06-18T23:52:59.016831",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "@domain:zameen.com": {
+    "checked_at": "2026-06-18T22:29:23.785617",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
+  "@domain:zwa.archi": {
+    "checked_at": "2026-06-18T23:38:10.473675",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "a.andrieu@studiopiranese.com": {
+    "checked_at": "2026-06-18T23:35:26.672092",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
+  },
   "a.kazakov@lunas.pro": {
     "checked_at": "2026-06-02T16:36:03.956111",
     "detail": "smtp_rejected_550_5.1.1 The email account that you tried to reach do",
@@ -48,6 +1258,16 @@
     "checked_at": "2026-06-17T10:09:29.303683",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "a.sturel@caalcs.com": {
+    "checked_at": "2026-06-18T22:25:53.147878",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
+  "aaron@enhancedimage.com": {
+    "checked_at": "2026-06-18T23:53:08.267973",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
   },
   "abbas.nabizade@gmail.com": {
     "checked_at": "2026-06-02T16:35:24.833097",
@@ -84,15 +1304,40 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "abendigeri@intelionsys.com": {
+    "checked_at": "2026-06-19T00:05:47.536639",
+    "detail": "smtp_rejected_550_(verifier.eagle3d.local) [45.114.89.160]:64259 is ",
+    "status": "reject"
+  },
+  "abhinav@tiltlabs.io": {
+    "checked_at": "2026-06-18T23:54:32.392772",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "abhishek7800746800@gmail.com": {
     "checked_at": "2026-06-02T16:36:40.241846",
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "abisheikramanathan.2302003@srec.ac.in": {
+    "checked_at": "2026-06-18T23:39:19.068169",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "abraj2324@gmail.com": {
     "checked_at": "2026-06-02T16:33:55.850708",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "aburger@emht.com": {
+    "checked_at": "2026-06-18T23:52:33.737910",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "accounts@griphic.com": {
+    "checked_at": "2026-06-18T23:41:35.611158",
+    "detail": "smtp_error_ConnectionRefusedError",
+    "status": "unknown"
   },
   "achilds@reflectionsproduction.com": {
     "checked_at": "2026-06-17T10:09:27.878325",
@@ -104,6 +1349,11 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "adam@visimir.com": {
+    "checked_at": "2026-06-18T23:33:43.969531",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
+  },
   "addverbbusiness@gmail.com": {
     "checked_at": "2026-06-17T10:09:07.839825",
     "detail": "smtp_accepted_250",
@@ -113,6 +1363,11 @@
     "checked_at": "2026-06-17T10:10:57.414849",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "adlerzamora@xrbs.mx": {
+    "checked_at": "2026-06-18T23:36:02.214453",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
   },
   "admin@cravingdigital.com": {
     "checked_at": "2026-06-17T10:10:34.252011",
@@ -128,6 +1383,26 @@
     "checked_at": "2026-06-02T16:36:24.583720",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "admin@unilapse.com": {
+    "checked_at": "2026-06-19T00:03:18.375829",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "adminsoporte@villascapital.com.co": {
+    "checked_at": "2026-06-18T23:38:51.421090",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "adrien.lothe@parella.fr": {
+    "checked_at": "2026-06-18T23:55:15.805422",
+    "detail": "smtp_error_ConnectionRefusedError",
+    "status": "unknown"
+  },
+  "adrien.lothe@yahoo.fr": {
+    "checked_at": "2026-06-18T23:53:17.449490",
+    "detail": "smtp_timeout",
+    "status": "unknown"
   },
   "agcaonr@gmail.com": {
     "checked_at": "2026-06-17T10:11:59.310391",
@@ -149,15 +1424,40 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "ajameel@ironwoodventure.com": {
+    "checked_at": "2026-06-18T23:43:00.765820",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "ajayvirsocial@post.com": {
+    "checked_at": "2026-06-19T00:06:15.098729",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "akshitapatni27@gmail.com": {
     "checked_at": "2026-06-17T10:09:56.833611",
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "alain.abramo@hotmail.it": {
+    "checked_at": "2026-06-18T22:30:28.911205",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
+  },
+  "alba@kinerama.com": {
+    "checked_at": "2026-06-18T23:41:39.821673",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "alban.kucana@gmail.com": {
     "checked_at": "2026-06-02T16:33:45.721008",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "albert@btwnexhibits.com": {
+    "checked_at": "2026-06-18T23:41:35.197727",
+    "detail": "smtp_timeout",
+    "status": "unknown"
   },
   "alberto.carrillo@squintopera.com": {
     "checked_at": "2026-06-17T10:10:49.003768",
@@ -199,8 +1499,23 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "alex@landscapingbee.com": {
+    "checked_at": "2026-06-18T22:26:57.156600",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
+  "alex@likenesslabs.ai": {
+    "checked_at": "2026-06-18T23:36:19.317500",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "alexandre@mile80.com": {
     "checked_at": "2026-06-02T16:35:56.652662",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
+  "alexandru@metaworldx.com": {
+    "checked_at": "2026-06-18T22:29:11.351962",
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
@@ -208,6 +1523,11 @@
     "checked_at": "2026-06-02T16:35:55.408506",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "ali.asgher@cubedots.com": {
+    "checked_at": "2026-06-19T00:03:50.380595",
+    "detail": "smtp_timeout",
+    "status": "unknown"
   },
   "alias199911@gmail.com": {
     "checked_at": "2026-06-02T16:35:23.801658",
@@ -239,6 +1559,11 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "alvin.teves@vustudio.com": {
+    "checked_at": "2026-06-18T23:56:05.026606",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "alzosmol@mail.ru": {
     "checked_at": "2026-06-17T10:10:59.419129",
     "detail": "smtp_accepted_250",
@@ -264,6 +1589,11 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "amin.mody@corgan.com": {
+    "checked_at": "2026-06-18T23:42:20.790813",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "aminemohamed.9178@gmail.com": {
     "checked_at": "2026-06-02T16:35:25.875225",
     "detail": "smtp_accepted_250",
@@ -288,6 +1618,11 @@
     "checked_at": "2026-06-17T10:10:58.198334",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "ammad@menakta.com": {
+    "checked_at": "2026-06-18T22:27:37.309330",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
   },
   "amministrazione@fattoriavittadini.it": {
     "checked_at": "2026-06-17T10:12:01.299932",
@@ -329,6 +1664,11 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "andrei@labclass.co.uk": {
+    "checked_at": "2026-06-18T23:53:38.860181",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "andrei@warped-studios.co.uk": {
     "checked_at": "2026-06-17T10:10:38.683599",
     "detail": "smtp_accepted_250",
@@ -369,6 +1709,11 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "anna@yordstudio.com": {
+    "checked_at": "2026-06-18T23:52:59.016680",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "annachaika74@gmail.com": {
     "checked_at": "2026-06-02T16:35:49.665649",
     "detail": "smtp_accepted_250",
@@ -384,10 +1729,25 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "anton@adventureclub.io": {
+    "checked_at": "2026-06-19T00:00:46.688945",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "antoniokupreano@gmail.com": {
     "checked_at": "2026-06-02T16:33:21.781745",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "antun.bojko@alderwin.com": {
+    "checked_at": "2026-06-18T22:26:47.644950",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
+  "ao@zwa.archi": {
+    "checked_at": "2026-06-18T23:38:10.473555",
+    "detail": "smtp_timeout",
+    "status": "unknown"
   },
   "apexw009@gmail.com": {
     "checked_at": "2026-06-02T16:32:42.865972",
@@ -469,6 +1829,11 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "athao@anythinklibraries.org": {
+    "checked_at": "2026-06-19T00:02:15.584625",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "auzan.lab@gmail.com": {
     "checked_at": "2026-06-06T13:50:57.874136",
     "detail": "smtp_accepted_250",
@@ -499,6 +1864,16 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "ayman@livvy.com": {
+    "checked_at": "2026-06-19T00:06:10.721729",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "azhar@v-lab.uk": {
+    "checked_at": "2026-06-18T23:55:52.622983",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "bamsik9799@gmail.com": {
     "checked_at": "2026-06-02T16:33:49.578959",
     "detail": "smtp_accepted_250",
@@ -518,6 +1893,26 @@
     "checked_at": "2026-06-17T10:10:01.269885",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "benjamin@jacobandco.com": {
+    "checked_at": "2026-06-18T23:50:06.374185",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "benjamin@ohsee.co.uk": {
+    "checked_at": "2026-06-19T00:05:56.509041",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "bestellung-tmt@materna.group": {
+    "checked_at": "2026-06-18T23:55:17.320057",
+    "detail": "smtp_rejected_550_5.7.1 Service unavailable, Client host [45.114.89.",
+    "status": "reject"
+  },
+  "bestellung@b-rex.de": {
+    "checked_at": "2026-06-18T23:54:36.633058",
+    "detail": "smtp_timeout",
+    "status": "unknown"
   },
   "bhutopurbomediaankan@gmail.com": {
     "checked_at": "2026-06-02T16:35:57.610398",
@@ -554,6 +1949,11 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "blake.victor@rolling7graphics.com": {
+    "checked_at": "2026-06-18T23:37:50.543618",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "bloodnexusstudio@gmail.com": {
     "checked_at": "2026-06-02T16:33:21.954630",
     "detail": "smtp_accepted_250",
@@ -584,6 +1984,21 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "bpower@hntb.com": {
+    "checked_at": "2026-06-18T23:51:33.502946",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "brett@letsfilmit.net": {
+    "checked_at": "2026-06-18T23:42:43.323770",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "brian@beyondcad.com": {
+    "checked_at": "2026-06-18T23:35:56.553483",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "brian@brianfountain.com": {
     "checked_at": "2026-06-02T16:32:54.592061",
     "detail": "smtp_accepted_250",
@@ -593,6 +2008,11 @@
     "checked_at": "2026-06-17T10:09:58.536054",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "bruno.pennes@shadow.tech": {
+    "checked_at": "2026-06-18T23:33:53.396085",
+    "detail": "smtp_timeout",
+    "status": "unknown"
   },
   "bryan.magner@bolton-menk.com": {
     "checked_at": "2026-06-17T10:10:56.202983",
@@ -629,6 +2049,11 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "c.reyes@academiadeartesguerrero.com": {
+    "checked_at": "2026-06-18T23:40:04.431565",
+    "detail": "smtp_error_OSError",
+    "status": "unknown"
+  },
   "cabylano@gmail.com": {
     "checked_at": "2026-06-02T16:34:35.812401",
     "detail": "smtp_accepted_250",
@@ -639,10 +2064,25 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "caleb@dwellito.com": {
+    "checked_at": "2026-06-18T23:34:21.929756",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "carlos.lopes@aecom.com": {
+    "checked_at": "2026-06-18T22:26:39.960503",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
+  },
   "carlosp89@gmail.com": {
     "checked_at": "2026-06-02T16:36:02.408402",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "carter@obsidiancapitalco.com": {
+    "checked_at": "2026-06-19T00:06:35.630735",
+    "detail": "smtp_timeout",
+    "status": "unknown"
   },
   "cavallojuan75@gmail.com": {
     "checked_at": "2026-06-02T16:33:27.702647",
@@ -656,6 +2096,11 @@
   },
   "ceopon25@gmail.com": {
     "checked_at": "2026-06-18T00:16:17.511015",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "cerena@harmony-ms.com": {
+    "checked_at": "2026-06-19T00:03:01.923358",
     "detail": "smtp_timeout",
     "status": "unknown"
   },
@@ -679,6 +2124,11 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "cheyul@cheyul.com": {
+    "checked_at": "2026-06-18T23:51:54.916675",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "chineduogbalu@gmail.com": {
     "checked_at": "2026-06-02T16:36:13.975020",
     "detail": "smtp_accepted_250",
@@ -689,8 +2139,23 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "chris.harris@bolton-menk.com": {
+    "checked_at": "2026-06-19T00:06:46.482698",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
+  },
   "christian.hodges@smec.com": {
     "checked_at": "2026-06-17T10:09:37.731613",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
+  "christo.vancon@orange.fr": {
+    "checked_at": "2026-06-18T23:50:02.150890",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "chuck@prospecthilldigital.com": {
+    "checked_at": "2026-06-18T22:26:02.642187",
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
@@ -709,10 +2174,35 @@
     "detail": "smtp_code_503_5.5.1 command not expected",
     "status": "unknown"
   },
+  "claudio.espinoza@chileatiende.cl": {
+    "checked_at": "2026-06-19T00:04:51.870416",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "claudio@athomus.com": {
+    "checked_at": "2026-06-18T22:29:59.191250",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
+  "claudio@kunaverso.com": {
+    "checked_at": "2026-06-19T00:04:30.691961",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "claudio@otripi.com": {
+    "checked_at": "2026-06-18T23:40:03.490037",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "cmus84@gmail.com": {
     "checked_at": "2026-06-02T16:35:59.934125",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "code@molotovcocktail.tv": {
+    "checked_at": "2026-06-18T23:54:40.863581",
+    "detail": "smtp_timeout",
+    "status": "unknown"
   },
   "cody.r.simons@gmail.com": {
     "checked_at": "2026-06-06T13:50:58.766011",
@@ -729,6 +2219,16 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "connor@latitude83aviation.com": {
+    "checked_at": "2026-06-18T23:38:24.399056",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "contact@dalie.company": {
+    "checked_at": "2026-06-19T00:00:20.935515",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
+  },
   "contact@elenadimopoulou.com": {
     "checked_at": "2026-06-02T16:34:37.075538",
     "detail": "smtp_accepted_250",
@@ -736,6 +2236,11 @@
   },
   "contact@otripi.com": {
     "checked_at": "2026-06-18T00:15:16.072084",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "contact@pixnreal.com": {
+    "checked_at": "2026-06-18T23:40:16.664267",
     "detail": "smtp_timeout",
     "status": "unknown"
   },
@@ -749,6 +2254,11 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "contact@vsensestudio.com": {
+    "checked_at": "2026-06-19T00:06:01.359274",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
+  },
   "contato.luumia@gmail.com": {
     "checked_at": "2026-06-02T16:32:47.216445",
     "detail": "smtp_accepted_250",
@@ -758,6 +2268,11 @@
     "checked_at": "2026-06-17T10:10:07.086336",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "contato@visualdynamics3d.com": {
+    "checked_at": "2026-06-18T23:34:55.768922",
+    "detail": "smtp_timeout",
+    "status": "unknown"
   },
   "convex.developer2@gmail.com": {
     "checked_at": "2026-06-02T16:34:00.576197",
@@ -773,6 +2288,11 @@
     "checked_at": "2026-06-17T10:11:58.520931",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "corporate@navyspade.eu": {
+    "checked_at": "2026-06-18T23:34:09.610945",
+    "detail": "smtp_timeout",
+    "status": "unknown"
   },
   "cory.motion.exe@gmail.com": {
     "checked_at": "2026-06-02T16:34:13.168989",
@@ -804,6 +2324,16 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "crea@navi3d.mx": {
+    "checked_at": "2026-06-18T23:34:26.144014",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "cristian.reyes@celesteypiedra.com": {
+    "checked_at": "2026-06-18T23:51:16.181712",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "cristianadrianmedina@gmail.com": {
     "checked_at": "2026-06-17T15:40:02.488826",
     "detail": "smtp_accepted_250",
@@ -824,6 +2354,11 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "d-genkawa@cresco.co.jp": {
+    "checked_at": "2026-06-18T23:54:11.235268",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "d.shaterzadeh@gmail.com": {
     "checked_at": "2026-06-02T16:33:00.967082",
     "detail": "smtp_accepted_250",
@@ -834,10 +2369,25 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "dan@dancreek.com": {
+    "checked_at": "2026-06-18T23:42:16.560678",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "daniel.m.mogale@gmail.com": {
     "checked_at": "2026-06-02T16:35:29.079161",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "daniel@eisvisual.com": {
+    "checked_at": "2026-06-18T23:54:20.216130",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "daniela.chiarabella@iconiagroup.com": {
+    "checked_at": "2026-06-19T00:04:18.081596",
+    "detail": "smtp_timeout",
+    "status": "unknown"
   },
   "daniele.frontini@motik.it": {
     "checked_at": "2026-06-17T10:11:39.431364",
@@ -859,6 +2409,16 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "david.mckinley@glasseye.ie": {
+    "checked_at": "2026-06-19T00:05:52.021897",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "david@next-home.pro": {
+    "checked_at": "2026-06-18T22:25:59.605881",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
+  },
   "davide.stiz@ophirstudio.com": {
     "checked_at": "2026-06-17T10:09:26.977294",
     "detail": "smtp_accepted_250",
@@ -874,6 +2434,11 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "dbteam@novelsignaturehomes.com": {
+    "checked_at": "2026-06-18T23:42:22.680706",
+    "detail": "smtp_rejected_550_Message rejected! Your ip/hostname (verifier.eagle",
+    "status": "reject"
+  },
   "dchilds@frankndesign.com": {
     "checked_at": "2026-06-17T10:10:08.004895",
     "detail": "smtp_accepted_250",
@@ -883,6 +2448,16 @@
     "checked_at": "2026-06-02T16:36:12.360722",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "ddtxbeki2@mozmail.com": {
+    "checked_at": "2026-06-18T23:55:19.863021",
+    "detail": "smtp_rejected_550_5.7.1 IP address blacklisted by recipient",
+    "status": "reject"
+  },
+  "dean@antidotemarketing.com": {
+    "checked_at": "2026-06-19T00:07:36.601315",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
   },
   "debanjan798094@gmail.com": {
     "checked_at": "2026-06-17T10:10:35.443238",
@@ -909,6 +2484,16 @@
     "detail": "smtp_code_451_Unauthorised request. Try again later",
     "status": "unknown"
   },
+  "denizhan@archinord.com": {
+    "checked_at": "2026-06-18T23:39:40.243504",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "dennis@playthecrowd.com": {
+    "checked_at": "2026-06-19T00:00:25.231039",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "dennisk@smartspatial.com": {
     "checked_at": "2026-06-02T16:37:57.462680",
     "detail": "smtp_accepted_250",
@@ -928,6 +2513,16 @@
     "checked_at": "2026-06-02T16:36:28.388578",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "developer.team@pixielab.id": {
+    "checked_at": "2026-06-18T23:42:35.104740",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "development@cassettegroup.com": {
+    "checked_at": "2026-06-18T23:40:45.548394",
+    "detail": "smtp_timeout",
+    "status": "unknown"
   },
   "devitaak363@gmail.com": {
     "checked_at": "2026-06-02T16:36:00.483932",
@@ -954,6 +2549,21 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "dillan@leap.co.za": {
+    "checked_at": "2026-06-19T00:05:20.078322",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "dinesh@ctrlaltxp.com": {
+    "checked_at": "2026-06-18T22:30:19.156324",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
+  "dinesh@timelogica.com": {
+    "checked_at": "2026-06-19T00:05:15.232512",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "dipakshantideep@gmail.com": {
     "checked_at": "2026-06-17T10:09:24.367525",
     "detail": "smtp_accepted_250",
@@ -964,6 +2574,11 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "dk@group2e.com": {
+    "checked_at": "2026-06-19T00:07:40.872318",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "dkew@ualberta.ca": {
     "checked_at": "2026-06-02T16:34:33.458843",
     "detail": "smtp_code_450_4.1.8 <verify@eagle3d.local>: Sender address rejec",
@@ -973,6 +2588,11 @@
     "checked_at": "2026-06-02T16:35:24.641652",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "domenico.lauriola@clerhp.com": {
+    "checked_at": "2026-06-19T00:08:02.453921",
+    "detail": "smtp_timeout",
+    "status": "unknown"
   },
   "domworldhub@gmail.com": {
     "checked_at": "2026-06-17T10:09:38.097349",
@@ -1019,6 +2639,11 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "eagle1@interaktivni-vizualizace.cz": {
+    "checked_at": "2026-06-18T22:27:27.364818",
+    "detail": "smtp_code_503_5.5.1 command not expected",
+    "status": "unknown"
+  },
   "eagledemo@invicara.com": {
     "checked_at": "2026-06-17T10:09:20.292209",
     "detail": "smtp_code_450_4.1.2 <eagledemo@invicara.com>: Recipient address ",
@@ -1038,6 +2663,16 @@
     "checked_at": "2026-06-02T16:36:38.885001",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "eclark@oktra.co.uk": {
+    "checked_at": "2026-06-18T23:42:51.962160",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "ed.potter@cbre.com": {
+    "checked_at": "2026-06-18T23:39:32.098699",
+    "detail": "smtp_timeout",
+    "status": "unknown"
   },
   "eirik.murbraech@ramboll.no": {
     "checked_at": "2026-06-17T10:09:27.503849",
@@ -1074,6 +2709,11 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "eloizidou@ekagroup.com": {
+    "checked_at": "2026-06-18T22:27:15.839429",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
+  },
   "elouise@hireme.net": {
     "checked_at": "2026-06-02T16:36:22.763233",
     "detail": "smtp_rejected_550_5.2.1 The email account that you tried to reach is",
@@ -1109,6 +2749,11 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "entwicklung@tarakos.de": {
+    "checked_at": "2026-06-18T23:36:06.949883",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "espantadoublea@gmail.com": {
     "checked_at": "2026-06-17T10:08:35.931485",
     "detail": "smtp_accepted_250",
@@ -1118,6 +2763,16 @@
     "checked_at": "2026-06-17T10:10:56.534045",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "eugene.traytyak@civitta.com": {
+    "checked_at": "2026-06-18T23:53:25.728163",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "eugene@ansara.co.za": {
+    "checked_at": "2026-06-18T23:51:11.759299",
+    "detail": "smtp_timeout",
+    "status": "unknown"
   },
   "evonik_ai_coach@materna.group": {
     "checked_at": "2026-06-17T10:09:09.145231",
@@ -1179,6 +2834,11 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "fareed.masood@zameen.com": {
+    "checked_at": "2026-06-18T22:29:23.785441",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
   "fashioninmotion88@gmail.com": {
     "checked_at": "2026-06-17T10:10:29.080176",
     "detail": "smtp_accepted_250",
@@ -1219,6 +2879,11 @@
     "detail": "smtp_code_452_4.2.2 The recipient's inbox is out of storage spac",
     "status": "unknown"
   },
+  "finance@iwpsglobal.com": {
+    "checked_at": "2026-06-18T23:56:22.783078",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "financeiro@level.dev.br": {
     "checked_at": "2026-06-17T10:11:47.130081",
     "detail": "smtp_rejected_550_5.1.8 <verify@eagle3d.local>: Sender address rejec",
@@ -1249,6 +2914,16 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "fozayel.ayaz@northsouth.edu": {
+    "checked_at": "2026-06-18T23:52:42.662532",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
+  },
+  "frankhindriks@dimensionpixels.nl": {
+    "checked_at": "2026-06-18T23:43:21.211440",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "franklin19652@gmail.com": {
     "checked_at": "2026-06-02T16:33:40.931132",
     "detail": "smtp_accepted_250",
@@ -1264,10 +2939,20 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "gabriel@studiomoore3d.com": {
+    "checked_at": "2026-06-19T00:01:36.761559",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
+  },
   "gabriella.miller@fortescue.com": {
     "checked_at": "2026-06-17T10:11:31.776651",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "gabrielle.pepin@wsp.com": {
+    "checked_at": "2026-06-18T22:25:49.217521",
+    "detail": "smtp_timeout",
+    "status": "unknown"
   },
   "gadgetsvillage13@gmail.com": {
     "checked_at": "2026-06-02T16:35:28.793152",
@@ -1308,6 +2993,16 @@
     "checked_at": "2026-06-02T16:36:36.448793",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "gerrit.gugau@qbeiq.de": {
+    "checked_at": "2026-06-18T22:29:06.021580",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
+  },
+  "gfrgarbkru@mail.ru": {
+    "checked_at": "2026-06-19T00:02:45.344449",
+    "detail": "smtp_timeout",
+    "status": "unknown"
   },
   "ggeelloo@gmail.com": {
     "checked_at": "2026-06-18T00:16:47.567008",
@@ -1359,6 +3054,11 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "gredes@kunapak.com": {
+    "checked_at": "2026-06-19T00:05:24.316755",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "greensteel@raumvisionen.de": {
     "checked_at": "2026-06-17T10:10:50.699751",
     "detail": "smtp_rejected_550_Sender (eagle3d.local) has no A, AAAA, or MX DNS r",
@@ -1389,6 +3089,16 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "gyorgy.szabo@futureinformatics.ch": {
+    "checked_at": "2026-06-19T00:01:46.177345",
+    "detail": "smtp_error_ConnectionRefusedError",
+    "status": "unknown"
+  },
+  "gyula@avc.ie": {
+    "checked_at": "2026-06-18T23:52:29.125383",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "hackerbro18@gmail.com": {
     "checked_at": "2026-06-02T16:35:56.839288",
     "detail": "smtp_accepted_250",
@@ -1396,6 +3106,11 @@
   },
   "hadadhadi326@gmail.com": {
     "checked_at": "2026-06-17T10:11:32.408840",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
+  "hamemal604@framitag.com": {
+    "checked_at": "2026-06-18T22:27:05.763696",
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
@@ -1418,6 +3133,16 @@
     "checked_at": "2026-06-02T16:33:10.141133",
     "detail": "smtp_rejected_554_5.7.0 Blocked - see https://support.proofpoint.com",
     "status": "reject"
+  },
+  "harrison@aireal.io": {
+    "checked_at": "2026-06-19T00:03:35.378768",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "harrison@prism3d.ai": {
+    "checked_at": "2026-06-18T23:53:03.750293",
+    "detail": "smtp_timeout",
+    "status": "unknown"
   },
   "harshaiu.24.04@gmail.com": {
     "checked_at": "2026-06-02T16:36:12.643545",
@@ -1444,6 +3169,11 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "hbarse@aldar.com": {
+    "checked_at": "2026-06-18T22:29:38.142809",
+    "detail": "smtp_rejected_550_5.7.1 Service unavailable, Client host [45.114.89.",
+    "status": "reject"
+  },
   "helderalves1000@gmail.com": {
     "checked_at": "2026-06-02T16:34:55.640350",
     "detail": "smtp_accepted_250",
@@ -1454,6 +3184,26 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "hello@archvizexperiences.com": {
+    "checked_at": "2026-06-18T23:39:10.864717",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "hello@flexihouse.co.nz": {
+    "checked_at": "2026-06-18T22:27:01.000636",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
+  "hello@ursheredworlds.com": {
+    "checked_at": "2026-06-19T00:01:30.757760",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "helpdesk@dallara.it": {
+    "checked_at": "2026-06-18T23:39:51.080049",
+    "detail": "smtp_rejected_550_(verifier.eagle3d.local) [45.114.89.174]:60501 is ",
+    "status": "reject"
+  },
   "hemil.ganatra@gmail.com": {
     "checked_at": "2026-06-02T16:35:33.359465",
     "detail": "smtp_accepted_250",
@@ -1463,6 +3213,11 @@
     "checked_at": "2026-06-17T10:11:57.257297",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "hoa.nguyenphu@ut.edu.vn": {
+    "checked_at": "2026-06-19T00:05:36.631316",
+    "detail": "smtp_timeout",
+    "status": "unknown"
   },
   "hoaanhduc8911@gmail.com": {
     "checked_at": "2026-06-17T10:09:17.221912",
@@ -1504,6 +3259,11 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "hugo.guidet@pacifa-decision.com": {
+    "checked_at": "2026-06-18T23:55:44.393653",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "huseyin.emeci@archinord.com": {
     "checked_at": "2026-06-17T10:12:00.280463",
     "detail": "smtp_rejected_550_5.1.1 The email account that you tried to reach do",
@@ -1523,6 +3283,16 @@
     "checked_at": "2026-06-17T10:11:25.720520",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "ianokinda@usiku.africa": {
+    "checked_at": "2026-06-19T00:01:41.216297",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "ibrahim@plotvis.nl": {
+    "checked_at": "2026-06-19T00:07:45.311063",
+    "detail": "smtp_timeout",
+    "status": "unknown"
   },
   "ict01bt@outlook.com": {
     "checked_at": "2026-06-17T10:08:41.735055",
@@ -1584,6 +3354,16 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "igor.polyakov@hotsnow.fi": {
+    "checked_at": "2026-06-18T22:30:06.040269",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
+  "ilya.v@equashield.com": {
+    "checked_at": "2026-06-19T00:03:14.112729",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "imagos@gmail.com": {
     "checked_at": "2026-06-02T16:34:12.882034",
     "detail": "smtp_accepted_250",
@@ -1614,6 +3394,21 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "info@cgviz.space": {
+    "checked_at": "2026-06-18T23:51:24.828417",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "info@datawebservice.it": {
+    "checked_at": "2026-06-18T23:56:27.302634",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "info@espicemedia.com": {
+    "checked_at": "2026-06-18T23:39:59.290310",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "info@futureact.eu": {
     "checked_at": "2026-06-17T10:10:38.445904",
     "detail": "smtp_connect_failed",
@@ -1626,6 +3421,11 @@
   },
   "info@lanternedigitale.com": {
     "checked_at": "2026-06-17T10:10:42.351737",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
+  "info@learningbydoingxr.com": {
+    "checked_at": "2026-06-18T22:26:44.113131",
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
@@ -1664,6 +3464,31 @@
     "detail": "smtp_connect_failed",
     "status": "unknown"
   },
+  "info@smartarchviz.com": {
+    "checked_at": "2026-06-18T23:55:15.018913",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "info@studio3n3.com": {
+    "checked_at": "2026-06-19T00:02:11.435660",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "info@visionanddesign.co.uk": {
+    "checked_at": "2026-06-18T23:37:22.067934",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "info@wdg.consulting": {
+    "checked_at": "2026-06-18T23:51:20.587878",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "info@wilhelm-media.at": {
+    "checked_at": "2026-06-19T00:04:13.603292",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "informatika.lukrecija@gmail.com": {
     "checked_at": "2026-06-02T16:34:35.133757",
     "detail": "smtp_accepted_250",
@@ -1699,6 +3524,11 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "it@powdermountain.com": {
+    "checked_at": "2026-06-18T23:34:13.752233",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "it@spaceform.io": {
     "checked_at": "2026-06-17T10:11:22.870131",
     "detail": "smtp_accepted_250",
@@ -1719,6 +3549,11 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "j.jozinovic@cs-mq.de": {
+    "checked_at": "2026-06-18T22:29:32.243842",
+    "detail": "smtp_rejected_550_5.7.1 Service unavailable, Client host [45.114.89.",
+    "status": "reject"
+  },
   "j.sanchezmoya@libelium.com": {
     "checked_at": "2026-06-17T10:09:40.376765",
     "detail": "smtp_accepted_250",
@@ -1729,8 +3564,23 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "jader@movipar.com.br": {
+    "checked_at": "2026-06-18T22:26:30.292878",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
+  },
   "jahva_game11@hotmail.com": {
     "checked_at": "2026-06-02T16:36:22.352715",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
+  },
+  "jaime@ruptura.cl": {
+    "checked_at": "2026-06-18T23:37:30.298302",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "jallred@archnexus.com": {
+    "checked_at": "2026-06-18T22:29:20.579965",
     "detail": "smtp_disconnected",
     "status": "unknown"
   },
@@ -1764,6 +3614,11 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "jatin@mousencheese.design": {
+    "checked_at": "2026-06-18T23:38:02.788560",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "jeanscarma@gmail.com": {
     "checked_at": "2026-06-02T16:33:59.624521",
     "detail": "smtp_accepted_250",
@@ -1789,6 +3644,11 @@
     "detail": "smtp_code_452_4.2.2 The recipient's inbox is out of storage spac",
     "status": "unknown"
   },
+  "jijop42123@makroyal.com": {
+    "checked_at": "2026-06-18T22:27:19.496994",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
   "jmalave757@gmail.com": {
     "checked_at": "2026-06-02T16:34:04.562684",
     "detail": "smtp_accepted_250",
@@ -1806,6 +3666,16 @@
   },
   "john.dollus@wsp.com": {
     "checked_at": "2026-06-17T10:09:39.695428",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
+  "john.simpson@glidertech.com": {
+    "checked_at": "2026-06-19T00:05:10.973460",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
+  },
+  "john.tangarife@colmayor.edu.co": {
+    "checked_at": "2026-06-18T22:30:15.461187",
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
@@ -1829,6 +3699,11 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "jonathan@locationxr.com": {
+    "checked_at": "2026-06-18T23:39:45.027796",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "jonny.bradley@jacobs.com": {
     "checked_at": "2026-06-02T16:33:40.079076",
     "detail": "smtp_connect_failed",
@@ -1843,6 +3718,16 @@
     "checked_at": "2026-06-02T16:35:23.204434",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "josh@mappings.ai": {
+    "checked_at": "2026-06-18T23:37:09.292163",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "joshua@inspacexr.com": {
+    "checked_at": "2026-06-19T00:01:22.537591",
+    "detail": "smtp_timeout",
+    "status": "unknown"
   },
   "joshuatebeau@gmail.com": {
     "checked_at": "2026-06-02T16:33:28.040700",
@@ -1866,6 +3751,11 @@
   },
   "jrodysy@gmail.com": {
     "checked_at": "2026-06-02T16:36:49.616217",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
+  "jsalamanca@saitor.es": {
+    "checked_at": "2026-06-18T23:41:59.858754",
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
@@ -1904,10 +3794,20 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "justin@newoodtechnology.com": {
+    "checked_at": "2026-06-18T23:53:30.018571",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "justinmichaelredd@gmail.com": {
     "checked_at": "2026-06-17T10:10:31.493921",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "k.bushtevich@lunas.pro": {
+    "checked_at": "2026-06-18T23:37:38.323539",
+    "detail": "smtp_timeout",
+    "status": "unknown"
   },
   "kaderalgerien97@gmail.com": {
     "checked_at": "2026-06-02T16:33:23.869697",
@@ -1954,6 +3854,11 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "keith@arecibomedia.com": {
+    "checked_at": "2026-06-18T22:29:36.046485",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
   "kellirios@icloud.com": {
     "checked_at": "2026-06-02T16:34:51.991134",
     "detail": "smtp_rejected_554_5.7.0 Blocked - see https://support.proofpoint.com",
@@ -1966,6 +3871,11 @@
   },
   "kenjloyd@gmail.com": {
     "checked_at": "2026-06-17T10:10:07.245776",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
+  "kentchung@appnidea.com": {
+    "checked_at": "2026-06-18T22:29:41.310535",
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
@@ -1993,6 +3903,11 @@
     "checked_at": "2026-06-02T16:32:40.177287",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "kevin@rayadvertising.com": {
+    "checked_at": "2026-06-18T23:50:28.836121",
+    "detail": "smtp_timeout",
+    "status": "unknown"
   },
   "kha306819@gmail.com": {
     "checked_at": "2026-06-17T10:09:07.457875",
@@ -2059,6 +3974,11 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "kremer@werft6.com": {
+    "checked_at": "2026-06-18T23:56:09.849350",
+    "detail": "smtp_rejected_554_5.7.1 Service unavailable; Client host [45.114.89.",
+    "status": "reject"
+  },
   "krish@vismaya.co.uk": {
     "checked_at": "2026-06-17T10:09:52.940837",
     "detail": "smtp_accepted_250",
@@ -2114,6 +4034,11 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "leo.rinato@4dpipeline.com": {
+    "checked_at": "2026-06-18T23:50:58.922845",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "lepipinaleli2@gmail.com": {
     "checked_at": "2026-06-17T10:08:36.428199",
     "detail": "smtp_accepted_250",
@@ -2123,6 +4048,26 @@
     "checked_at": "2026-06-02T16:36:04.556137",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "liam.birkett@mcgee.co.uk": {
+    "checked_at": "2026-06-18T23:35:36.123493",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "licence1@azibao.com": {
+    "checked_at": "2026-06-18T22:26:24.073671",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
+  },
+  "licenses@artbinary.com": {
+    "checked_at": "2026-06-18T23:38:34.770772",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "licenses@pureblink.com": {
+    "checked_at": "2026-06-18T23:38:58.010731",
+    "detail": "smtp_timeout",
+    "status": "unknown"
   },
   "liliv14728@snocv.com": {
     "checked_at": "2026-06-17T10:08:58.749541",
@@ -2159,10 +4104,20 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "ljm@cobim.co.kr": {
+    "checked_at": "2026-06-18T23:35:10.063672",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
+  },
   "lonelanterngames@gmail.com": {
     "checked_at": "2026-06-17T10:11:36.964601",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "looore@live.it": {
+    "checked_at": "2026-06-19T00:07:57.925556",
+    "detail": "smtp_timeout",
+    "status": "unknown"
   },
   "lorenzoantonucci91@gmail.com": {
     "checked_at": "2026-06-17T10:10:44.687705",
@@ -2179,6 +4134,11 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "luaay.naboulsi@impactmultimedia.com.au": {
+    "checked_at": "2026-06-19T00:04:35.617249",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
+  },
   "luanhtuankts@gmail.com": {
     "checked_at": "2026-06-02T16:37:54.922451",
     "detail": "smtp_accepted_250",
@@ -2188,6 +4148,11 @@
     "checked_at": "2026-06-02T16:33:28.890171",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "luca.egger@frego.ch": {
+    "checked_at": "2026-06-18T23:54:45.355868",
+    "detail": "smtp_timeout",
+    "status": "unknown"
   },
   "luca.fixy@soclecollections.com": {
     "checked_at": "2026-06-17T10:09:20.622167",
@@ -2224,6 +4189,16 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "lukas-heimrath@web.de": {
+    "checked_at": "2026-06-19T00:03:27.176395",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "luke@mused.com": {
+    "checked_at": "2026-06-18T23:56:39.608315",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "lukejeffers41@gmail.com": {
     "checked_at": "2026-06-17T10:11:14.026781",
     "detail": "smtp_accepted_250",
@@ -2233,6 +4208,11 @@
     "checked_at": "2026-06-17T10:11:47.330112",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "m.butto@thelios.com": {
+    "checked_at": "2026-06-18T22:29:54.143194",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
   },
   "m.ernst@darknet-solutions.de": {
     "checked_at": "2026-06-17T10:09:37.416427",
@@ -2248,6 +4228,11 @@
     "checked_at": "2026-06-02T16:35:55.582847",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "mahdiyar@darcstudio.com": {
+    "checked_at": "2026-06-18T22:26:05.815229",
+    "detail": "smtp_rejected_550_5.7.1 Service unavailable, Client host [45.114.89.",
+    "status": "reject"
   },
   "mahmuda65begum@gmail.com": {
     "checked_at": "2026-06-17T10:11:23.148233",
@@ -2309,10 +4294,40 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "mark.casey@ukho.gov.uk": {
+    "checked_at": "2026-06-19T00:08:06.855615",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "mark@asano.app": {
     "checked_at": "2026-06-17T10:09:36.363785",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "marketing@blackshark.ai": {
+    "checked_at": "2026-06-18T23:38:20.152122",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "marketing@reptilebasics.com": {
+    "checked_at": "2026-06-18T23:35:22.218394",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "markus.dyer@peikko.com": {
+    "checked_at": "2026-06-18T23:56:18.547991",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "marthon_1@eosvalve.cl": {
+    "checked_at": "2026-06-19T00:01:06.319642",
+    "detail": "smtp_code_451_Temporary local problem - please try later",
+    "status": "unknown"
+  },
+  "martin@bendthevertecies.se": {
+    "checked_at": "2026-06-18T23:35:31.188311",
+    "detail": "smtp_timeout",
+    "status": "unknown"
   },
   "martintitoyan@gmail.com": {
     "checked_at": "2026-06-02T16:33:01.235401",
@@ -2329,6 +4344,11 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "matt@earlybirdvisual.com": {
+    "checked_at": "2026-06-18T23:40:33.334726",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "mattddattilio@gmail.com": {
     "checked_at": "2026-06-02T16:34:25.192842",
     "detail": "smtp_accepted_250",
@@ -2338,6 +4358,11 @@
     "checked_at": "2026-06-02T16:34:58.935444",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "matthew.seddon@proiceredigital.com": {
+    "checked_at": "2026-06-18T23:38:29.487081",
+    "detail": "smtp_timeout",
+    "status": "unknown"
   },
   "matthewalford035@gmail.com": {
     "checked_at": "2026-06-17T10:11:58.604704",
@@ -2429,15 +4454,35 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "mglover@prestigeav.com": {
+    "checked_at": "2026-06-19T00:03:37.906490",
+    "detail": "smtp_rejected_550_(verifier.eagle3d.local) [45.114.89.166]:63949 is ",
+    "status": "reject"
+  },
+  "mh_park@mhnt.co.kr": {
+    "checked_at": "2026-06-18T23:54:15.616446",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "mhd.ayman@hotmail.com": {
     "checked_at": "2026-06-02T16:35:49.980567",
     "detail": "smtp_disconnected",
+    "status": "unknown"
+  },
+  "mhennemann@proinspace.de": {
+    "checked_at": "2026-06-18T23:42:56.486215",
+    "detail": "smtp_timeout",
     "status": "unknown"
   },
   "mi.ch.ael.dhyd.e.8@googlemail.com": {
     "checked_at": "2026-06-02T16:36:25.033334",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "michael@soclecollections.com": {
+    "checked_at": "2026-06-18T22:30:02.052960",
+    "detail": "smtp_rejected_550_5.1.1 The email account that you tried to reach do",
+    "status": "reject"
   },
   "mightyworks360@gmail.com": {
     "checked_at": "2026-06-17T10:10:44.537288",
@@ -2453,6 +4498,16 @@
     "checked_at": "2026-06-17T10:12:01.990901",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "mike.mattucci@oglengineering.com": {
+    "checked_at": "2026-06-18T23:55:56.872733",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "mike@herolight.com": {
+    "checked_at": "2026-06-19T00:04:08.865676",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
   },
   "mikeegotanda@gmail.com": {
     "checked_at": "2026-06-02T16:33:54.532038",
@@ -2489,6 +4544,11 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "mmuthu@entourageintl.com": {
+    "checked_at": "2026-06-18T23:34:43.547123",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "modelling@molotovcocktail.tv": {
     "checked_at": "2026-06-02T16:35:37.168356",
     "detail": "smtp_accepted_250",
@@ -2508,6 +4568,11 @@
     "checked_at": "2026-06-17T10:11:56.884651",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "mopop@outlook.com.au": {
+    "checked_at": "2026-06-19T00:06:59.141919",
+    "detail": "smtp_timeout",
+    "status": "unknown"
   },
   "morgan@twinnation.co.uk": {
     "checked_at": "2026-06-17T10:10:53.564831",
@@ -2604,6 +4669,11 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "nadia@nudgyt.com": {
+    "checked_at": "2026-06-18T22:26:12.901359",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
   "nagarajamutha0@gmail.com": {
     "checked_at": "2026-06-17T10:09:11.588538",
     "detail": "smtp_accepted_250",
@@ -2624,10 +4694,25 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "napolitano@realagain.io": {
+    "checked_at": "2026-06-18T23:36:11.165603",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "nathanael.cpt@gmail.com": {
     "checked_at": "2026-06-06T13:51:04.105951",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "naveen.sachedeva@hcltech.com": {
+    "checked_at": "2026-06-19T00:02:33.056990",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "naveen@skipp.ai": {
+    "checked_at": "2026-06-19T00:00:50.882024",
+    "detail": "smtp_timeout",
+    "status": "unknown"
   },
   "nazi199420@gmail.com": {
     "checked_at": "2026-06-02T16:36:27.876215",
@@ -2679,6 +4764,11 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "nigelmasore@gmx.de": {
+    "checked_at": "2026-06-19T00:02:28.919968",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "nikhilbachwal@gmail.com": {
     "checked_at": "2026-06-17T10:09:07.163645",
     "detail": "smtp_accepted_250",
@@ -2698,6 +4788,11 @@
     "checked_at": "2026-06-17T10:11:15.150715",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "nova@novaconceptsny.com": {
+    "checked_at": "2026-06-19T00:02:03.237918",
+    "detail": "smtp_timeout",
+    "status": "unknown"
   },
   "nsoapps@hntb.com": {
     "checked_at": "2026-06-17T10:11:13.589012",
@@ -2733,6 +4828,11 @@
     "checked_at": "2026-06-17T10:10:57.980907",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "office@breeze-animation.com": {
+    "checked_at": "2026-06-19T00:04:26.469705",
+    "detail": "smtp_timeout",
+    "status": "unknown"
   },
   "office@frankndesign.com": {
     "checked_at": "2026-06-17T10:08:33.446692",
@@ -2789,6 +4889,11 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "omar.aloulou@gsmproject.com": {
+    "checked_at": "2026-06-18T23:34:34.260239",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "omarnawaz85@gmail.com": {
     "checked_at": "2026-06-07T14:00:11.080549",
     "detail": "smtp_accepted_250",
@@ -2839,6 +4944,11 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "paul.coerkamp@blits.ai": {
+    "checked_at": "2026-06-18T23:50:33.006893",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "paul@bootsmaat.com": {
     "checked_at": "2026-06-02T16:33:29.826793",
     "detail": "smtp_accepted_250",
@@ -2874,15 +4984,35 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "peter@vaars.co.uk": {
+    "checked_at": "2026-06-19T00:06:54.901018",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "phamgiahuybinh2002@gmail.com": {
     "checked_at": "2026-06-17T10:10:06.622377",
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "philipp@vrtxlabs.com": {
+    "checked_at": "2026-06-18T23:49:49.867314",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "piaggioconfig20@gmail.com": {
     "checked_at": "2026-06-17T10:10:07.555536",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "pibanez@bartlettcocke.com": {
+    "checked_at": "2026-06-18T23:41:54.687832",
+    "detail": "smtp_rejected_550_(verifier.eagle3d.local) [45.114.89.161]:60808 is ",
+    "status": "reject"
+  },
+  "pixel@mindboom.se": {
+    "checked_at": "2026-06-19T00:05:06.488995",
+    "detail": "smtp_timeout",
+    "status": "unknown"
   },
   "pixelstreaming173@gmail.com": {
     "checked_at": "2026-06-17T10:10:57.840398",
@@ -2909,9 +5039,29 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "pranshumansb@sketsxr.com": {
+    "checked_at": "2026-06-19T00:00:25.759724",
+    "detail": "smtp_error_ConnectionRefusedError",
+    "status": "unknown"
+  },
   "predrag.borojevic@png.systems": {
     "checked_at": "2026-06-17T10:09:24.178907",
     "detail": "smtp_code_541_5.7.1 Mail rejected due to antispam policy",
+    "status": "unknown"
+  },
+  "prinzregentenpark@raumvisionen.de": {
+    "checked_at": "2026-06-18T23:50:38.145657",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
+  },
+  "product@genexyz.world": {
+    "checked_at": "2026-06-18T23:35:05.229613",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "pshannon@hksinc.com": {
+    "checked_at": "2026-06-18T23:41:52.295244",
+    "detail": "smtp_timeout",
     "status": "unknown"
   },
   "pspriyan29@gmail.com": {
@@ -2938,6 +5088,11 @@
     "checked_at": "2026-06-17T10:09:29.924406",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "rajendra.alluri@ishitham.com": {
+    "checked_at": "2026-06-18T23:55:28.106465",
+    "detail": "smtp_timeout",
+    "status": "unknown"
   },
   "rajkostijakovic@gmail.com": {
     "checked_at": "2026-06-17T10:10:48.830474",
@@ -2969,6 +5124,11 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "ray.henry@ambiflo.com": {
+    "checked_at": "2026-06-18T22:26:50.735568",
+    "detail": "smtp_rejected_550_5.7.1 Service unavailable, Client host [45.114.89.",
+    "status": "reject"
+  },
   "rayanenaciripro278@gmail.com": {
     "checked_at": "2026-06-02T16:34:07.477137",
     "detail": "smtp_accepted_250",
@@ -2988,6 +5148,11 @@
     "checked_at": "2026-06-17T10:10:51.889357",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "rbcode@tutanota.com": {
+    "checked_at": "2026-06-19T00:01:45.381621",
+    "detail": "smtp_timeout",
+    "status": "unknown"
   },
   "realityreal25@gmail.com": {
     "checked_at": "2026-06-17T10:10:48.472567",
@@ -3039,6 +5204,16 @@
     "detail": "smtp_error_gaierror",
     "status": "unknown"
   },
+  "richard.forman@amgistudios.com": {
+    "checked_at": "2026-06-18T23:42:47.742817",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "richard@emberstoke.com": {
+    "checked_at": "2026-06-18T22:29:27.454082",
+    "detail": "smtp_rejected_550_5.7.1 Service unavailable, Client host [45.114.89.",
+    "status": "reject"
+  },
   "rifani@outlook.com": {
     "checked_at": "2026-06-17T10:09:49.188571",
     "detail": "smtp_accepted_250",
@@ -3058,6 +5233,11 @@
     "checked_at": "2026-06-06T13:51:00.718617",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "rnd_3d@shinwon.com": {
+    "checked_at": "2026-06-18T23:37:13.844421",
+    "detail": "smtp_timeout",
+    "status": "unknown"
   },
   "rob@fkdstudio.com.au": {
     "checked_at": "2026-06-17T10:11:14.263165",
@@ -3079,10 +5259,30 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "rodrigue@vreality.fr": {
+    "checked_at": "2026-06-18T23:43:26.396089",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "roflozavr@mailfence.com": {
     "checked_at": "2026-06-17T10:11:01.312892",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "rohit@metadrob.com": {
+    "checked_at": "2026-06-18T23:52:50.846110",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "roman@antix.in": {
+    "checked_at": "2026-06-19T00:06:23.286403",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "rorta@sportsbiz.com": {
+    "checked_at": "2026-06-19T00:07:31.661008",
+    "detail": "smtp_timeout",
+    "status": "unknown"
   },
   "rthumati@aldar.com": {
     "checked_at": "2026-06-17T10:12:00.880176",
@@ -3104,6 +5304,11 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "rudy@gravityrender.com": {
+    "checked_at": "2026-06-18T23:51:38.672313",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "rupanshu5oni124@gmail.com": {
     "checked_at": "2026-06-02T16:36:39.737800",
     "detail": "smtp_accepted_250",
@@ -3118,6 +5323,11 @@
     "checked_at": "2026-06-17T10:10:34.982301",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "ryan.lever@swiftmarketingsolutions.co.uk": {
+    "checked_at": "2026-06-18T23:50:15.437130",
+    "detail": "smtp_timeout",
+    "status": "unknown"
   },
   "ryan.veatch@hdrinc.com": {
     "checked_at": "2026-06-02T16:34:59.478198",
@@ -3149,6 +5359,16 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "sabir@sjain.co.in": {
+    "checked_at": "2026-06-18T23:41:30.838841",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "sabrina.catharino@saga.com.br": {
+    "checked_at": "2026-06-18T23:38:43.020100",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "sadeghi.ghomi@gmail.com": {
     "checked_at": "2026-06-17T10:08:44.509745",
     "detail": "smtp_code_452_4.2.2 The recipient's inbox is out of storage spac",
@@ -3171,6 +5391,16 @@
   },
   "samofut24303@gmail.com": {
     "checked_at": "2026-06-02T16:35:26.056374",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
+  "santhoshkumarv@hcl.com": {
+    "checked_at": "2026-06-19T00:04:03.827484",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "santiago@mibi.studio": {
+    "checked_at": "2026-06-18T23:36:23.232277",
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
@@ -3224,13 +5454,18 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "scott@anywhereanytime.io": {
+    "checked_at": "2026-06-18T23:36:47.919244",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "scrollupss@gmail.com": {
     "checked_at": "2026-06-02T16:36:08.035089",
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
   "sebastian.suarez@kyonxr.com": {
-    "checked_at": "2026-06-02T16:37:56.118643",
+    "checked_at": "2026-06-18T22:29:44.689909",
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
@@ -3269,6 +5504,21 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "sergei@studiosaf.com": {
+    "checked_at": "2026-06-18T22:26:54.078367",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
+  "sergio@restless.design": {
+    "checked_at": "2026-06-19T00:04:58.234897",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "sergiovillegas@mgroup.com.co": {
+    "checked_at": "2026-06-18T23:55:06.831988",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
+  },
   "serialforex@gmail.com": {
     "checked_at": "2026-06-02T16:36:21.670200",
     "detail": "smtp_accepted_250",
@@ -3294,20 +5544,50 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "shahram.313185012@uhd.edu.iq": {
+    "checked_at": "2026-06-19T00:03:58.513550",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "sharath@identicube.com": {
+    "checked_at": "2026-06-19T00:03:42.129977",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "sharjilsidd187@gmail.com": {
     "checked_at": "2026-06-17T10:11:49.637927",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "shellie@ourgeneticlegacy.org": {
+    "checked_at": "2026-06-18T23:37:00.428691",
+    "detail": "smtp_timeout",
+    "status": "unknown"
   },
   "shivamkb@griphic.com": {
     "checked_at": "2026-06-17T10:11:56.572700",
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "shubham@alchemysts.co": {
+    "checked_at": "2026-06-18T22:30:23.527408",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
+  "shyam@augmentworks.com": {
+    "checked_at": "2026-06-18T23:41:44.118816",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
+  },
   "siaposh45@gmail.com": {
     "checked_at": "2026-06-17T10:08:42.034623",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "siddhesh.sonawane@naturedots.com": {
+    "checked_at": "2026-06-19T00:02:20.186209",
+    "detail": "smtp_timeout",
+    "status": "unknown"
   },
   "silvacristancho@gmail.com": {
     "checked_at": "2026-06-17T10:10:54.441378",
@@ -3328,6 +5608,11 @@
     "checked_at": "2026-06-17T10:11:15.310044",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "siobhan.mcgurrin@vection-technologies.com": {
+    "checked_at": "2026-06-19T00:07:53.488463",
+    "detail": "smtp_timeout",
+    "status": "unknown"
   },
   "sirsepanta@yahoo.com": {
     "checked_at": "2026-06-17T10:09:05.368201",
@@ -3404,6 +5689,11 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "steliyan.lyubenov@rubberduck.xyz": {
+    "checked_at": "2026-06-19T00:00:59.038257",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "stemgames2000@gmail.com": {
     "checked_at": "2026-06-17T10:09:11.445277",
     "detail": "smtp_accepted_250",
@@ -3424,14 +5714,29 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "stock@mc2comunicazione.com": {
+    "checked_at": "2026-06-19T00:01:50.863503",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "stradigimc@gmail.com": {
     "checked_at": "2026-06-02T16:32:44.649484",
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "streameagle@yandex.ru": {
+    "checked_at": "2026-06-18T23:41:14.600800",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "studio@bolton-menk.com": {
     "checked_at": "2026-06-17T10:10:02.156358",
     "detail": "smtp_code_451_Internal resource temporarily unavailable - https:",
+    "status": "unknown"
+  },
+  "studio@rupture.mt": {
+    "checked_at": "2026-06-18T23:50:46.404431",
+    "detail": "smtp_timeout",
     "status": "unknown"
   },
   "suadkapetanovic@gmail.com": {
@@ -3454,6 +5759,11 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "sumeetmchimurkar.aids2021@citchennai.net": {
+    "checked_at": "2026-06-18T23:41:02.550969",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "suratwalamalikulashter@gmail.com": {
     "checked_at": "2026-06-18T00:16:27.531020",
     "detail": "smtp_timeout",
@@ -3463,6 +5773,11 @@
     "checked_at": "2026-06-02T16:36:36.162062",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "suresh@uppteam.com": {
+    "checked_at": "2026-06-18T23:39:49.291979",
+    "detail": "smtp_timeout",
+    "status": "unknown"
   },
   "swk5462@gmail.com": {
     "checked_at": "2026-06-02T16:35:57.394342",
@@ -3479,6 +5794,11 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "t4l_r@walla.com": {
+    "checked_at": "2026-06-18T23:42:26.908477",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "taha.rizwan047@gmail.com": {
     "checked_at": "2026-06-02T16:35:59.720034",
     "detail": "smtp_accepted_250",
@@ -3488,6 +5808,11 @@
     "checked_at": "2026-06-17T10:11:26.125421",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "tarran.kundi@era-co.com": {
+    "checked_at": "2026-06-18T23:40:53.708624",
+    "detail": "smtp_timeout",
+    "status": "unknown"
   },
   "tazimmiazy2@gmail.com": {
     "checked_at": "2026-06-02T16:35:54.295818",
@@ -3564,6 +5889,11 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "tommotz@motzart.com": {
+    "checked_at": "2026-06-18T23:39:27.282738",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "tools@admindagency.com": {
     "checked_at": "2026-06-17T10:10:04.883457",
     "detail": "smtp_accepted_250",
@@ -3573,6 +5903,16 @@
     "checked_at": "2026-06-17T10:10:28.574496",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "toriciv225@bnsteps.com": {
+    "checked_at": "2026-06-18T22:27:43.354834",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
+  "toriqul@mymedicalhub.com": {
+    "checked_at": "2026-06-18T23:43:08.993479",
+    "detail": "smtp_timeout",
+    "status": "unknown"
   },
   "tormod.nyberg@hafslund.no": {
     "checked_at": "2026-06-02T16:32:57.147907",
@@ -3609,6 +5949,11 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "tutusi@asestudent.co.za": {
+    "checked_at": "2026-06-18T23:50:20.663560",
+    "detail": "smtp_disconnected",
+    "status": "unknown"
+  },
   "ue@cn3.dk": {
     "checked_at": "2026-06-17T10:09:26.657684",
     "detail": "smtp_accepted_250",
@@ -3626,6 +5971,11 @@
   },
   "unreal@molotovcocktail.tv": {
     "checked_at": "2026-06-17T10:09:18.478793",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
+  "unreal@squareone.co.in": {
+    "checked_at": "2026-06-18T22:30:32.277917",
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
@@ -3649,6 +5999,11 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "varun@digihumans.ai": {
+    "checked_at": "2026-06-19T00:00:41.963306",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "vasili@lunas.pro": {
     "checked_at": "2026-06-17T10:10:43.079314",
     "detail": "smtp_accepted_250",
@@ -3664,10 +6019,20 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "victor@imerza.com": {
+    "checked_at": "2026-06-18T23:39:06.643193",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
   "vikendhome@gmail.com": {
     "checked_at": "2026-06-17T10:09:20.434797",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "vincent.palcon@neom.com": {
+    "checked_at": "2026-06-19T00:05:44.830140",
+    "detail": "smtp_timeout",
+    "status": "unknown"
   },
   "vineet.kumar@lumeto.com": {
     "checked_at": "2026-06-02T16:33:51.790634",
@@ -3769,6 +6134,11 @@
     "detail": "smtp_accepted_250",
     "status": "ok"
   },
+  "wassim@pulsart.agency": {
+    "checked_at": "2026-06-18T22:30:27.561419",
+    "detail": "smtp_accepted_250",
+    "status": "ok"
+  },
   "wbastosw@gmail.com": {
     "checked_at": "2026-06-05T14:59:05.594031",
     "detail": "smtp_accepted_250",
@@ -3778,6 +6148,16 @@
     "checked_at": "2026-06-02T16:34:54.842890",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "wilkinmedranofranco@anderson5.net": {
+    "checked_at": "2026-06-18T23:52:12.902866",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "will.finch@proicere.co.uk": {
+    "checked_at": "2026-06-18T22:26:09.240264",
+    "detail": "smtp_rejected_550_5.7.1 Service unavailable, Client host [45.114.89.",
+    "status": "reject"
   },
   "wind@virtualstudios.ph": {
     "checked_at": "2026-06-02T16:36:39.216614",
@@ -3798,6 +6178,16 @@
     "checked_at": "2026-06-17T10:08:42.666602",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "wpql5885@naver.com": {
+    "checked_at": "2026-06-18T23:35:52.352580",
+    "detail": "smtp_timeout",
+    "status": "unknown"
+  },
+  "wsullivan@parametrix.com": {
+    "checked_at": "2026-06-18T23:55:01.608592",
+    "detail": "smtp_timeout",
+    "status": "unknown"
   },
   "xr@cn3.dk": {
     "checked_at": "2026-06-02T16:34:12.172570",
@@ -3828,6 +6218,11 @@
     "checked_at": "2026-06-17T10:10:03.046905",
     "detail": "smtp_accepted_250",
     "status": "ok"
+  },
+  "yohan.immanuel.stu@elyon.sch.id": {
+    "checked_at": "2026-06-19T00:02:49.562553",
+    "detail": "smtp_timeout",
+    "status": "unknown"
   },
   "yokesh0496@gmail.com": {
     "checked_at": "2026-06-02T16:33:50.157203",

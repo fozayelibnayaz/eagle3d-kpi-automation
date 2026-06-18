@@ -18,6 +18,16 @@ def _esc(t):
     return str(t).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
+def _get_verified_kpi_stats():
+    """Get classifier-verified KPI stats from the single source of truth (reporting_engine.build_kpi_stats)."""
+    try:
+        from reporting_engine import build_kpi_stats
+        return build_kpi_stats()
+    except Exception as e:
+        print(f"[Telegram] Failed to get verified KPI stats: {e}")
+        return None
+
+
 def _send(message: str, parse_mode="HTML") -> dict:
     """Send to Telegram. Checks st.secrets first, then env vars."""
     bot_token = ""

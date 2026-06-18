@@ -32,14 +32,15 @@ FORCE_HISTORICAL = os.environ.get("FORCE_HISTORICAL", "") == "1"
 
 # Map Stripe data-column-id -> our friendly column name
 COLUMN_MAP = {
-    "email":         "Email",
-    "created":       "Created",
-    "net_volume":    "Total spend",
-    "customer":      "Customer",
-    "first_payment": "First payment",
-    "description":   "Description",
-    "country":       "Country",
-    "payment_count": "Payment Count",
+    "email":          "Email",
+    "created":        "Created",
+    "payment_date":   "First payment",   # Stripe dashboard uses payment_date for first payment
+    "net_volume":     "Total spend",
+    "customer":       "Customer",
+    "first_payment":  "First payment",   # fallback
+    "description":    "Description",
+    "country":        "Country",
+    "payment_count":  "Payment Count",
 }
 
 
