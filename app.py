@@ -3271,21 +3271,14 @@ elif page == "🔍 Browse Data":
             # Scan ALL columns that could contain dates
             for _cand in fl.columns:
                 _cl = _cand.lower().strip()
-                # Specific known date columns (highest priority)
-                if _cl in ("upload date", "account created on", "first payment", "created"):
+                # Specific known date columns (highest priority) - include process_data columns
+                if _cl in ("upload date", "account created on", "first payment", "created", 
+                           "signup_date", "payment_date", "first_upload_date", "row_date_used", "__scraped_date__"):
                     _date_candidates.append(_cand)
                 # Any column with date/created in name
                 elif any(k in _cl for k in ["created", "upload date", "date"]):
-                    if not any(x in _cl for x in ["detail", "last", "scraped", "processed", "__", "verify"]):
+                    if not any(x in _cl for x in ["detail", "last", "processed", "verify"]):
                         _date_candidates.append(_cand)
-
-            # Always include row_date_used (process_data sets this in YYYY-MM-DD)
-            if "row_date_used" in fl.columns and "row_date_used" not in _date_candidates:
-                _date_candidates.append("row_date_used")
-
-            # Also include __scraped_date__ as absolute last resort
-            if "__scraped_date__" in fl.columns and "__scraped_date__" not in _date_candidates:
-                _date_candidates.append("__scraped_date__")
 
             # Pick the best column: highest parse rate with >0% success
             _best_col = None
@@ -3304,12 +3297,13 @@ elif page == "🔍 Browse Data":
                     except Exception:
                         _parse_rates[_dc] = (0, 0)
 
-            # If best column has 0% parse rate, try Account Created On as absolute fallback
+            # Fallback: if best rate is 0, try Account Created On as last resort
             if _best_rate == 0 and "Account Created On" in fl.columns:
-                _best_col = "Account Created On"
                 _parsed = fl["Account Created On"].apply(parse_to_date)
                 _best_rate = int(_parsed.notna().sum()) / _total_rows
-                _parse_rates["Account Created On"] = (int(_parsed.notna().sum()), _best_rate)
+                if _best_rate > 0:
+                    _best_col = "Account Created On"
+                    _parse_rates["Account Created On"] = (int(_parsed.notna().sum()), _best_rate)
 
             if _best_col and _best_rate > 0:
                 fl["_parsed_date"] = fl[_best_col].apply(parse_to_date)
@@ -3812,20 +3806,24 @@ elif page == "📺 YouTube":
         _total_comments = sum(v["comments"] for v in _vids)
         _avg_eng = np.mean([v["engagement_rate"] for v in _vids if v["views"] > 0]) if _vids else 0
 
-        # OAuth analytics for the period
+        # Real Analytics API data for the period (requires valid OAuth)
         _daily_data = pd.DataFrame()
         _period_views = 0
         _period_watch_min = 0
         _period_avg_dur = 0
         _period_subs_gained = 0
         _period_subs_lost = 0
+        _analytics_available = False
 
-        # Always try to get daily analytics (uses estimated fallback if OAuth unavailable)
+        # Get real analytics data - no estimated fallbacks
         try:
             _daily_data = get_daily_analytics(_yt_start, _yt_end)
-        except Exception:
+        except Exception as e:
+            print(f"[YouTube] Analytics error: {e}")
             _daily_data = pd.DataFrame()
+        
         if not _daily_data.empty:
+            _analytics_available = True
             if "views" in _daily_data.columns:
                 _period_views = int(_daily_data["views"].sum())
             if "estimatedMinutesWatched" in _daily_data.columns:
@@ -3837,9 +3835,10 @@ elif page == "📺 YouTube":
             if "subscribersLost" in _daily_data.columns:
                 _period_subs_lost = int(_daily_data["subscribersLost"].sum())
 
-        # ── Comparison period data (same functions, previous period) ──
+        # ── Comparison period data (requires analytics) ──
         _comp_data = {}
-        if _yt_comp_mode and _has_oauth:
+        _comp_views = _comp_watch = _comp_subs_g = _comp_subs_l = 0
+        if _yt_comp_mode and _analytics_available:
             try:
                 _comp_data["daily"] = get_daily_analytics(_yt_comp_start, _yt_comp_end)
                 if not _comp_data["daily"].empty:
@@ -3847,23 +3846,22 @@ elif page == "📺 YouTube":
                     _comp_watch = float(_comp_data["daily"]["estimatedMinutesWatched"].sum()) if "estimatedMinutesWatched" in _comp_data["daily"].columns else 0
                     _comp_subs_g = int(_comp_data["daily"]["subscribersGained"].sum()) if "subscribersGained" in _comp_data["daily"].columns else 0
                     _comp_subs_l = int(_comp_data["daily"]["subscribersLost"].sum()) if "subscribersLost" in _comp_data["daily"].columns else 0
-                else:
-                    _comp_views = _comp_watch = _comp_subs_g = _comp_subs_l = 0
             except Exception:
                 _comp_views = _comp_watch = _comp_subs_g = _comp_subs_l = 0
-        else:
-            _comp_views = _comp_watch = _comp_subs_g = _comp_subs_l = 0
 
         def _pct(v, p):
             if p == 0:
                 return None
             return f"{((v - p) / p * 100):+.1f}%"
 
-        # KPI row (matching Vercel: Total Views, Subscribers, Total Likes, Comments, Engagement, Shares)
+        # KPI row - show N/A when no real analytics data
         _k1, _k2, _k3, _k4, _k5, _k6 = st.columns(6)
         with _k1:
-            _views_display = _period_views if _has_oauth and _period_views > 0 else _total_views
-            st.metric("Total Views", format_number(_views_display), delta=_pct(_views_display, _comp_views) if _yt_comp_mode else None)
+            if _analytics_available:
+                st.metric("Total Views", format_number(_period_views), delta=_pct(_period_views, _comp_views) if _yt_comp_mode else None)
+            else:
+                st.metric("Total Views", "N/A")
+                st.caption("🔒 Requires YouTube Analytics API (OAuth)")
         with _k2:
             st.metric("Subscribers", f"{_ch_info.get('subscribers', 0):,}")
         with _k3:
@@ -3874,14 +3872,16 @@ elif page == "📺 YouTube":
             st.metric("Engagement", f"{_avg_eng:.2f}%")
             st.caption("real calc", help="Engagement = (likes + comments) / views")
         with _k6:
-            if _has_oauth and _period_watch_min > 0:
+            if _analytics_available and _period_watch_min > 0:
                 st.metric("Watch Hours", f"{_period_watch_min/60:.0f}", delta=_pct(_period_watch_min, _comp_watch) if _yt_comp_mode else None)
             else:
-                st.metric("Shares", "—")
+                st.metric("Watch Hours", "N/A")
+                if not _analytics_available:
+                    st.caption("🔒 Requires YouTube Analytics API (OAuth)")
 
-        # Daily views chart (works with both OAuth and estimated data)
-        if not _daily_data.empty and "day" in _daily_data.columns:
-            st.markdown("##### 📈 Daily Views Trend")
+        # Daily views chart (real analytics only)
+        if _analytics_available and not _daily_data.empty and "day" in _daily_data.columns:
+            st.markdown("##### 📈 Daily Views Trend (Real Analytics)")
             fig = go.Figure()
             fig.add_trace(go.Scatter(
                 x=_daily_data["day"], y=_daily_data.get("views", pd.Series()),
@@ -3895,8 +3895,8 @@ elif page == "📺 YouTube":
                 ))
             fig.update_layout(height=300, **CT(), margin=dict(l=40, r=20, t=20, b=20))
             _pc(fig)
-        elif _daily_data.empty:
-            st.info("💡 No daily view data available for this period. Connect YouTube OAuth for real analytics, or wait for estimated data.")
+        elif not _analytics_available:
+            st.warning("⚠️ YouTube Analytics API not configured. Add YOUTUBE_REFRESH_TOKEN, YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET to secrets for real analytics data.")
 
         st.markdown("---")
 
@@ -4252,36 +4252,35 @@ Diagnosis issues: {json.dumps(_issues)}"""
                     _est_period_likes = int(_va_likes * (_period_days / max(_vid_age_days, 1))) if _va_likes > 0 else int(v.get("likes", 0) * _period_days / max(_vid_age_days, 1))
                     _est_period_comments = int(_va_comments * (_period_days / max(_vid_age_days, 1))) if _va_comments > 0 else int(v.get("comments", 0) * _period_days / max(_vid_age_days, 1))
 
-                    # Show analytics metrics
+                    # Show analytics metrics - REAL DATA ONLY, no estimates
                     _vc1, _vc2, _vc3, _vc4 = st.columns(4)
                     with _vc1:
                         if _va:
                             st.metric("Views (period)", f"{_va_views:,}")
                         else:
-                            st.metric("Views (est.)", f"{_est_period_views:,}")
-                            st.caption(f"~{format_number(round(_vpd_est))}/day")
+                            st.metric("Views (period)", "N/A")
+                            st.caption("🔒 Requires Analytics API")
                     with _vc2:
                         if _va:
                             st.metric("Likes", f"{_va_likes:,}")
                         else:
-                            st.metric("Likes (est.)", f"{_est_period_likes:,}")
+                            st.metric("Likes", "N/A")
+                            st.caption("🔒 Requires Analytics API")
                     with _vc3:
                         if _va:
                             st.metric("Comments", f"{_va_comments:,}")
                         else:
-                            st.metric("Comments (est.)", f"{_est_period_comments:,}")
+                            st.metric("Comments", "N/A")
+                            st.caption("🔒 Requires Analytics API")
                     with _vc4:
                         if _va and _va_avg_pct > 0:
                             st.metric("Retention", f"{_va_avg_pct:.1f}%")
                         elif _va and _va_avg_dur > 0:
                             st.metric("Avg Watch", _format_duration(int(_va_avg_dur)))
                         else:
-                            # Estimate retention from video duration vs typical engagement
-                            _vid_dur = v.get("duration_seconds", 0)
-                            if _vid_dur > 0 and v.get("views", 0) > 0:
-                                _est_ret = min(95, max(15, 60 - (_vid_dur / 300) * 5))
-                                st.metric("Retention (est.)", f"{_est_ret:.0f}%")
-                            else:
+                            st.metric("Retention", "N/A")
+                            if not _va:
+                                st.caption("🔒 Requires Analytics API")
                                 st.metric("Retention", "—")
 
                     # OAuth-specific metrics row

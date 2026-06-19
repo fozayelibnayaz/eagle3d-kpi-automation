@@ -50,18 +50,43 @@ def main():
     def s1():
         from scrape_kpi import main as run
         run()
+        # Validate: KPI scrape produced data
+        from sheets_writer import read_tab_data
+        free_rows = read_tab_data("Raw_FREE")
+        upload_rows = read_tab_data("Raw_FIRST_UPLOAD")
+        if not free_rows and not upload_rows:
+            raise RuntimeError("KPI scrape produced zero rows")
+        log(f"KPI validation: FREE={len(free_rows)}, UPLOAD={len(upload_rows)}")
     ok1, e1 = run_stage(1, "Scrape KPI (Layer 1+2)", s1)
     results["stage1_kpi"] = "ok" if ok1 else f"failed: {e1}"
 
     def s2():
         from scrape_stripe import main as run
         run()
+        # Validate: Stripe scrape produced data
+        from sheets_writer import read_tab_data
+        stripe_rows = read_tab_data("Raw_STRIPE")
+        if not stripe_rows:
+            raise RuntimeError("Stripe scrape produced zero rows")
+        # Check for date columns
+        has_dates = any(r.get("Created") or r.get("First payment") or r.get("Payment_Date") for r in stripe_rows[:5])
+        if not has_dates and stripe_rows:
+            log("WARNING: Stripe rows missing date fields (Created/First payment/Payment_Date)")
+        log(f"Stripe validation: {len(stripe_rows)} rows")
     ok2, e2 = run_stage(2, "Scrape Stripe (Layer 1+2)", s2)
     results["stage2_stripe"] = "ok" if ok2 else f"failed: {e2}"
 
     def s3():
         from process_data import main as run
         run()
+        # Validate: Processing produced ACCEPTED records
+        from sheets_writer import read_tab_data
+        for tab in ["Verified_FREE", "Verified_FIRST_UPLOAD", "Verified_STRIPE"]:
+            rows = read_tab_data(tab)
+            accepted = [r for r in rows if str(r.get("final_status", "")).upper() == "ACCEPTED"]
+            log(f"Process validation: {tab} ACCEPTED={len(accepted)}/{len(rows)}")
+            if len(accepted) == 0 and len(rows) > 0:
+                log(f"WARNING: {tab} has 0 ACCEPTED out of {len(rows)} rows")
     ok3, e3 = run_stage(3, "Process: Validate + Dedup + ML (Layers 3-5)", s3)
     results["stage3_process"] = "ok" if ok3 else f"failed: {e3}"
 
@@ -77,7 +102,13 @@ def main():
             except Exception:
                 pass
         from daily_counts import build_daily_counts_table
-        build_daily_counts_table()
+        result = build_daily_counts_table()
+        # Validate: Daily counts have data
+        if result.get("daily_rows", 0) == 0:
+            raise RuntimeError("Daily counts produced zero rows")
+        if result.get("free_accepted", 0) == 0 and result.get("upload_accepted", 0) == 0 and result.get("stripe_accepted", 0) == 0:
+            raise RuntimeError("Daily counts: all metrics zero")
+        log(f"Daily counts validation: {result}")
     ok4, e4 = run_stage(4, "Build Daily/Monthly Counts (Layer 6)", s4)
     results["stage4_counts"] = "ok" if ok4 else f"failed: {e4}"
 
@@ -157,8 +188,18 @@ def main():
                     _analytics_path = _P("data_output") / "youtube_analytics.json"
                     _analytics_path.write_text(daily.to_json(orient="records", indent=2))
                     log(f"YouTube Analytics: Saved to {_analytics_path}")
+            else:
+                log("YouTube: No OAuth credentials — Analytics API skipped")
         except Exception as e:
-            log(f"YouTube Analytics: Skipped ({e})")
+            log(f"YouTube Analytics: Error ({e})")
+        
+        # Validate YouTube data exists
+        from sheets_writer import read_tab_data
+        yt_channel = read_tab_data("YouTube")
+        if yt_channel and len(yt_channel) > 0:
+            log(f"YouTube validation: Channel data OK ({len(yt_channel)} rows)")
+        else:
+            log("WARNING: YouTube channel data not in Sheets")
     ok5, e5 = run_stage(5, "YouTube Data Fetch", s5)
     results["stage5_youtube"] = "ok" if ok5 else f"failed: {e5}"
 
@@ -449,6 +490,17 @@ def main():
                             log(f"LinkedIn: {len(_post_rows)} posts written to LinkedIn_Posts sheet")
                 except Exception as e:
                     log(f"LinkedIn: Posts sheet write error (non-fatal): {e}")
+        
+        # Validate LinkedIn data exists
+        from sheets_writer import read_tab_data
+        li_data = read_tab_data("LinkedIn")
+        if li_data and len(li_data) > 0:
+            log(f"LinkedIn validation: {len(li_data)} rows")
+        else:
+            log("WARNING: LinkedIn data not in data not in Sheets")
+        li_posts = read_tab_data("LinkedIn_Posts")
+        if li_posts:
+            log(f"LinkedIn Posts: {len(li_posts)} rows")
     ok6, e6 = run_stage(6, "LinkedIn Scrape + Auto-Accumulate", s6)
     results["stage6_linkedin"] = "ok" if ok6 else f"failed: {e6}"
 
@@ -481,6 +533,15 @@ def main():
             log(f"GA4 cache error (non-fatal): {e}")
         from reporting_engine import main as run
         run()
+        
+        # Validate report was generated
+        from pathlib import Path as _P
+        report_files = list(_P("data_output").glob("report_*.txt"))
+        if report_files:
+            latest = max(report_files, key=lambda f: f.stat().st_mtime)
+            log(f"Report validation: {latest.name} generated")
+        else:
+            log("WARNING: No report file generated")
     ok7, e7 = run_stage(7, "Reporting + Notifications (Layer 6)", s7)
     results["stage7_report"] = "ok" if ok7 else f"failed: {e7}"
 
@@ -493,6 +554,18 @@ def main():
     for k, v in results.items():
         icon = "OK" if v == "ok" else "FAIL"
         log(f"  [{icon}] {k}: {v}")
+
+    # PIPELINE FAILURE CHECK: Fail if any stage failed
+    failed_stages = [k for k, v in results.items() if v != "ok"]
+    if failed_stages:
+        log(f"\n{'='*70}")
+        log(f"PIPELINE FAILED: {len(failed_stages)} stage(s) failed: {', '.join(failed_stages)}")
+        log(f"{'='*70}")
+        sys.exit(1)
+    else:
+        log(f"\n{'='*70}")
+        log("PIPELINE SUCCESS: All 7 stages passed validation")
+        log(f"{'='*70}")
 
     log(f"\n{'='*60}")
     log("FINAL SHEETS STATE")

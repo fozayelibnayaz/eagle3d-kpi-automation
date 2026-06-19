@@ -347,20 +347,33 @@ def get_channel_videos(max_videos: int = 300) -> List[Dict]:
 # ═══════════════════════════════════════════════════════════════
 
 def get_daily_analytics(start_date: str, end_date: str) -> pd.DataFrame:
+    """Get daily analytics from YouTube Analytics API (requires OAuth).
+    Returns empty DataFrame if Analytics API not available - NO estimated fallbacks."""
     channel_id = _get_secret("YOUTUBE_CHANNEL_ID")
+    if not channel_id:
+        print("[YouTube] YOUTUBE_CHANNEL_ID not configured")
+        return pd.DataFrame()
+    
+    # Check if we have valid OAuth credentials for Analytics API
+    if not has_analytics_access():
+        print("[YouTube] Analytics API not available - OAuth credentials missing. Returning empty data.")
+        print("[YouTube] Add YOUTUBE_REFRESH_TOKEN, YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET to enable Analytics API")
+        return pd.DataFrame()
+    
     params = {
-        "ids": f"channel=={channel_id}" if channel_id else "channel==MINE",
+        "ids": f"channel=={channel_id}",
         "startDate": start_date, "endDate": end_date,
         "metrics": "views,estimatedMinutesWatched,averageViewDuration,averageViewPercentage,likes,comments,shares,subscribersGained,subscribersLost,impressions,ctr",
         "dimensions": "day", "sort": "day",
     }
     data = _analytics_request(params)
     if not data:
-        # Fallback: Build estimated daily analytics from public video data
-        return _build_estimated_daily_analytics(start_date, end_date)
+        print(f"[YouTube] Analytics API returned no data for {start_date} to {end_date}")
+        return pd.DataFrame()
     rows = _parse_analytics_rows(data)
     if not rows:
-        return _build_estimated_daily_analytics(start_date, end_date)
+        print(f"[YouTube] Analytics API returned empty rows for {start_date} to {end_date}")
+        return pd.DataFrame()
     df = pd.DataFrame(rows)
     for col in df.columns:
         if col != "day":
@@ -369,67 +382,10 @@ def get_daily_analytics(start_date: str, end_date: str) -> pd.DataFrame:
 
 
 def _build_estimated_daily_analytics(start_date: str, end_date: str) -> pd.DataFrame:
-    """Build estimated daily analytics from public video data when OAuth is unavailable.
-    Uses video publish dates and cumulative view counts to estimate daily metrics.
-    """
-    try:
-        videos = get_channel_videos(max_videos=200)
-        if not videos:
-            return pd.DataFrame()
-        from datetime import datetime as _dt
-        start_dt = _dt.strptime(start_date, "%Y-%m-%d")
-        end_dt = _dt.strptime(end_date, "%Y-%m-%d")
-        
-        # Build daily rows from video data
-        daily_data = {}
-        for v in videos:
-            pub_date = v.get("published_at", "")
-            if not pub_date:
-                continue
-            try:
-                pub_dt = _dt.fromisoformat(pub_date.replace("Z", ""))
-                pub_str = pub_dt.strftime("%Y-%m-%d")
-            except Exception:
-                continue
-            
-            views = v.get("views", 0)
-            likes = v.get("likes", 0)
-            comments = v.get("comments", 0)
-            age_days = max(1, (_dt.now() - pub_dt).days)
-            
-            if pub_str not in daily_data:
-                daily_data[pub_str] = {
-                    "day": pub_str,
-                    "views": 0,
-                    "estimatedMinutesWatched": 0,
-                    "likes": 0,
-                    "comments": 0,
-                    "subscribersGained": 0,
-                    "videos": 0,
-                }
-            daily_data[pub_str]["views"] += views
-            daily_data[pub_str]["likes"] += likes
-            daily_data[pub_str]["comments"] += comments
-            daily_data[pub_str]["videos"] += 1
-            # Estimate watch time: avg 3 min per view (conservative)
-            daily_data[pub_str]["estimatedMinutesWatched"] += int(views * 3)
-            # Estimate subs: roughly 1 sub per 1000 views
-            daily_data[pub_str]["subscribersGained"] += max(1, views // 1000)
-        
-        if not daily_data:
-            return pd.DataFrame()
-        
-        df = pd.DataFrame(list(daily_data.values()))
-        df["day"] = pd.to_datetime(df["day"])
-        df = df.sort_values("day")
-        df = df.reset_index(drop=True)
-        for col in df.columns:
-            if col != "day":
-                df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
-        return df
-    except Exception as e:
-        print(f"[YouTube] Estimated analytics error: {e}")
-        return pd.DataFrame()
+    """DEPRECATED: Estimated analytics removed. Returns empty DataFrame.
+    Use get_daily_analytics() which requires YouTube Analytics API (OAuth)."""
+    print("[YouTube] WARNING: Estimated analytics deprecated. Configure OAuth for real data.")
+    return pd.DataFrame()
 
 
 def get_subscriber_growth(start_date: str, end_date: str) -> pd.DataFrame:

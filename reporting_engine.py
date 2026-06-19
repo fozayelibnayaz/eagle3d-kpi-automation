@@ -2167,9 +2167,31 @@ def main():
     report_file.write_text(text)
     log(f"Saved: {report_file}")
 
+    # VALIDATION: Check data sources before sending Telegram
+    validation_errors = []
+    if not kpi.get("signups_all", 0) > 0:
+        validation_errors.append("KPI: zero all-time signups")
+    if not ga4.get("connected"):
+        validation_errors.append("GA4: not connected")
+    if not yt.get("connected"):
+        validation_errors.append("YouTube: not connected (missing API key/channel ID)")
+    if not li.get("connected"):
+        validation_errors.append("LinkedIn: not connected (missing company page/cookies)")
+    if not stripe.get("connected"):
+        validation_errors.append("Stripe: not connected (no data)")
+    
+    if validation_errors:
+        log(f"VALIDATION WARNINGS: {'; '.join(validation_errors)}")
+        # Still send but include warnings in message
+    
     # Send comprehensive Telegram (combined summary message)
     log("Sending combined Telegram summary...")
     combined_msg = build_full_telegram_message(kpi, ga4, yt, li, stripe, health)
+    
+    # Add validation notice if any source missing
+    if validation_errors:
+        combined_msg += f"\n\n⚠️ <b>DATA VALIDATION WARNINGS:</b>\n" + "\n".join(f"• {e}" for e in validation_errors)
+    
     tg_combined = send_telegram(combined_msg)
 
     # Individual subsystem messages are DISABLED to prevent duplicates.
