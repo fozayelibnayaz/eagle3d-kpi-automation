@@ -1,17 +1,6 @@
 {
   "entries": [
     {
-      "date": "2025-06-20",
-      "scraped_at": "2025-06-20T12:00:00",
-      "followers": 2545,
-      "company_name": "Eagle 3D Streaming",
-      "employees": "31",
-      "industry": "",
-      "impressions": 0,
-      "unique_visitors": 0,
-      "backfilled": true
-    },
-    {
       "date": "2025-06-21",
       "scraped_at": "2025-06-21T12:00:00",
       "followers": 2543,
@@ -4015,7 +4004,19 @@
       "competitors": "",
       "leads": 0,
       "newsletters": 0
+    },
+    {
+      "date": "2026-06-19",
+      "scraped_at": "2026-06-19T04:16:34.120715",
+      "followers": 2552,
+      "company_name": "Eagle 3D Streaming",
+      "employees": "",
+      "industry": "",
+      "search_appearances": 0,
+      "competitors": "",
+      "leads": 0,
+      "newsletters": 0
     }
   ],
-  "_cached_at": "2026-06-18T15:37:22.511159"
+  "_cached_at": "2026-06-19T04:16:34.121769"
 }

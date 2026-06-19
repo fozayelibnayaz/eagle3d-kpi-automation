@@ -2779,6 +2779,28 @@
     ],
     "reputation_score": 0.2
   },
+  "cigidea.com": {
+    "checked_at": "2026-06-19T04:13:12.408879",
+    "domain": "cigidea.com",
+    "domain_age_days": null,
+    "has_a_record": false,
+    "has_dmarc": false,
+    "has_spf": true,
+    "is_disposable": false,
+    "is_major_provider": false,
+    "mx_ok": true,
+    "mx_records": [
+      [
+        10,
+        "mail.wabblywabble.com"
+      ],
+      [
+        10,
+        "mail.wallywatts.com"
+      ]
+    ],
+    "reputation_score": 0.3
+  },
   "citchennai.net": {
     "checked_at": "2026-06-18T06:53:56.458911",
     "domain": "citchennai.net",
@@ -5456,6 +5478,28 @@
     ],
     "reputation_score": 0.45
   },
+  "frisbook.com": {
+    "checked_at": "2026-06-19T04:13:11.909921",
+    "domain": "frisbook.com",
+    "domain_age_days": null,
+    "has_a_record": false,
+    "has_dmarc": false,
+    "has_spf": true,
+    "is_disposable": false,
+    "is_major_provider": false,
+    "mx_ok": true,
+    "mx_records": [
+      [
+        10,
+        "mail.wabblywabble.com"
+      ],
+      [
+        10,
+        "mail.wallywatts.com"
+      ]
+    ],
+    "reputation_score": 0.3
+  },
   "fullbarsmedia.com": {
     "checked_at": "2026-06-18T06:58:11.281907",
     "domain": "fullbarsmedia.com",
@@ -7688,6 +7732,28 @@
       ]
     ],
     "reputation_score": 0.45
+  },
+  "jazipo.com": {
+    "checked_at": "2026-06-19T04:13:11.338917",
+    "domain": "jazipo.com",
+    "domain_age_days": null,
+    "has_a_record": false,
+    "has_dmarc": false,
+    "has_spf": true,
+    "is_disposable": false,
+    "is_major_provider": false,
+    "mx_ok": true,
+    "mx_records": [
+      [
+        10,
+        "mail.wabblywabble.com"
+      ],
+      [
+        10,
+        "mail.wallywatts.com"
+      ]
+    ],
+    "reputation_score": 0.3
   },
   "johannamolineus.com": {
     "checked_at": "2026-06-18T06:59:23.829511",
@@ -14338,6 +14404,32 @@
     ],
     "reputation_score": 0.45
   },
+  "stellarlights.com.au": {
+    "checked_at": "2026-06-19T04:13:25.007164",
+    "domain": "stellarlights.com.au",
+    "domain_age_days": null,
+    "has_a_record": true,
+    "has_dmarc": false,
+    "has_spf": true,
+    "is_disposable": false,
+    "is_major_provider": false,
+    "mx_ok": true,
+    "mx_records": [
+      [
+        1,
+        "aspmx.l.google.com"
+      ],
+      [
+        5,
+        "alt1.aspmx.l.google.com"
+      ],
+      [
+        5,
+        "alt2.aspmx.l.google.com"
+      ]
+    ],
+    "reputation_score": 0.35
+  },
   "student.johnxxiii.edu.au": {
     "checked_at": "2026-06-18T06:59:32.725960",
     "domain": "student.johnxxiii.edu.au",
@@ -15257,6 +15349,24 @@
       [
         5,
         "alt2.aspmx.l.google.com"
+      ]
+    ],
+    "reputation_score": 0.45
+  },
+  "totsan.com": {
+    "checked_at": "2026-06-19T04:13:25.427308",
+    "domain": "totsan.com",
+    "domain_age_days": null,
+    "has_a_record": true,
+    "has_dmarc": true,
+    "has_spf": true,
+    "is_disposable": false,
+    "is_major_provider": false,
+    "mx_ok": true,
+    "mx_records": [
+      [
+        0,
+        "mail.totsan.com"
       ]
     ],
     "reputation_score": 0.45
