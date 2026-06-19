@@ -659,7 +659,8 @@ def build_youtube_stats():
             result["video_count"] = si(_ch.get("video_count", 0))
         _yt_vids = DATA_DIR / "youtube_videos.json"
         if _yt_vids.exists():
-            _vids = json.loads(_yt_vids.read_text())
+            _vids_data = json.loads(_yt_vids.read_text())
+            _vids = _vids_data.get("videos", []) if isinstance(_vids_data, dict) else _vids_data
             if _vids:
                 top = sorted(_vids, key=lambda v: v.get("views", 0), reverse=True)[:5]
                 result["top_videos"] = [

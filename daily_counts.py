@@ -178,11 +178,11 @@ def build_daily_counts_table():
     log(f"ACCEPTED: free={free_acc}, upload={upload_acc}, stripe={stripe_acc}")
 
     # Group by date (ACCEPTED only)
-    # FREE: primary=Account Created On (legacy), fallback=Signup_Date (from KPI scraper)
-    free_by_date,   free_stats   = group_accepted_by_date(free_rows,   "Account Created On", "FREE", fallback_field="Signup_Date")
-    upload_by_date, upload_stats = group_accepted_by_date(upload_rows, "Upload Date",        "UPLOAD")
-    # For Stripe: primary=First payment, fallback=Created
-    stripe_by_date, stripe_stats = group_accepted_by_date(stripe_rows, "First payment",            "STRIPE", fallback_field="Created")
+    # FREE: primary=Signup_Date (from KPI scraper, normalized), fallback=Account Created On (legacy)
+    free_by_date,   free_stats   = group_accepted_by_date(free_rows,   "Signup_Date", "FREE", fallback_field="Account Created On")
+    upload_by_date, upload_stats = group_accepted_by_date(upload_rows, "First_Upload_Date",        "UPLOAD", fallback_field="Upload Date")
+    # For Stripe: primary=Payment_Date (from Stripe scraper), fallback=First payment/Created
+    stripe_by_date, stripe_stats = group_accepted_by_date(stripe_rows, "Payment_Date",            "STRIPE", fallback_field="First payment")
 
     log(f"Free grouping:   {dict(free_stats)}")
     log(f"Upload grouping: {dict(upload_stats)}")

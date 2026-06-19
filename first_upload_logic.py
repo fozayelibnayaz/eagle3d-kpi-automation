@@ -323,13 +323,15 @@ def decide(email_raw, upload_date_raw, accepted_signups, rejected_signups,
         # EXCEPTION: if confirmed paid customer with significant spend,
         # email domain is clearly real even if our checks fail
         # (e.g. company domains with strict SMTP)
+        # BUT disposable domains are NEVER overridden - they are fake by definition
         if is_paid_customer(email_norm):
             hp = load_historical_paid()
             entry = hp.get(email_norm, {})
             spend = entry.get("total_spend", 0)
             if spend > 100:  # significant paid customer
-                # Override INVALID only for non-disposable failures
-                if verify["category"] not in ("DISPOSABLE", "INTERNAL", "NO_MX"):
+                # Override INVALID only for non-disposable, non-internal failures
+                # Disposable domains are NEVER overridden - they are fake by definition
+                if verify["category"] not in ("DISPOSABLE", "INTERNAL"):
                     # Let it through email gate but still check dates
                     signals["email_gate_overridden"] = (
                         f"paid_customer_spend_{spend}_override"
@@ -485,6 +487,9 @@ def decide(email_raw, upload_date_raw, accepted_signups, rejected_signups,
         if not signup_date:
             # Truly not in any DB = brand new user = accept
             if verify["verdict"] == "NOT_DETERMINED":
+                # Flag for manual review - brand new but uncertain
+                signals["needs_review"] = True
+                signals["review_reason"] = "brand_new_email_but_uncertain"
                 return (
                     False, "NOT_DETERMINED",
                     f"brand_new_email_but_uncertain_score_{verify['score']}",
@@ -523,6 +528,8 @@ def decide(email_raw, upload_date_raw, accepted_signups, rejected_signups,
 
     # ── GATE 9: NOT_DETERMINED emails ────────────────────────────
     if verify["verdict"] == "NOT_DETERMINED":
+        signals["needs_review"] = True
+        signals["review_reason"] = f"email_uncertain_score_{verify['score']}_gap_{gap}d"
         return (
             False, "NOT_DETERMINED",
             f"email_uncertain_score_{verify['score']}_gap_{gap}d",

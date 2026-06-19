@@ -348,8 +348,10 @@ def _extract_public_data(html: str, url: str) -> Dict[str, Any]:
         ]:
             m = re.search(pattern, html)
             if m:
-                result["company_name"] = m.group(1).strip()
-                break
+                name = m.group(1).strip()
+                if name.lower() not in ("sign up", "sign in", "linkedin", "login"):
+                    result["company_name"] = name
+                    break
 
     # Employee count
     if not result.get("employees"):
