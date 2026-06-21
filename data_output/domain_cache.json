@@ -3477,6 +3477,32 @@
     ],
     "reputation_score": 0.3
   },
+  "d3creativestudio.com": {
+    "checked_at": "2026-06-21T04:06:56.803924",
+    "domain": "d3creativestudio.com",
+    "domain_age_days": null,
+    "has_a_record": true,
+    "has_dmarc": true,
+    "has_spf": true,
+    "is_disposable": false,
+    "is_major_provider": false,
+    "mx_ok": true,
+    "mx_records": [
+      [
+        1,
+        "aspmx.l.google.com"
+      ],
+      [
+        5,
+        "alt1.aspmx.l.google.com"
+      ],
+      [
+        5,
+        "alt2.aspmx.l.google.com"
+      ]
+    ],
+    "reputation_score": 0.45
+  },
   "dalie.company": {
     "checked_at": "2026-06-18T06:55:16.366909",
     "domain": "dalie.company",
@@ -5425,7 +5451,7 @@
     "reputation_score": 0.3
   },
   "frankndesign.com": {
-    "checked_at": "2026-05-21T15:37:22.620502",
+    "checked_at": "2026-06-21T04:06:45.953543",
     "domain": "frankndesign.com",
     "domain_age_days": null,
     "has_a_record": true,
@@ -6824,6 +6850,24 @@
       [
         10,
         "mx-2.dpoczta.pl"
+      ]
+    ],
+    "reputation_score": 0.45
+  },
+  "humanly.us": {
+    "checked_at": "2026-06-21T04:06:48.859846",
+    "domain": "humanly.us",
+    "domain_age_days": null,
+    "has_a_record": true,
+    "has_dmarc": true,
+    "has_spf": true,
+    "is_disposable": false,
+    "is_major_provider": false,
+    "mx_ok": true,
+    "mx_records": [
+      [
+        0,
+        "humanly-us.mail.protection.outlook.com"
       ]
     ],
     "reputation_score": 0.45
@@ -9239,7 +9283,7 @@
     "reputation_score": 0.25
   },
   "materna.group": {
-    "checked_at": "2026-05-21T15:37:24.893420",
+    "checked_at": "2026-06-21T04:06:27.515640",
     "domain": "materna.group",
     "domain_age_days": null,
     "has_a_record": true,
@@ -12282,7 +12326,7 @@
     "reputation_score": 0.25
   },
   "projeviz.com": {
-    "checked_at": "2026-05-21T15:37:23.493316",
+    "checked_at": "2026-06-21T04:06:47.139418",
     "domain": "projeviz.com",
     "domain_age_days": null,
     "has_a_record": true,
@@ -15144,7 +15188,7 @@
     "reputation_score": 0.45
   },
   "thepointsurfpark.com": {
-    "checked_at": "2026-05-21T15:37:24.239805",
+    "checked_at": "2026-06-21T04:06:47.859127",
     "domain": "thepointsurfpark.com",
     "domain_age_days": null,
     "has_a_record": true,
