@@ -1957,6 +1957,20 @@ if page == "📊 Dashboard":
     h += kpi_h("S→P Rate", f"{s2p:.1f}%", delta_h(s2p, ps2p), "🎯")
     h += "</div>"
     st.markdown(h, unsafe_allow_html=True)
+    # ── Pattern Analysis Section ──
+    with st.expander("📊 Pattern Analysis — Region + Time + Anomalies", expanded=False):
+        try:
+            from kpi_pattern_ui import render_kpi_pattern_analysis
+            pat_tabs = st.tabs(["👥 Sign-ups", "📤 First Uploads", "💳 Paid"])
+            with pat_tabs[0]:
+                render_kpi_pattern_analysis("signups")
+            with pat_tabs[1]:
+                render_kpi_pattern_analysis("uploads")
+            with pat_tabs[2]:
+                render_kpi_pattern_analysis("paid")
+        except Exception as _pe:
+            st.warning(f"Pattern analysis: {_pe}")
+
 
     # ── Conversion-Time & Analytical Metrics ──
     _ct_c1, _ct_c2, _ct_c3, _ct_c4 = st.columns(4)

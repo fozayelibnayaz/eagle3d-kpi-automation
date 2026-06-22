@@ -11,6 +11,8 @@ import plotly.graph_objects as go
 from datetime import datetime, timedelta, date
 import os
 import json
+import urllib.request
+import urllib.error
 
 
 def _get_secret(key, default=""):
@@ -24,7 +26,7 @@ def _get_secret(key, default=""):
 
 
 def _ai_analyze_video(video, channel_avg_eng=2.0):
-    """Use Groq or Gemini to analyze a video and explain why it worked/failed."""
+    """Use Groq or Gemini to analyze a video with rich structured insights."""
     title       = video.get("title", "")
     views       = video.get("views", 0)
     likes       = video.get("likes", 0)
@@ -66,26 +68,48 @@ def _ai_analyze_video(video, channel_avg_eng=2.0):
     groq_key   = _get_secret("GROQ_API_KEY")
     gemini_key = _get_secret("GEMINI_API_KEY")
 
-    prompt = f"""Analyze this YouTube video performance and give actionable insights in 3-4 short bullet points.
+    duration_min = video.get("duration", "")
+    description = video.get("description", "")[:300]
+    prompt = f"""You are a YouTube growth expert analyzing a real video. Use the actual data provided.
 
-Video: {title}
-Views: {views:,}
-Likes: {likes:,} ({likes_ratio:.2f}% like rate)
-Comments: {comments}
-Engagement: {eng:.2f}%
-Views/day: {vpd:.1f}
-Age: {age_days} days
-Score: {score}/100
-Channel avg engagement: {channel_avg_eng:.2f}%
+VIDEO DATA:
+- Title: {title}
+- Description preview: {description}
+- Duration: {duration_min}
+- Views: {views:,}
+- Likes: {likes:,} ({likes_ratio:.2f}% like rate)
+- Comments: {comments}
+- Engagement rate: {eng:.2f}%
+- Views per day: {vpd:.1f}
+- Age: {age_days} days
+- Performance score: {score}/100
+- Channel average engagement: {channel_avg_eng:.2f}%
+- Data signals: {'; '.join(data_signals) if data_signals else 'None significant'}
 
-Data signals detected: {'; '.join(data_signals) if data_signals else 'None'}
+OUTPUT FORMAT (use these exact section headers in caps):
 
-Provide:
-1. Why this video performed this way (title/topic/timing analysis)
-2. What to replicate or avoid
-3. Specific next action (boost, edit thumbnail, create similar, etc)
+WHY
+[2-3 sentences explaining why this video performed this way based on the data]
 
-Be concise. Use bullet points."""
+THUMBNAIL
+[2-3 sentences with specific thumbnail improvement suggestions based on the title/topic]
+
+TITLE
+[2-3 sentences analyzing the title strength + specific rewording suggestions]
+
+ENGAGEMENT
+[2-3 sentences about the engagement rate vs benchmarks + how to improve]
+
+SEO
+[2-3 sentences about likely tags, keywords, search ranking + improvements]
+
+BETTER TITLE
+[Provide 1-2 alternative titles in quotes that would perform better]
+
+NEXT VIDEO
+[Specific next video idea that builds on this performance]
+
+Be specific. Reference the actual numbers. No generic advice."""
 
     if groq_key:
         try:
@@ -98,7 +122,7 @@ Be concise. Use bullet points."""
                         {"role": "system", "content": "You are a YouTube growth analyst. Give concise, data-driven advice."},
                         {"role": "user", "content": prompt},
                     ],
-                    "max_tokens": 400,
+                    "max_tokens": 1200,
                     "temperature": 0.3,
                 }).encode(),
                 headers={
@@ -111,6 +135,9 @@ Be concise. Use bullet points."""
                 result = json.loads(resp.read())
                 ai_text = result["choices"][0]["message"]["content"]
                 return {"data_signals": data_signals, "ai_analysis": ai_text, "source": "Groq Llama 3.3"}
+        except urllib.error.HTTPError as e:
+            err_body = e.read().decode() if hasattr(e,'read') else ''
+            return {"data_signals": data_signals, "ai_analysis": f"Groq error {e.code}: {err_body[:200]}", "source": "Groq error"}
         except Exception as e:
             pass
 
@@ -122,7 +149,7 @@ Be concise. Use bullet points."""
                 url,
                 data=json.dumps({
                     "contents": [{"parts": [{"text": prompt}]}],
-                    "generationConfig": {"maxOutputTokens": 400, "temperature": 0.3},
+                    "generationConfig": {"maxOutputTokens": 1200, "temperature": 0.3},
                 }).encode(),
                 headers={"Content-Type": "application/json"},
                 method="POST",
@@ -131,6 +158,9 @@ Be concise. Use bullet points."""
                 result = json.loads(resp.read())
                 ai_text = result["candidates"][0]["content"]["parts"][0]["text"]
                 return {"data_signals": data_signals, "ai_analysis": ai_text, "source": "Gemini 1.5"}
+        except urllib.error.HTTPError as e:
+            err_body = e.read().decode() if hasattr(e,'read') else ''
+            return {"data_signals": data_signals, "ai_analysis": f"Gemini error {e.code}: {err_body[:200]}", "source": "Gemini error"}
         except Exception:
             pass
 
@@ -178,7 +208,83 @@ def _format_duration(iso_dur):
     return f"{m}:{sec:02d}"
 
 
+
+# ── INJECT RESPONSIVE CSS ──
+def _inject_responsive_css():
+    st.markdown("""
+    <style>
+    /* Mobile + tablet responsive grid */
+    @media (max-width: 768px) {
+        [data-testid="column"] {
+            min-width: 100% !important;
+            flex: 1 1 100% !important;
+        }
+        [data-testid="stMetricValue"] {
+            font-size: 1.2rem !important;
+        }
+        [data-testid="stMetricLabel"] {
+            font-size: 0.75rem !important;
+        }
+        h1, h2, h3 {
+            font-size: 1.1rem !important;
+        }
+        .stMarkdown p {
+            font-size: 0.85rem !important;
+        }
+    }
+    @media (max-width: 1024px) and (min-width: 769px) {
+        [data-testid="stMetricValue"] {
+            font-size: 1.4rem !important;
+        }
+    }
+    /* Prevent horizontal overflow */
+    .main .block-container {
+        max-width: 100% !important;
+        padding-left: 1rem !important;
+        padding-right: 1rem !important;
+    }
+    /* Card style for video rows */
+    .video-row {
+        background: rgba(255,255,255,0.03);
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 8px;
+        padding: 12px;
+        margin-bottom: 8px;
+    }
+    .video-row:hover {
+        background: rgba(255,255,255,0.06);
+    }
+    /* Better button spacing on mobile */
+    .stButton button {
+        white-space: nowrap;
+        min-height: 36px;
+    }
+    /* Score badge styling */
+    .score-badge {
+        display: inline-block;
+        padding: 4px 10px;
+        border-radius: 12px;
+        font-weight: bold;
+        font-size: 0.85rem;
+    }
+    .score-high { background: #00aa55; color: white; }
+    .score-mid  { background: #ffaa00; color: black; }
+    .score-low  { background: #cc3344; color: white; }
+    /* Make tabs scroll on mobile */
+    .stTabs [data-baseweb="tab-list"] {
+        overflow-x: auto;
+        flex-wrap: nowrap;
+    }
+    .stTabs [data-baseweb="tab"] {
+        white-space: nowrap;
+        min-width: max-content;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+
 def render_youtube_command_center():
+    _inject_responsive_css()
     try:
         from youtube_command_center import get_cached_or_fetch
     except ImportError:
@@ -319,7 +425,29 @@ def render_youtube_command_center():
                     for s in analysis["data_signals"]:
                         st.write(f"• {s}")
                     st.markdown(f"**AI Analysis ({analysis['source']}):**")
-                    st.markdown(analysis["ai_analysis"])
+                    ai_text = analysis["ai_analysis"]
+                    sections = ["WHY", "THUMBNAIL", "TITLE", "ENGAGEMENT", "SEO", "BETTER TITLE", "NEXT VIDEO"]
+                    parsed = {}
+                    current = None
+                    for line in ai_text.split("\n"):
+                        stripped = line.strip()
+                        matched = False
+                        for sec in sections:
+                            if stripped.startswith(sec):
+                                current = sec
+                                rest = stripped[len(sec):].strip().lstrip(":").strip()
+                                parsed[current] = rest
+                                matched = True
+                                break
+                        if not matched and current:
+                            parsed[current] = parsed.get(current, "") + " " + stripped
+                    if parsed:
+                        for sec in sections:
+                            if sec in parsed and parsed[sec].strip():
+                                st.markdown(f"**{sec}**")
+                                st.write(parsed[sec].strip())
+                    else:
+                        st.markdown(ai_text)
 
         with bw2:
             if worst:
@@ -337,7 +465,29 @@ def render_youtube_command_center():
                     for s in analysis["data_signals"]:
                         st.write(f"• {s}")
                     st.markdown(f"**AI Analysis ({analysis['source']}):**")
-                    st.markdown(analysis["ai_analysis"])
+                    ai_text = analysis["ai_analysis"]
+                    sections = ["WHY", "THUMBNAIL", "TITLE", "ENGAGEMENT", "SEO", "BETTER TITLE", "NEXT VIDEO"]
+                    parsed = {}
+                    current = None
+                    for line in ai_text.split("\n"):
+                        stripped = line.strip()
+                        matched = False
+                        for sec in sections:
+                            if stripped.startswith(sec):
+                                current = sec
+                                rest = stripped[len(sec):].strip().lstrip(":").strip()
+                                parsed[current] = rest
+                                matched = True
+                                break
+                        if not matched and current:
+                            parsed[current] = parsed.get(current, "") + " " + stripped
+                    if parsed:
+                        for sec in sections:
+                            if sec in parsed and parsed[sec].strip():
+                                st.markdown(f"**{sec}**")
+                                st.write(parsed[sec].strip())
+                    else:
+                        st.markdown(ai_text)
 
     st.divider()
 
@@ -422,7 +572,31 @@ def render_youtube_command_center():
                         st.write("• No significant signals detected")
                 with col2:
                     st.markdown(f"**🧠 AI Analysis ({analysis['source']}):**")
-                    st.markdown(analysis["ai_analysis"])
+                    ai_text = analysis["ai_analysis"]
+                    # Parse sections
+                    sections = ["WHY", "THUMBNAIL", "TITLE", "ENGAGEMENT", "SEO", "BETTER TITLE", "NEXT VIDEO"]
+                    parsed = {}
+                    current = None
+                    for line in ai_text.split("\n"):
+                        stripped = line.strip()
+                        matched = False
+                        for sec in sections:
+                            if stripped.startswith(sec):
+                                current = sec
+                                rest = stripped[len(sec):].strip().lstrip(":").strip()
+                                parsed[current] = rest
+                                matched = True
+                                break
+                        if not matched and current:
+                            parsed[current] = parsed.get(current, "") + " " + stripped
+                    if parsed:
+                        for sec in sections:
+                            if sec in parsed and parsed[sec].strip():
+                                st.markdown(f"**{sec}**")
+                                st.write(parsed[sec].strip())
+                                st.write("")
+                    else:
+                        st.markdown(ai_text)
                 if st.button("✖ Close", key=f"close_{v.get('id','')}"):
                     st.session_state[f"_analyzing_{v.get('id','')}"] = False
                     st.rerun()
