@@ -597,7 +597,70 @@ if not CREDS_PATH:
         pass
 
 
-@st.cache_data(ttl=120)
+
+# ── SUPABASE FAST KPI STATS ──
+@st.cache_data(ttl=60)
+def get_supabase_kpi_fast():
+    """Get KPI counts directly from Supabase - fast and accurate."""
+    try:
+        import os
+        from supabase import create_client
+        _url = os.environ.get("SUPABASE_URL","")
+        _key = os.environ.get("SUPABASE_SERVICE_KEY","")
+        if not _url:
+            _url = str(st.secrets.get("SUPABASE_URL","")).strip()
+        if not _key:
+            _key = str(st.secrets.get("SUPABASE_SERVICE_KEY","")).strip()
+        if not _url or not _key:
+            return None
+        _sb = create_client(_url, _key)
+        _today = datetime.now().strftime("%Y-%m-%d")
+        _month_start = datetime.now().strftime("%Y-%m-01")
+        # Upload coverage start = common period start
+        _upload_start = "2025-12-01"
+        try:
+            _ur = _sb.table("uploads").select("upload_date").eq("final_status","ACCEPTED").order("upload_date").limit(1).execute()
+            if _ur.data and _ur.data[0].get("upload_date"):
+                _upload_start = _ur.data[0]["upload_date"][:10]
+        except Exception:
+            pass
+        # Today counts
+        _st = _sb.table("signups").select("count",count="exact").eq("final_status","ACCEPTED").gte("signup_date",_today).execute()
+        _ut = _sb.table("uploads").select("count",count="exact").eq("final_status","ACCEPTED").gte("upload_date",_today).execute()
+        _pt = _sb.table("payments").select("count",count="exact").eq("final_status","ACCEPTED").gte("first_payment_date",_today).execute()
+        # Month counts
+        _sm = _sb.table("signups").select("count",count="exact").eq("final_status","ACCEPTED").gte("signup_date",_month_start).execute()
+        _um = _sb.table("uploads").select("count",count="exact").eq("final_status","ACCEPTED").gte("upload_date",_month_start).execute()
+        _pm = _sb.table("payments").select("count",count="exact").eq("final_status","ACCEPTED").gte("first_payment_date",_month_start).execute()
+        # Common period (from upload start = Dec 2025)
+        _sc = _sb.table("signups").select("count",count="exact").eq("final_status","ACCEPTED").gte("signup_date",_upload_start).execute()
+        _uc = _sb.table("uploads").select("count",count="exact").eq("final_status","ACCEPTED").gte("upload_date",_upload_start).execute()
+        _pc = _sb.table("payments").select("count",count="exact").eq("final_status","ACCEPTED").gte("first_payment_date",_upload_start).execute()
+        # Full DB totals
+        _sf = _sb.table("signups").select("count",count="exact").eq("final_status","ACCEPTED").execute()
+        _uf = _sb.table("uploads").select("count",count="exact").eq("final_status","ACCEPTED").execute()
+        _pf = _sb.table("payments").select("count",count="exact").eq("final_status","ACCEPTED").execute()
+        return {
+            "today_signups":   _st.count or 0,
+            "today_uploads":   _ut.count or 0,
+            "today_paid":      _pt.count or 0,
+            "month_signups":   _sm.count or 0,
+            "month_uploads":   _um.count or 0,
+            "month_paid":      _pm.count or 0,
+            "common_signups":  _sc.count or 0,
+            "common_uploads":  _uc.count or 0,
+            "common_paid":     _pc.count or 0,
+            "full_signups":    _sf.count or 0,
+            "full_uploads":    _uf.count or 0,
+            "full_paid":       _pf.count or 0,
+            "common_start":    _upload_start,
+            "today":           _today,
+            "month_start":     _month_start,
+        }
+    except Exception as _e:
+        return None
+
+@st.cache_data(ttl=300)
 def load_sheet(tab):
     # PRIMARY: Try Supabase first
     if _SUPABASE_ACTIVE and _sb_load_tab is not None:
@@ -1052,10 +1115,53 @@ _today_str = datetime.now().strftime("%Y-%m-%d")
 _auto_trigger_key = f"_auto_triggered_{_today_str}"
 
 with st.spinner("Loading data..."):
-    counts_raw = load_sheet("Daily_Counts")
-    free_raw = load_sheet("Verified_FREE")
-    upload_raw = load_sheet("Verified_FIRST_UPLOAD")
-    stripe_raw = load_sheet("Verified_STRIPE")
+    counts_raw  = load_sheet("Daily_Counts")
+    free_raw    = load_sheet("Verified_FREE")
+    upload_raw  = load_sheet("Verified_FIRST_UPLOAD")
+    stripe_raw  = load_sheet("Verified_STRIPE")
+
+# ── COLUMN NORMALIZER: ensure Supabase columns match app.py expectations ──
+def _norm_cols(df, col_map):
+    if df.empty:
+        return df
+    for src, dst in col_map.items():
+        if src in df.columns and dst not in df.columns:
+            df[dst] = df[src]
+    return df
+
+# Signups: signup_date -> Account Created On
+free_raw = _norm_cols(free_raw, {
+    "signup_date": "Account Created On",
+    "lead_source": "Lead Source",
+    "email_normalized": "__email_normalized__",
+})
+# Uploads: upload_date -> Upload Date
+upload_raw = _norm_cols(upload_raw, {
+    "upload_date": "Upload Date",
+    "email_normalized": "__email_normalized__",
+})
+# Payments: first_payment_date -> First payment, total_spend -> Amount
+stripe_raw = _norm_cols(stripe_raw, {
+    "first_payment_date": "First payment",
+    "total_spend": "Amount",
+    "email_normalized": "__email_normalized__",
+})
+if not stripe_raw.empty and "row_date_used" not in stripe_raw.columns:
+    for _fc in ("First payment", "first_payment_date"):
+        if _fc in stripe_raw.columns:
+            stripe_raw["row_date_used"] = stripe_raw[_fc]
+            break
+# Daily counts: ensure correct column names
+counts_raw = _norm_cols(counts_raw, {
+    "signups_accepted":  "SignUps_Accepted",
+    "uploads_accepted":  "FirstUploads_Accepted",
+    "paid_accepted":     "PaidSubscribers_Accepted",
+    "signup_details":    "SignUp_Details",
+    "upload_details":    "Upload_Details",
+    "paid_details":      "Paid_Details",
+    "last_updated":      "LastUpdated",
+    "date":              "Date",
+})
 
 # Auto-trigger check (runs once per day per session)
 if not st.session_state.get(_auto_trigger_key):
@@ -1209,6 +1315,27 @@ if kpi_all.empty:
             pass
 
 kpi = filter_kpi(kpi_all, p_start, p_end)
+
+# ── SUPABASE FAST KPI OVERRIDE ──
+# Use direct Supabase counts for today/month (always accurate)
+_sb_kpi = get_supabase_kpi_fast()
+if _sb_kpi:
+    _sb_today_s = _sb_kpi["today_signups"]
+    _sb_today_u = _sb_kpi["today_uploads"]
+    _sb_today_p = _sb_kpi["today_paid"]
+    _sb_month_s = _sb_kpi["month_signups"]
+    _sb_month_u = _sb_kpi["month_uploads"]
+    _sb_month_p = _sb_kpi["month_paid"]
+    _sb_common_s = _sb_kpi["common_signups"]
+    _sb_common_u = _sb_kpi["common_uploads"]
+    _sb_common_p = _sb_kpi["common_paid"]
+    _sb_common_start = _sb_kpi["common_start"]
+else:
+    _sb_today_s = _sb_today_u = _sb_today_p = 0
+    _sb_month_s = _sb_month_u = _sb_month_p = 0
+    _sb_common_s = _sb_common_u = _sb_common_p = 0
+    _sb_common_start = "2025-12-01"
+
 prev_kpi = (
     filter_kpi(kpi_all, comp_s, comp_e)
     if enable_comp and comp_s
