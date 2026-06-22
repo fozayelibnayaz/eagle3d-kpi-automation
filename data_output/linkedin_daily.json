@@ -4012,7 +4012,7 @@
     },
     {
       "date": "2026-06-22",
-      "scraped_at": "2026-06-22T09:39:46.811810",
+      "scraped_at": "2026-06-22T16:00:21.218938",
       "followers": 2552,
       "company_name": "Eagle 3D Streaming",
       "employees": "",
@@ -4020,8 +4020,11 @@
       "search_appearances": 0,
       "competitors": "",
       "leads": 0,
-      "newsletters": 0
+      "newsletters": 0,
+      "posts": 10,
+      "post_likes": 35,
+      "post_comments": 2
     }
   ],
-  "_cached_at": "2026-06-22T09:39:46.812793"
+  "_cached_at": "2026-06-22T16:00:21.220457"
 }
