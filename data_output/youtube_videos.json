@@ -1527,11 +1527,11 @@
       "thumbnail": "https://i.ytimg.com/vi/BpXjau5J-uE/hqdefault.jpg",
       "duration_seconds": 33,
       "duration_label": "0:33",
-      "views": 1958,
+      "views": 1967,
       "likes": 15,
       "comments": 0,
-      "engagement_rate": 0.766,
-      "like_rate": 0.766,
+      "engagement_rate": 0.763,
+      "like_rate": 0.763,
       "tags": [],
       "category_id": "28",
       "demo": false
@@ -4998,5 +4998,5 @@
       "demo": false
     }
   ],
-  "_cached_at": "2026-06-22T18:47:37.754204"
+  "_cached_at": "2026-06-22T19:00:12.056223"
 }
