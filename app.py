@@ -1158,7 +1158,7 @@ with st.sidebar:
 
     _SYS_PAGES = {"📈 Google Analytics", "📺 YouTube", "💼 LinkedIn", "🎯 Customer Success", "🔗 Cross-Platform"}
     _KPI_PAGES = {"📊 Dashboard", "🔍 Browse Data", "🔬 EDA Lab", "✏️ Manual Override", "📋 Reports", "🔔 Alerts"}
-    _AI_PAGES = {"🤖 Ask AI", "🔮 Predictions", "🧠 AI Tools"}
+    _AI_PAGES = {"🤖 Ask AI", "🤖 AI KPI", "🤖 AI YouTube", "🤖 AI LinkedIn", "🤖 AI GA4", "🤖 AI CS", "🔮 Predictions", "🧠 AI Tools"}
 
     page = st.session_state["nav_page"]
 
@@ -1196,7 +1196,14 @@ with st.sidebar:
             st.rerun()
 
     with st.expander("🤖 AI & Insights", expanded=page in _AI_PAGES):
-        for _label, _key in [("AI Tools", "🧠 AI Tools"), ("Ask AI", "🤖 Ask AI"), ("Predictions", "🔮 Predictions")]:
+        for _label, _key in [("Ask AI (All)", "🤖 Ask AI"),
+                              ("AI - KPI", "🤖 AI KPI"),
+                              ("AI - YouTube", "🤖 AI YouTube"),
+                              ("AI - LinkedIn", "🤖 AI LinkedIn"),
+                              ("AI - GA4", "🤖 AI GA4"),
+                              ("AI - Customer Success", "🤖 AI CS"),
+                              ("AI Tools", "🧠 AI Tools"),
+                              ("Predictions", "🔮 Predictions")]:
             if st.button(_label, use_container_width=True, key=f"nav_{_key}"):
                 st.session_state["nav_page"] = _key
                 st.rerun()
@@ -2674,130 +2681,48 @@ elif page == "📈 Google Analytics":
             st.warning(f"GA4 pattern analysis: {_ge}")
 
 elif page == "🤖 Ask AI":
-    st.markdown(
-        '<div class="sec-head">🤖 AI Analytics Assistant</div>',
-        unsafe_allow_html=True,
-    )
-    _ai_mod = MOD.get("ai_engine")
-    if not _ai_mod:
-        st.error("AI Engine not loaded")
-        st.stop()
+    try:
+        from ai_assistant_ui import render_ai_assistant
+        render_ai_assistant("all")
+    except Exception as _e:
+        st.error(f"AI Assistant error: {_e}")
 
-    _provider = _ai_mod._get_provider()
-    _pi = {
-        "groq": ("⚡ Groq Cloud", "Ultra-fast"),
-        "gemini": ("💎 Google Gemini", "Advanced reasoning"),
-        "rule_based": ("🧠 Rule-Based", "No API key"),
-    }
-    _pn, _pd = _pi.get(_provider, ("Unknown", ""))
-    st.markdown(
-        f'<span class="badge badge-info">{_pn}</span> '
-        f'<span style="color:var(--muted);font-size:0.8rem;">{_pd}</span>',
-        unsafe_allow_html=True,
-    )
+elif page == "🤖 AI KPI":
+    try:
+        from ai_assistant_ui import render_ai_assistant
+        render_ai_assistant("kpi")
+    except Exception as _e:
+        st.error(f"AI KPI error: {_e}")
 
-    if "chat_history" not in st.session_state:
-        st.session_state["chat_history"] = []
+elif page == "🤖 AI YouTube":
+    try:
+        from ai_assistant_ui import render_ai_assistant
+        render_ai_assistant("youtube")
+    except Exception as _e:
+        st.error(f"AI YouTube error: {_e}")
 
-    st.markdown("#### 🛠 AI Tools")
-    _tools = _ai_mod.get_available_tools()
-    _tc = st.columns(4)
-    for _i, _tool in enumerate(_tools):
-        with _tc[_i % 4]:
-            if st.button(
-                _tool["name"],
-                key=f"t_{_tool['id']}",
-                use_container_width=True,
-                help=_tool["description"],
-            ):
-                with st.spinner("AI analyzing..."):
-                    _result = _ai_mod.run_tool(
-                        _tool["id"],
-                        kpi_df=kpi, utm_df=utm_df, pages_df=pages_df,
-                        events_df=events_df, geo_df=geo_df,
-                        leads_df=leads_df, period_label=period_label,
-                        prev_kpi_df=prev_kpi if enable_comp else None,
-                        prev_utm_df=prev_utm_df if enable_comp else None,
-                    )
-                    st.session_state["chat_history"].append({
-                        "role": "tool",
-                        "content": _result["answer"],
-                        "name": _tool["name"],
-                        "time": datetime.now().strftime("%H:%M"),
-                        "provider": _result.get("provider", "rule_based"),
-                    })
+elif page == "🤖 AI LinkedIn":
+    try:
+        from ai_assistant_ui import render_ai_assistant
+        render_ai_assistant("linkedin")
+    except Exception as _e:
+        st.error(f"AI LinkedIn error: {_e}")
 
-    st.markdown("---")
-    st.markdown("#### 💬 Chat")
-    st.caption("Ask anything about your data in plain English")
+elif page == "🤖 AI GA4":
+    try:
+        from ai_assistant_ui import render_ai_assistant
+        render_ai_assistant("ga4")
+    except Exception as _e:
+        st.error(f"AI GA4 error: {_e}")
 
-    for _msg in st.session_state["chat_history"]:
-        if _msg["role"] == "user":
-            st.markdown(
-                f'<div class="chat-msg chat-user">'
-                f'<b style="color:var(--accent);">You:</b> {_msg["content"]}'
-                f'<br><span style="font-size:0.7rem;color:var(--muted);">'
-                f'{_msg["time"]}</span></div>',
-                unsafe_allow_html=True,
-            )
-        else:
-            _pl = {
-                "groq": "⚡ Groq", "gemini": "💎 Gemini",
-                "rule_based": "🧠 Rules",
-            }.get(_msg.get("provider", ""), "🤖")
-            _lb = (
-                _msg.get("name", f"AI ({_pl})")
-                if _msg["role"] == "tool"
-                else f"AI ({_pl})"
-            )
-            st.markdown(
-                f'<div class="chat-msg chat-ai">'
-                f'<b style="color:var(--green);">{_lb}</b><br>'
-                f'<span style="font-size:0.7rem;color:var(--muted);">'
-                f'{_msg["time"]}</span><br><br>'
-                f'{_msg["content"]}</div>',
-                unsafe_allow_html=True,
-            )
+elif page == "🤖 AI CS":
+    try:
+        from ai_assistant_ui import render_ai_assistant
+        render_ai_assistant("customer_success")
+    except Exception as _e:
+        st.error(f"AI CS error: {_e}")
 
-    _question = st.text_input(
-        "💬 Ask your question:",
-        placeholder="e.g., How many signups came from Google this month?",
-        key="chat_input",
-    )
-    _bc1, _bc2 = st.columns([1, 6])
-    with _bc1:
-        if st.button("🚀 Send", type="primary", use_container_width=True):
-            if _question:
-                with st.spinner("AI thinking..."):
-                    _result = _ai_mod.ask_ai(
-                        _question,
-                        kpi_df=kpi, utm_df=utm_df, pages_df=pages_df,
-                        events_df=events_df, geo_df=geo_df,
-                        leads_df=leads_df, period_label=period_label,
-                        prev_kpi_df=prev_kpi if enable_comp else None,
-                        prev_utm_df=prev_utm_df if enable_comp else None,
-                    )
-                    st.session_state["chat_history"].append({
-                        "role": "user",
-                        "content": _question,
-                        "time": datetime.now().strftime("%H:%M"),
-                    })
-                    st.session_state["chat_history"].append({
-                        "role": "assistant",
-                        "content": _result["answer"],
-                        "time": datetime.now().strftime("%H:%M"),
-                        "provider": _result.get("provider", "rule_based"),
-                    })
-                    st.rerun()
-    with _bc2:
-        if st.session_state["chat_history"]:
-            if st.button("🗑️ Clear Chat", use_container_width=True):
-                st.session_state["chat_history"] = []
-                st.rerun()
 
-# ═══════════════════════════════════════════════════════════════
-# PAGE: 🧠 AI POWER TOOLS — 29 YouTube AI Tools
-# ═══════════════════════════════════════════════════════════════
 elif page == "🧠 AI Tools":
     st.markdown('<div class="sec-head">🧠 AI Power Tools</div>', unsafe_allow_html=True)
     _ai_mod = MOD.get("ai_engine")
