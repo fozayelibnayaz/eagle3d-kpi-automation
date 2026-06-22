@@ -660,6 +660,80 @@ def get_supabase_kpi_fast():
     except Exception as _e:
         return None
 
+
+# ── FAST BROWSE DATA: server-side filtered from Supabase ──
+@st.cache_data(ttl=60)
+def _browse_supabase(table_key, status_filter, search_val, date_start, date_end, limit=1000):
+    """Server-side filtered browse data from Supabase - much faster than client-side."""
+    try:
+        import os
+        from supabase import create_client as _sb_cc
+        _url = os.environ.get("SUPABASE_URL","")
+        _key = os.environ.get("SUPABASE_SERVICE_KEY","")
+        if not _url:
+            try:
+                _url = str(st.secrets.get("SUPABASE_URL","")).strip()
+                _key = str(st.secrets.get("SUPABASE_SERVICE_KEY","")).strip()
+            except Exception:
+                pass
+        if not _url or not _key:
+            return None, {}
+
+        _sb = _sb_cc(_url, _key)
+
+        _table_map = {
+            "Sign-ups":     ("signups",  "signup_date",        "email"),
+            "First Uploads":("uploads",  "upload_date",        "email"),
+            "Stripe":       ("payments", "first_payment_date", "email"),
+        }
+        if table_key not in _table_map:
+            return None, {}
+
+        _tbl, _date_col, _email_col = _table_map[table_key]
+
+        # Build query
+        _q = _sb.table(_tbl).select("*")
+
+        # Date filter
+        if date_start:
+            _q = _q.gte(_date_col, str(date_start))
+        if date_end:
+            _q = _q.lte(_date_col, str(date_end))
+
+        # Status filter
+        if status_filter and status_filter != "All":
+            _q = _q.eq("final_status", status_filter.upper())
+
+        # Search (email only for server-side)
+        if search_val and "@" in search_val:
+            _q = _q.ilike(_email_col, f"%{search_val}%")
+
+        _q = _q.order(_date_col, desc=True).limit(limit)
+        _resp = _q.execute()
+        _data = _resp.data or []
+
+        _total = len(_data)
+        _accepted = sum(1 for r in _data if str(r.get("final_status","")).upper() == "ACCEPTED")
+        _rejected = _total - _accepted
+
+        _diag = {
+            "raw_total": _total,
+            "after_date_filter": _total,
+            "after_status_filter": _total,
+            "after_search_filter": _total,
+            "source": "supabase",
+            "table": _tbl,
+            "date_col": _date_col,
+            "accepted": _accepted,
+            "rejected": _rejected,
+        }
+
+        return pd.DataFrame(_data), _diag
+    except Exception as _e:
+        return None, {"error": str(_e)}
+
+
+
 @st.cache_data(ttl=300)
 def load_sheet(tab):
     # PRIMARY: Supabase - fast, no cold start, no quota limits
@@ -3378,77 +3452,6 @@ elif page == "🔬 EDA Lab":
 # ═══════════════════════════════════════════════════════════════
 # PAGE: 🔍 BROWSE DATA
 # ═══════════════════════════════════════════════════════════════
-
-# ── FAST BROWSE DATA: server-side filtered from Supabase ──
-@st.cache_data(ttl=60)
-def _browse_supabase(table_key, status_filter, search_val, date_start, date_end, limit=1000):
-    """Server-side filtered browse data from Supabase - much faster than client-side."""
-    try:
-        import os
-        from supabase import create_client as _sb_cc
-        _url = os.environ.get("SUPABASE_URL","")
-        _key = os.environ.get("SUPABASE_SERVICE_KEY","")
-        if not _url:
-            try:
-                _url = str(st.secrets.get("SUPABASE_URL","")).strip()
-                _key = str(st.secrets.get("SUPABASE_SERVICE_KEY","")).strip()
-            except Exception:
-                pass
-        if not _url or not _key:
-            return None, {}
-
-        _sb = _sb_cc(_url, _key)
-
-        _table_map = {
-            "Sign-ups":     ("signups",  "signup_date",        "email"),
-            "First Uploads":("uploads",  "upload_date",        "email"),
-            "Stripe":       ("payments", "first_payment_date", "email"),
-        }
-        if table_key not in _table_map:
-            return None, {}
-
-        _tbl, _date_col, _email_col = _table_map[table_key]
-
-        # Build query
-        _q = _sb.table(_tbl).select("*")
-
-        # Date filter
-        if date_start:
-            _q = _q.gte(_date_col, str(date_start))
-        if date_end:
-            _q = _q.lte(_date_col, str(date_end))
-
-        # Status filter
-        if status_filter and status_filter != "All":
-            _q = _q.eq("final_status", status_filter.upper())
-
-        # Search (email only for server-side)
-        if search_val and "@" in search_val:
-            _q = _q.ilike(_email_col, f"%{search_val}%")
-
-        _q = _q.order(_date_col, desc=True).limit(limit)
-        _resp = _q.execute()
-        _data = _resp.data or []
-
-        _total = len(_data)
-        _accepted = sum(1 for r in _data if str(r.get("final_status","")).upper() == "ACCEPTED")
-        _rejected = _total - _accepted
-
-        _diag = {
-            "raw_total": _total,
-            "after_date_filter": _total,
-            "after_status_filter": _total,
-            "after_search_filter": _total,
-            "source": "supabase",
-            "table": _tbl,
-            "date_col": _date_col,
-            "accepted": _accepted,
-            "rejected": _rejected,
-        }
-
-        return pd.DataFrame(_data), _diag
-    except Exception as _e:
-        return None, {"error": str(_e)}
 
 elif page == "🔍 Browse Data":
     st.markdown(
