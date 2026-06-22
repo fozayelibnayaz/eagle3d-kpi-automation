@@ -224,6 +224,8 @@ jobs:
             data_output/ga4_traffic_cache.json \
             data_output/daily_counts.json \
             data_output/cross_platform_cache.json \
+            data_output/customer_success_raw.json \
+            data_output/linkedin_full_analytics.json \
             kpi_storage_state.json; do
             if [ -f "$f" ]; then
               git add -f "$f"

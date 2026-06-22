@@ -95,15 +95,55 @@ def scrape_all_tabs():
     for ws in sheet.worksheets():
         try:
             log(f"Reading tab: {ws.title}")
-            rows = ws.get_all_records()
+            # Use get_all_values to bypass duplicate-header errors
+            all_values = ws.get_all_values()
+            if not all_values:
+                log(f"  -> EMPTY tab")
+                result["tabs"][ws.title] = {"slug": _slugify(ws.title), "rows": 0, "data": [], "columns": []}
+                continue
+
+            # Detect header row: first non-empty row
+            header_row_idx = 0
+            for i, row in enumerate(all_values):
+                non_empty = [c.strip() for c in row if c and c.strip()]
+                if len(non_empty) >= 2:
+                    header_row_idx = i
+                    break
+
+            raw_headers = all_values[header_row_idx]
+            # Make headers unique
+            headers = []
+            seen = {}
+            for j, h in enumerate(raw_headers):
+                h = (h or "").strip()
+                if not h:
+                    h = f"col_{j+1}"
+                if h in seen:
+                    seen[h] += 1
+                    h = f"{h}_{seen[h]}"
+                else:
+                    seen[h] = 0
+                headers.append(h)
+
+            # Build records from rows after header
+            rows = []
+            for r in all_values[header_row_idx + 1:]:
+                row_dict = {}
+                for k, val in zip(headers, r):
+                    row_dict[k] = val
+                # Skip completely empty rows
+                if any(v and str(v).strip() for v in row_dict.values()):
+                    rows.append(row_dict)
+
             slug = _slugify(ws.title)
             result["tabs"][ws.title] = {
-                "slug":         slug,
-                "rows":         len(rows),
-                "data":         rows[:5000],   # cap to prevent huge payloads
-                "columns":      list(rows[0].keys()) if rows else [],
+                "slug":     slug,
+                "rows":     len(rows),
+                "data":     rows[:5000],
+                "columns":  headers,
+                "header_row": header_row_idx + 1,
             }
-            log(f"  -> {len(rows)} rows, columns: {result['tabs'][ws.title]['columns'][:10]}")
+            log(f"  -> {len(rows)} rows, {len(headers)} columns")
         except Exception as e:
             log(f"  ERROR reading {ws.title}: {e}")
             result["tabs"][ws.title] = {"error": str(e)}
@@ -127,12 +167,15 @@ def upsert_to_supabase(scraped):
             continue
         slug = tab_info.get("slug", _slugify(tab_name))
         for r in tab_info.get("data", []):
-            # Try to find email field
+            # Find email in ANY field
             email = ""
             for k, v in r.items():
-                if "email" in str(k).lower() and "@" in str(v):
-                    email = str(v).strip().lower()
-                    break
+                v_str = str(v) if v else ""
+                if "@" in v_str and "." in v_str.split("@")[-1]:
+                    # Validate looks like email
+                    if " " not in v_str.strip() and len(v_str) < 100:
+                        email = v_str.strip().lower()
+                        break
 
             all_rows.append({
                 "tab_name":   tab_name,
