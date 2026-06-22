@@ -334,12 +334,39 @@ def _save_debug(page, name):
 # ─────────────────────────────────────────────────────────────
 
 def scrape_updates(page):
+    """Scrape posts by intercepting LinkedIn XHR responses (loads ALL data)."""
     log("=" * 50)
-    log("UPDATES (Posts Analytics)")
+    log("UPDATES (Posts Analytics) - XHR INTERCEPT MODE")
     log("=" * 50)
     out = {"highlights": {}, "posts": []}
 
-    page.goto(URLS["updates"], timeout=45000, wait_until="domcontentloaded")
+    captured_responses = []
+
+    def _on_response(resp):
+        try:
+            url = resp.url
+            if any(k in url for k in [
+                "organizationShareStatistics",
+                "organizationalEntityShareStatistics",
+                "organizationPageStatistics",
+                "feed/updates",
+                "analytics/updates",
+                "organization/companies",
+                "shareUpdates",
+            ]):
+                ct = resp.headers.get("content-type", "")
+                if "json" in ct:
+                    try:
+                        body = resp.json()
+                        captured_responses.append({"url": url, "body": body})
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+    page.on("response", _on_response)
+
+    page.goto(URLS["updates"], timeout=60000, wait_until="domcontentloaded")
     _wait_load(page)
 
     if "authwall" in page.url or "login" in page.url:
@@ -347,52 +374,80 @@ def scrape_updates(page):
         return out
 
     _set_max_date_range(page)
-    time.sleep(3)
+    time.sleep(5)
 
-    # AGGRESSIVE LOAD: keep scrolling + clicking Show more until no new content
-    log("  Aggressively loading all posts...")
-    for i in range(50):
-        before_count = page.evaluate("document.querySelectorAll('tr, [role=row], li').length")
-        # Scroll to bottom
+    # Aggressive load with multiple scrolls + Show more
+    log("  Loading all posts via scroll + show more...")
+    for i in range(40):
         page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-        time.sleep(2)
-        # Click any "Show more" buttons
+        time.sleep(1.5)
         for sel in ["button:has-text('Show more')", "button:has-text('Load more')",
-                    "button:has-text('See more')", "button:has-text('View more')",
-                    "[aria-label*='Show more' i]", "[aria-label*='Load more' i]"]:
+                    "button:has-text('See more')", "[aria-label*='Show more' i]"]:
             try:
-                btn = page.query_selector(sel)
-                if btn and btn.is_visible():
-                    btn.click()
-                    time.sleep(2)
-                    log(f"    Clicked: {sel[:40]}")
+                btns = page.query_selector_all(sel)
+                for btn in btns:
+                    if btn.is_visible():
+                        btn.click()
+                        time.sleep(2)
             except Exception:
                 pass
-        after_count = page.evaluate("document.querySelectorAll('tr, [role=row], li').length")
-        if after_count == before_count and i > 3:
-            log(f"  No more new posts (had {after_count})")
-            break
-    time.sleep(3)
 
-    # Highlights
-    out["highlights"] = _extract_highlights(page, {
-        "impressions": r"([\d,]+)\s*(?:\n|\s)+Impressions",
-        "reactions":   r"([\d,]+)\s*(?:\n|\s)+Reactions",
-        "comments":    r"([\d,]+)\s*(?:\n|\s)+Comments",
-        "reposts":     r"([\d,]+)\s*(?:\n|\s)+Reposts",
-        "clicks":      r"([\d,]+)\s*(?:\n|\s)+Clicks",
-        "engagement_rate": r"([\d.]+%?)\s*(?:\n|\s)+Engagement",
-    })
-    log(f"Highlights: {out['highlights']}")
+    time.sleep(4)
+    log(f"  Captured {len(captured_responses)} XHR responses")
 
-    # Posts from table
+    # Parse captured responses for post data
+    seen_urns = set()
+    for cap in captured_responses:
+        body = cap.get("body", {})
+        elements = body.get("elements", []) or body.get("results", [])
+        if not isinstance(elements, list):
+            continue
+        for el in elements:
+            if not isinstance(el, dict):
+                continue
+            ts = el.get("totalShareStatistics") or el.get("statistics", {})
+            share = el.get("share", "") or el.get("shareUrn", "") or el.get("urn", "") or el.get("entity", "")
+            if not share or share in seen_urns:
+                continue
+            seen_urns.add(share)
+            imps = int(ts.get("impressionCount", 0) or ts.get("impressions", 0) or 0)
+            clicks = int(ts.get("clickCount", 0) or ts.get("clicks", 0) or 0)
+            likes = int(ts.get("likeCount", 0) or ts.get("likes", 0) or 0)
+            comments = int(ts.get("commentCount", 0) or ts.get("comments", 0) or 0)
+            shares_ct = int(ts.get("shareCount", 0) or ts.get("shares", 0) or 0)
+            engagement = int(ts.get("engagement", 0)) if ts.get("engagement") else (likes + comments + shares_ct)
+            ctr = (clicks / imps * 100) if imps else 0
+            er = (engagement / imps * 100) if imps else 0
+            if imps > 0 or likes > 0:
+                out["posts"].append({
+                    "urn":             share[:200],
+                    "title":           "",
+                    "post_type":       "",
+                    "audience":        "",
+                    "impressions":     imps,
+                    "views":           imps,
+                    "clicks":          clicks,
+                    "ctr":             round(ctr, 2),
+                    "reactions":       likes,
+                    "comments":        comments,
+                    "reposts":         shares_ct,
+                    "follows":         0,
+                    "engagement_rate": round(er, 2),
+                    "scraped_at":      datetime.utcnow().isoformat(),
+                })
+
+    log(f"  XHR posts extracted: {len(out['posts'])}")
+
+    # Also try DOM scraping for titles
     rows = _extract_table_rows(page)
+    log(f"  DOM rows found: {len(rows)}")
+    dom_posts = []
     for r in rows:
         if not r or len(r) < 4:
             continue
         if any(h in r[0] for h in ["Post title", "Impressions", "Reactions"]):
             continue
-        post = {
+        dom_posts.append({
             "title":           r[0][:300],
             "post_type":       r[1] if len(r) > 1 else "",
             "audience":        r[2] if len(r) > 2 else "",
@@ -406,14 +461,51 @@ def scrape_updates(page):
             "follows":         _safe_int(r[10]) if len(r) > 10 else 0,
             "engagement_rate": _safe_float(r[11]) if len(r) > 11 else 0.0,
             "scraped_at":      datetime.utcnow().isoformat(),
-        }
-        if post["impressions"] > 0 or post["reactions"] > 0:
-            out["posts"].append(post)
+            "urn":             f"dom::{abs(hash(r[0]))}",
+        })
 
-    if not out["posts"]:
-        _save_debug(page, "updates")
-    log(f"Posts extracted: {len(out['posts'])}")
+    # Merge: use DOM titles to enrich XHR posts, OR if no XHR data, use DOM
+    if dom_posts:
+        if not out["posts"]:
+            out["posts"] = dom_posts
+        else:
+            # Match by impression count + likes (rough heuristic)
+            for dp in dom_posts:
+                matched = False
+                for xp in out["posts"]:
+                    if abs(xp["impressions"] - dp["impressions"]) < 5 and abs(xp["reactions"] - dp["reactions"]) < 2:
+                        xp["title"] = dp["title"]
+                        xp["post_type"] = dp.get("post_type", "")
+                        xp["audience"] = dp.get("audience", "")
+                        matched = True
+                        break
+                if not matched:
+                    out["posts"].append(dp)
+
+    log(f"  Final posts: {len(out['posts'])}")
+
+    # Highlights
+    body_text = page.inner_text("body")
+    import re as _re
+    patterns = {
+        "impressions": r"([\d,]+)\s*(?:\n|\s)+Impressions",
+        "reactions":   r"([\d,]+)\s*(?:\n|\s)+Reactions",
+        "comments":    r"([\d,]+)\s*(?:\n|\s)+Comments",
+        "reposts":     r"([\d,]+)\s*(?:\n|\s)+Reposts",
+        "clicks":      r"([\d,]+)\s*(?:\n|\s)+Clicks",
+    }
+    for key, pat in patterns.items():
+        m = _re.search(pat, body_text, _re.I)
+        if m:
+            try:
+                out["highlights"][key] = _safe_int(m.group(1))
+            except Exception:
+                pass
+    log(f"Highlights: {out['highlights']}")
+
+    page.remove_listener("response", _on_response)
     return out
+
 
 
 def scrape_visitors(page):

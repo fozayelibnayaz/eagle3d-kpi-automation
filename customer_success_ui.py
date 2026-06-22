@@ -95,7 +95,7 @@ def render_customer_success():
     st.divider()
 
     # ── Tabs ──
-    tabs = st.tabs(["📊 Master View", "🔗 Enriched Funnel", "📋 CS Sheet by Tab", "💳 Stripe Live", "🎯 At-Risk Customers"])
+    tabs = st.tabs(["📊 Master View", "🔗 Enriched Funnel", "📋 CS Sheet by Tab", "💳 Stripe Live", "🎯 At-Risk Customers", "📊 Deep Analytics"])
 
     # ── TAB 1: MASTER VIEW ──
     with tabs[0]:
@@ -237,3 +237,14 @@ def render_customer_success():
                              use_container_width=True, hide_index=True)
         except Exception as e:
             st.error(f"Error: {e}")
+
+
+    # ── TAB 6: DEEP ANALYTICS ──
+    with tabs[5]:
+        try:
+            from customer_success_analytics_ui import render_cs_analytics
+            render_cs_analytics()
+        except Exception as _ae:
+            st.error(f"Analytics error: {_ae}")
+            import traceback
+            st.code(traceback.format_exc()[:2000])
