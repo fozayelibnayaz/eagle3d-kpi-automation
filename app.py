@@ -1915,6 +1915,31 @@ if page == "📊 Dashboard":
     pu = km(prev_kpi, "first_uploads")
     pp = km(prev_kpi, "paid_customers")
 
+    # ── SUPABASE COMMON PERIOD OVERRIDE for All Time view ──
+    # When showing "All Time", force values to common period (Dec 2025 onwards)
+    # so all 3 metrics use the same date range = valid conversion rates
+    try:
+        _is_alltime = str(period).lower().startswith("all") if "period" in dir() else False
+    except Exception:
+        _is_alltime = False
+    if _sb_kpi:
+        # If the selected period is All Time, use common period values
+        if _is_alltime or (cs > _sb_kpi["common_signups"] * 1.5):
+            # Detect if cs is using full DB (much larger than common period)
+            cs = _sb_kpi["common_signups"]
+            cu = _sb_kpi["common_uploads"]
+            cp = _sb_kpi["common_paid"]
+        # This Month
+        elif "this month" in str(period).lower() if "period" in dir() else False:
+            cs = _sb_kpi["month_signups"]
+            cu = _sb_kpi["month_uploads"]
+            cp = _sb_kpi["month_paid"]
+        # Today
+        elif "today" in str(period).lower() if "period" in dir() else False:
+            cs = _sb_kpi["today_signups"]
+            cu = _sb_kpi["today_uploads"]
+            cp = _sb_kpi["today_paid"]
+
     # Paid count is verified from Verified_STRIPE ACCEPTED rows
     s2u = (cu / cs * 100) if cs > 0 else 0
     u2p = (cp / cu * 100) if cu > 0 else 0
