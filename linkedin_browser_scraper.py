@@ -347,7 +347,32 @@ def scrape_updates(page):
         return out
 
     _set_max_date_range(page)
-    _scroll_full(page)
+    time.sleep(3)
+
+    # AGGRESSIVE LOAD: keep scrolling + clicking Show more until no new content
+    log("  Aggressively loading all posts...")
+    for i in range(50):
+        before_count = page.evaluate("document.querySelectorAll('tr, [role=row], li').length")
+        # Scroll to bottom
+        page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+        time.sleep(2)
+        # Click any "Show more" buttons
+        for sel in ["button:has-text('Show more')", "button:has-text('Load more')",
+                    "button:has-text('See more')", "button:has-text('View more')",
+                    "[aria-label*='Show more' i]", "[aria-label*='Load more' i]"]:
+            try:
+                btn = page.query_selector(sel)
+                if btn and btn.is_visible():
+                    btn.click()
+                    time.sleep(2)
+                    log(f"    Clicked: {sel[:40]}")
+            except Exception:
+                pass
+        after_count = page.evaluate("document.querySelectorAll('tr, [role=row], li').length")
+        if after_count == before_count and i > 3:
+            log(f"  No more new posts (had {after_count})")
+            break
+    time.sleep(3)
 
     # Highlights
     out["highlights"] = _extract_highlights(page, {
