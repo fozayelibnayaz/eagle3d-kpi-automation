@@ -4650,11 +4650,19 @@ elif page == "🔗 Cross-Platform":
     with _ps2:
         st.metric("GA4 Traffic", "✅" if _ga4_ok else "❌")
     with _ps3:
-        _yt_status = get_status()
-        st.metric("YouTube", "✅" if _yt_status["configured"] else "❌")
+        try:
+            import youtube_connector as _yt_mod
+            _yt_status = _yt_mod.get_status() if hasattr(_yt_mod, "get_status") else {"configured": _yt_mod.is_configured()}
+        except Exception:
+            _yt_status = {"configured": False}
+        st.metric("YouTube", "✅" if _yt_status.get("configured") else "❌")
     with _ps4:
-        _li_status = get_status()
-        st.metric("LinkedIn", "✅" if _li_status["configured"] else "❌")
+        try:
+            import linkedin_connector as _li_mod
+            _li_status = _li_mod.get_status() if hasattr(_li_mod, "get_status") else {"configured": _li_mod.is_configured()}
+        except Exception:
+            _li_status = {"configured": False}
+        st.metric("LinkedIn", "✅" if _li_status.get("configured") else "❌")
 
     st.markdown("---")
 
@@ -4676,7 +4684,7 @@ elif page == "🔗 Cross-Platform":
         pass
 
     # Get YouTube data
-    if _yt_status["configured"]:
+    if _yt_status.get("configured"):
         try:
             _yt_daily = get_daily_analytics(_cp_start, _cp_end)
         except Exception:

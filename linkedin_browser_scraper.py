@@ -139,34 +139,91 @@ def _wait_load(page, timeout=20000):
 
 
 def _set_max_date_range(page):
-    """Try to set date filter to maximum (last 365 days / last year)."""
+    """Force date range to Last 365 days by finding date filter button next to Export."""
     try:
-        # Click date filter button
-        selectors = [
-            "button[aria-label*='date' i]",
-            "button:has-text('days')",
-            "button:has-text('2026')",
-            "button:has-text('2025')",
-            "[data-test-id*='date-picker']",
-        ]
-        for sel in selectors:
-            btn = page.query_selector(sel)
-            if btn:
-                btn.click()
-                time.sleep(2)
-                break
+        # LinkedIn analytics pages have a date picker button.
+        # It usually displays a date range like "May 22, 2026 - Jun 20, 2026"
+        # Strategy: find any button containing month names or year numbers
+        time.sleep(2)
 
-        # Select longest range
-        for opt_text in ["Last 365 days", "Last year", "Past year", "365 days", "1 year"]:
-            opt = page.query_selector(f"button:has-text('{opt_text}'), li:has-text('{opt_text}'), [role='option']:has-text('{opt_text}')")
-            if opt:
-                opt.click()
-                time.sleep(3)
-                log(f"  Date range: {opt_text}")
-                return True
+        # Try clicking date picker by multiple strategies
+        clicked = False
+        # Strategy 1: button with date range text
+        for pattern in [
+            "button:has-text('Jun ')",
+            "button:has-text('May ')",
+            "button:has-text('Apr ')",
+            "button:has-text('Mar ')",
+            "button:has-text('Last ')",
+            "button:has-text('Past ')",
+            "[aria-label*='Date range' i]",
+            "[aria-label*='time range' i]",
+            "button[id*='date']",
+            "button[class*='date']",
+            "[data-test-id*='time-range']",
+            ".artdeco-dropdown__trigger",
+        ]:
+            try:
+                btns = page.query_selector_all(pattern)
+                for btn in btns:
+                    txt = (btn.inner_text() or "").strip()
+                    # Only click if it looks like a date range
+                    if any(m in txt for m in ["2025", "2026", "days", "Last", "Past", "year", "month"]):
+                        btn.click()
+                        time.sleep(2)
+                        log(f"  Clicked date picker: '{txt[:60]}'")
+                        clicked = True
+                        break
+                if clicked:
+                    break
+            except Exception:
+                continue
+
+        if not clicked:
+            log("  WARN: Could not find date picker button")
+            return False
+
+        time.sleep(2)
+
+        # Now find "Last 365 days" option in dropdown
+        for opt_text in [
+            "Last 365 days", "Last year", "Past year",
+            "Past 365 days", "365 days", "1 year", "Past 1 year",
+        ]:
+            try:
+                # Try multiple element types
+                for sel in [
+                    f"button:has-text('{opt_text}')",
+                    f"li:has-text('{opt_text}')",
+                    f"[role='option']:has-text('{opt_text}')",
+                    f"[role='menuitem']:has-text('{opt_text}')",
+                    f"div:has-text('{opt_text}'):not(:has(*))",
+                    f"span:has-text('{opt_text}'):not(:has(*))",
+                ]:
+                    opt = page.query_selector(sel)
+                    if opt:
+                        try:
+                            opt.click()
+                            time.sleep(3)
+                            log(f"  Selected: {opt_text}")
+                            # Wait for data to reload
+                            try:
+                                page.wait_for_load_state("networkidle", timeout=15000)
+                            except Exception:
+                                pass
+                            time.sleep(3)
+                            return True
+                        except Exception:
+                            continue
+            except Exception:
+                continue
+
+        # If "Last 365 days" not in dropdown, try clicking "Custom" and entering dates
+        log("  Last 365 days not in dropdown - trying alternative")
+        return False
     except Exception as e:
-        log(f"  Date range (non-fatal): {e}")
-    return False
+        log(f"  Date range error: {e}")
+        return False
 
 
 def _extract_highlights(page, patterns):
@@ -186,23 +243,54 @@ def _extract_highlights(page, patterns):
     return out
 
 
-def _scroll_full(page, max_scrolls=15):
-    """Scroll to load all dynamic content."""
-    for _ in range(max_scrolls):
+def _scroll_full(page, max_scrolls=30):
+    """Scroll to load all dynamic content (LinkedIn lazy loads)."""
+    last_height = 0
+    same_count = 0
+    for i in range(max_scrolls):
         page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-        time.sleep(1.5)
+        time.sleep(2)
+        try:
+            new_height = page.evaluate("document.body.scrollHeight")
+            if new_height == last_height:
+                same_count += 1
+                if same_count >= 3:
+                    break
+            else:
+                same_count = 0
+            last_height = new_height
+        except Exception:
+            time.sleep(1)
+
+    # Try clicking "Show more" or "Load more" buttons
+    for _ in range(20):
+        try:
+            btn = page.query_selector("button:has-text('Show more'), button:has-text('Load more'), button:has-text('See more')")
+            if btn:
+                btn.click()
+                time.sleep(2)
+            else:
+                break
+        except Exception:
+            break
 
 
 def _extract_table_rows(page):
-    """Extract data from any tables/grids on page."""
+    """Extract data from any tables/grids on page - handles divs and tables."""
     rows_data = []
     try:
-        # Try multiple selectors
-        rows = page.query_selector_all("tr, [role='row'], .artdeco-table tr, [data-test-id*='row']")
+        # Try table rows first
+        rows = page.query_selector_all("tr, [role='row'], .artdeco-table tr, [data-test-id*='row'], [data-test-id*='card']")
         for row in rows:
             try:
-                cells = row.query_selector_all("td, [role='cell'], [role='gridcell'], th")
+                cells = row.query_selector_all("td, [role='cell'], [role='gridcell'], th, [data-test-id*='cell']")
                 if len(cells) < 2:
+                    # Try grabbing all text as single field
+                    txt = row.inner_text().strip()
+                    if txt and len(txt) > 5:
+                        lines = [l.strip() for l in txt.split("\n") if l.strip()]
+                        if len(lines) >= 2:
+                            rows_data.append(lines)
                     continue
                 texts = []
                 for c in cells:
@@ -214,6 +302,19 @@ def _extract_table_rows(page):
                     rows_data.append(texts)
             except Exception:
                 continue
+
+        # Fallback: extract from analytics card divs
+        if len(rows_data) < 3:
+            cards = page.query_selector_all("[class*='analytics-update'], [class*='post-card'], [class*='content-engagement'], li[class*='post']")
+            for card in cards:
+                try:
+                    txt = card.inner_text().strip()
+                    if txt and len(txt) > 10:
+                        lines = [l.strip() for l in txt.split("\n") if l.strip()]
+                        if lines:
+                            rows_data.append(lines)
+                except Exception:
+                    continue
     except Exception as e:
         log(f"  Table extract: {e}")
     return rows_data
