@@ -62,6 +62,54 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+
+# ── ACCESS CONTROL GATE ──
+def _enforce_access_control():
+    try:
+        from access_control import is_allowed, log_access
+    except ImportError:
+        return  # access_control module not present
+    if st.session_state.get("_access_checked"):
+        return
+    # Get email from authenticated user (if any auth system in place)
+    user_email = st.session_state.get("user_email", "") or st.session_state.get("auth_email", "")
+    if not user_email:
+        # Show login screen
+        st.markdown("# 🔒 Eagle3D KPI Hub - Login Required")
+        st.markdown("Only authorized emails can access this dashboard.")
+        with st.form("access_login"):
+            entered = st.text_input("Email address")
+            submit = st.form_submit_button("Verify Access")
+            if submit:
+                if not entered or "@" not in entered:
+                    st.error("Valid email required")
+                    st.stop()
+                allowed, role, reason = is_allowed(entered)
+                log_access(entered, "login", allowed)
+                if allowed:
+                    st.session_state["user_email"] = entered.strip().lower()
+                    st.session_state["user_role"] = role
+                    st.session_state["_access_checked"] = True
+                    st.success(f"Welcome! Role: {role}")
+                    st.rerun()
+                else:
+                    st.error(f"Access denied: {reason}")
+                    st.stop()
+        st.stop()
+    else:
+        allowed, role, reason = is_allowed(user_email)
+        if not allowed:
+            st.error(f"Access revoked: {reason}")
+            if st.button("Sign out"):
+                for k in ("user_email", "user_role", "_access_checked"):
+                    st.session_state.pop(k, None)
+                st.rerun()
+            st.stop()
+        st.session_state["user_role"] = role
+        st.session_state["_access_checked"] = True
+
+_enforce_access_control()
+
 # ═══════════════════════════════════════════════════════════════
 # THEME ENGINE
 # ═══════════════════════════════════════════════════════════════
@@ -1051,7 +1099,7 @@ with st.sidebar:
     if "nav_page" not in st.session_state:
         st.session_state["nav_page"] = "📊 Dashboard"
 
-    _SYS_PAGES = {"📈 Google Analytics", "📺 YouTube", "💼 LinkedIn", "🔗 Cross-Platform"}
+    _SYS_PAGES = {"📈 Google Analytics", "📺 YouTube", "💼 LinkedIn", "🎯 Customer Success", "🔗 Cross-Platform"}
     _KPI_PAGES = {"📊 Dashboard", "🔍 Browse Data", "🔬 EDA Lab", "✏️ Manual Override", "📋 Reports", "🔔 Alerts"}
     _AI_PAGES = {"🤖 Ask AI", "🔮 Predictions", "🧠 AI Tools"}
 
@@ -4069,6 +4117,15 @@ elif page == "💼 LinkedIn":
         import traceback
         st.code(traceback.format_exc()[:1000])
 
+elif page == "🎯 Customer Success":
+    try:
+        from customer_success_ui import render_customer_success
+        render_customer_success()
+    except Exception as _ce:
+        st.error(f"Customer Success error: {_ce}")
+        import traceback
+        st.code(traceback.format_exc()[:1000])
+
 elif page == "🔗 Cross-Platform":
     st.markdown(
         '<div class="sec-head">🔗 Cross-Platform Intelligence Hub</div>',
@@ -4400,6 +4457,46 @@ elif page == "🔗 Cross-Platform":
 # PAGE: ⚙️ SETTINGS (with Run Pipeline + Secrets Editor + Cache Clear)
 # ═══════════════════════════════════════════════════════════════
 elif page == "⚙️ Settings":
+
+    # ── ACCESS CONTROL MANAGEMENT ──
+    with st.expander("👥 User Access Management", expanded=False):
+        try:
+            from access_control import list_users, add_email, remove_email, get_access_logs
+            users = list_users()
+            st.markdown(f"**Authorized Users ({len(users)})**")
+            if users:
+                import pandas as _pd
+                _df = _pd.DataFrame(users)[["email", "role", "is_active", "added_by", "added_at"]]
+                st.dataframe(_df, use_container_width=True, hide_index=True)
+
+            with st.form("add_user_form"):
+                _c1, _c2 = st.columns(2)
+                _new_email = _c1.text_input("Email")
+                _new_role = _c2.selectbox("Role", ["viewer", "editor", "admin"])
+                _notes = st.text_input("Notes (optional)")
+                if st.form_submit_button("Add User"):
+                    r = add_email(_new_email, _new_role, st.session_state.get("user_email","admin"), _notes)
+                    if r["success"]:
+                        st.success(r["message"])
+                        st.rerun()
+                    else:
+                        st.error(r["message"])
+
+            with st.form("remove_user_form"):
+                _rem_email = st.text_input("Email to revoke")
+                if st.form_submit_button("Revoke Access"):
+                    r = remove_email(_rem_email, st.session_state.get("user_email","admin"))
+                    if r["success"]:
+                        st.success(r["message"])
+                        st.rerun()
+
+            st.markdown("**Recent Access Logs**")
+            logs = get_access_logs(50)
+            if logs:
+                import pandas as _pd
+                st.dataframe(_pd.DataFrame(logs), use_container_width=True, hide_index=True)
+        except Exception as _ae:
+            st.warning(f"Access control unavailable: {_ae}")
     st.markdown(
         '<div class="sec-head">⚙️ System Settings & Diagnostics</div>',
         unsafe_allow_html=True,
