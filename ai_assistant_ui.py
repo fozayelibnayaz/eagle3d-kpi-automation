@@ -135,8 +135,13 @@ def render_ai_assistant(default_platform="all"):
     with st.expander(f"⚡ AI Power Tools for {platform.upper()}", expanded=False):
         try:
             from ai_assistant_engine import TOOLS, run_tool
-            tools = TOOLS.get(platform, TOOLS.get("kpi", []))
-            st.caption(f"{len(tools)} specialized AI tools that analyze YOUR real data")
+            # Show tools for current platform - all 30 per platform
+            tools = TOOLS.get(platform, [])
+            if not tools and platform == "all":
+                tools = TOOLS.get("all", [])
+            if not tools:
+                tools = TOOLS.get("kpi", [])
+            st.caption(f"⚡ {len(tools)} specialized AI tools that analyze YOUR real {platform.upper()} data")
 
             tool_cols = st.columns(3)
             for i, tool in enumerate(tools):

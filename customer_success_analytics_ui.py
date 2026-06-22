@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Customer Success Deep Analytics UI - ALL data dimensions"""
+"""CS Deep Analytics UI - 15 comprehensive sections"""
 
 import streamlit as st
 import pandas as pd
@@ -8,7 +8,7 @@ import plotly.express as px
 
 def render_cs_analytics():
     st.markdown('### 📊 Customer Success Deep Analytics')
-    st.caption("Every dimension from all 9 CS sheet tabs")
+    st.caption("Every dimension from all 9 CS sheet tabs - 15 analysis sections")
 
     try:
         from customer_success_analytics import get_all_insights
@@ -19,269 +19,278 @@ def render_cs_analytics():
         return
 
     sections = st.tabs([
-        "💔 Churn",
-        "📊 Health Index",
-        "⏱️ Streaming Time",
-        "🎯 Sessions & Success",
-        "📺 Last Streamed (Sheet1)",
-        "📅 Subscriptions",
-        "💵 Revenue",
-        "🔗 Correlations",
-        "🚫 No Sub Users",
+        "💔 Churn", "📊 Health Index", "⏱️ Streaming", "🎯 Sessions",
+        "📺 Last Streamed", "📅 Subscriptions", "�� Revenue",
+        "🔗 Correlations", "🚫 No Sub Users",
+        "📞 Contact Info", "☎️ Phone Calls", "🌍 Geography",
+        "🏢 Parent Accounts", "📈 Recent Activity", "💎 Customer Tiers",
     ])
 
-    # ── CHURN ──
+    # 1. CHURN
     with sections[0]:
         ch = data["churn"]
         c1, c2, c3 = st.columns(3)
         c1.metric("Total Churned", ch["total_churned"])
         c2.metric("Monthly Revenue Lost", f"${ch['monthly_revenue_lost']:,.2f}")
         c3.metric("Annualized Loss", f"${ch['annual_revenue_lost']:,.2f}")
-
-        st.subheader("Churn by Month")
         if ch["by_month"]:
             df = pd.DataFrame([{"Month": m, "Churned": v} for m, v in ch["by_month"].items()])
-            fig = px.bar(df, x="Month", y="Churned", color="Churned",
-                         color_continuous_scale="Reds", text="Churned")
-            fig.update_traces(textposition="outside")
-            st.plotly_chart(fig, use_container_width=True)
-
-        st.subheader("Churned Customer Details")
+            st.plotly_chart(px.bar(df, x="Month", y="Churned", color="Churned",
+                                   color_continuous_scale="Reds", text="Churned"),
+                          use_container_width=True)
         if ch["customers"]:
             st.dataframe(pd.DataFrame(ch["customers"]), use_container_width=True, hide_index=True)
 
-    # ── HEALTH INDEX ──
+    # 2. HEALTH INDEX
     with sections[1]:
         h = data["health"]
-        m1, m2, m3, m4 = st.columns(4)
+        m1,m2,m3,m4 = st.columns(4)
         m1.metric("Total Customers", h["total_customers"])
         m2.metric("Avg Recurring", h["avg_recurring"])
         m3.metric("Max Recurring", h["max_recurring"])
         m4.metric("No Payments", h["no_recurring_count"])
-
-        col1, col2 = st.columns(2)
-        with col1:
-            st.subheader("📊 Plans")
-            df = pd.DataFrame([{"Plan": k, "Count": v} for k,v in h["plans"].items()])
-            st.plotly_chart(px.pie(df, values="Count", names="Plan"), use_container_width=True)
+        c1,c2 = st.columns(2)
+        with c1:
+            df = pd.DataFrame([{"Plan":k,"Count":v} for k,v in h["plans"].items()])
+            st.plotly_chart(px.pie(df, values="Count", names="Plan", title="Plans"), use_container_width=True)
             st.dataframe(df, use_container_width=True, hide_index=True)
-        with col2:
-            st.subheader("📋 Status")
-            df = pd.DataFrame([{"Status": k, "Count": v} for k,v in h["statuses"].items()])
-            st.plotly_chart(px.bar(df, x="Status", y="Count", color="Count"), use_container_width=True)
+        with c2:
+            df = pd.DataFrame([{"Status":k,"Count":v} for k,v in h["statuses"].items()])
+            st.plotly_chart(px.bar(df, x="Status", y="Count", color="Count", title="Status"), use_container_width=True)
+        c3,c4 = st.columns(2)
+        with c3:
+            df = pd.DataFrame([{"Size":k,"Count":v} for k,v in h["company_sizes"].items()])
+            st.plotly_chart(px.bar(df, x="Size", y="Count", color="Count", color_continuous_scale="Blues",
+                                   title="Company Size"), use_container_width=True)
+        with c4:
+            df = pd.DataFrame([{"Fit":k,"Count":v} for k,v in h["perfect_fit"].items()])
+            st.plotly_chart(px.pie(df, values="Count", names="Fit", title="Perfect Fit Customer"), use_container_width=True)
 
-        col3, col4 = st.columns(2)
-        with col3:
-            st.subheader("🏢 Company Size")
-            df = pd.DataFrame([{"Size": k, "Count": v} for k,v in h["company_sizes"].items()])
-            st.plotly_chart(px.bar(df, x="Size", y="Count", color="Count", color_continuous_scale="Blues"), use_container_width=True)
-        with col4:
-            st.subheader("🎯 Perfect Fit Customer")
-            df = pd.DataFrame([{"Fit": k, "Count": v} for k,v in h["perfect_fit"].items()])
-            st.plotly_chart(px.pie(df, values="Count", names="Fit"), use_container_width=True)
-
-        st.subheader("Recurring Payment Distribution")
-        if h["recurring_distribution"]:
-            fig = px.histogram(x=h["recurring_distribution"], nbins=30,
-                               labels={"x": "Recurring Payment Count"},
-                               title="How many payments customers make")
-            st.plotly_chart(fig, use_container_width=True)
-
-    # ── STREAMING TIME ──
+    # 3. STREAMING
     with sections[2]:
         s = data["streaming"]
-        m1, m2, m3 = st.columns(3)
+        m1,m2,m3 = st.columns(3)
         m1.metric("Active Streamers", s["active_streamers"])
         m2.metric("Non-Streamers", s["non_streamers"])
-        m3.metric("Total Stream Hours", f"{s['total_stream_hours']:,.1f}")
-
-        st.subheader("📅 Stream Time by Period")
+        m3.metric("Total Hours", f"{s['total_stream_hours']:,.1f}")
         if s["period_totals"]:
-            df = pd.DataFrame([{"Period": k, "Hours": v} for k,v in s["period_totals"].items()])
-            df["Period_Short"] = df["Period"].str.replace("Total Stream Time ", "").str[:30]
-            fig = px.line(df, x="Period_Short", y="Hours", markers=True,
-                          title="Bi-Weekly Stream Time Trend")
+            df = pd.DataFrame([{"Period":k,"Hours":v} for k,v in s["period_totals"].items()])
+            df["Period"] = df["Period"].str.replace("Total Stream Time ","").str[:30]
+            fig = px.line(df, x="Period", y="Hours", markers=True, title="Bi-Weekly Stream Time")
             fig.update_layout(xaxis_tickangle=-45, height=400)
             st.plotly_chart(fig, use_container_width=True)
+        st.subheader("Top 50 Streamers")
+        st.dataframe(pd.DataFrame(s["top_50_streamers"]), use_container_width=True, hide_index=True)
 
-        st.subheader("🏆 Top 50 Streamers")
-        df = pd.DataFrame(s["top_50_streamers"])
-        st.dataframe(df, use_container_width=True, hide_index=True)
-
-    # ── SESSIONS ──
+    # 4. SESSIONS
     with sections[3]:
         sn = data["sessions"]
-        m1, m2, m3, m4 = st.columns(4)
+        m1,m2,m3,m4 = st.columns(4)
         m1.metric("Total Clients", sn["total_clients"])
-        m2.metric("Total Sessions", f"{sn['total_sessions']:,}")
-        m3.metric("Connected Success Rate", f"{sn['connected_success_rate']}%")
-        m4.metric("Streamed Success Rate", f"{sn['streamed_success_rate']}%")
-
-        col1, col2 = st.columns(2)
-        with col1:
-            st.subheader("✅ vs ❌ Connection")
-            df = pd.DataFrame({
-                "Type": ["Success", "Failure"],
-                "Count": [sn["total_connected_success"], sn["total_connected_failure"]],
-            })
-            st.plotly_chart(px.pie(df, values="Count", names="Type", color_discrete_map={"Success":"green","Failure":"red"}), use_container_width=True)
-        with col2:
-            st.subheader("✅ vs ❌ Streaming")
-            df = pd.DataFrame({
-                "Type": ["Success", "Failure"],
-                "Count": [sn["total_streamed_success"], sn["total_streamed_failure"]],
-            })
-            st.plotly_chart(px.pie(df, values="Count", names="Type", color_discrete_map={"Success":"green","Failure":"red"}), use_container_width=True)
-
-        st.subheader("Video vs Channel Minutes")
-        df = pd.DataFrame({
-            "Type": ["Video", "Channel"],
-            "Minutes": [sn["total_video_minutes"], sn["total_channel_minutes"]],
-        })
-        st.plotly_chart(px.bar(df, x="Type", y="Minutes", color="Type"), use_container_width=True)
-
-        st.subheader("🏆 Top 30 Clients by Sessions")
-        if sn["top_30_clients"]:
-            st.dataframe(pd.DataFrame(sn["top_30_clients"]), use_container_width=True, hide_index=True)
-
-        st.subheader("🚨 High Failure Rate Clients (need attention)")
+        m2.metric("Total Sessions", f"{sn['sessions']:,}")
+        m3.metric("Connected Success %", f"{sn['connected_success_rate']}%")
+        m4.metric("Streamed Success %", f"{sn['streamed_success_rate']}%")
+        c1,c2 = st.columns(2)
+        with c1:
+            df = pd.DataFrame({"Type":["Success","Failure"],
+                              "Count":[sn["connected_success"], sn["connected_failure"]]})
+            st.plotly_chart(px.pie(df, values="Count", names="Type", title="Connection Success",
+                                   color_discrete_map={"Success":"green","Failure":"red"}), use_container_width=True)
+        with c2:
+            df = pd.DataFrame({"Type":["Success","Failure"],
+                              "Count":[sn["streamed_success"], sn["streamed_failure"]]})
+            st.plotly_chart(px.pie(df, values="Count", names="Type", title="Streaming Success",
+                                   color_discrete_map={"Success":"green","Failure":"red"}), use_container_width=True)
+        st.subheader("🏆 Top 30 Clients")
+        st.dataframe(pd.DataFrame(sn["top_30_clients"]), use_container_width=True, hide_index=True)
+        st.subheader("🚨 High Failure Clients (need attention)")
         if sn["high_failure_clients"]:
             st.dataframe(pd.DataFrame(sn["high_failure_clients"]), use_container_width=True, hide_index=True)
 
-    # ── SHEET1 LAST STREAMED ──
+    # 5. LAST STREAMED
     with sections[4]:
         s1 = data["sheet1"]
-        m1, m2 = st.columns(2)
+        m1,m2 = st.columns(2)
         m1.metric("Total Customers", s1["total_customers"])
-        m2.metric("Dormant Paying (>30d)", len(s1["dormant_paying"]))
-
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.subheader("🎨 Color Distribution")
-            df = pd.DataFrame([{"Color": k, "Count": v} for k,v in s1["color_dist"].items() if k])
+        m2.metric("Dormant Paying (30+d)", len(s1["dormant_paying"]))
+        c1,c2,c3 = st.columns(3)
+        with c1:
+            df = pd.DataFrame([{"Color":k,"Count":v} for k,v in s1["color_dist"].items() if k])
             if not df.empty:
-                st.plotly_chart(px.pie(df, values="Count", names="Color"), use_container_width=True)
-        with col2:
-            st.subheader("📊 CHI Distribution")
-            df = pd.DataFrame([{"CHI": k, "Count": v} for k,v in s1["chi_dist"].items() if k])
-            if not df.empty:
-                st.dataframe(df, use_container_width=True, hide_index=True)
-        with col3:
-            st.subheader("📋 Plans")
-            df = pd.DataFrame([{"Plan": k, "Count": v} for k,v in s1["plan_dist"].items()])
+                st.plotly_chart(px.pie(df, values="Count", names="Color", title="Color"), use_container_width=True)
+        with c2:
+            df = pd.DataFrame([{"CHI":k,"Count":v} for k,v in s1["chi_dist"].items() if k])
             st.dataframe(df, use_container_width=True, hide_index=True)
-
+        with c3:
+            df = pd.DataFrame([{"Plan":k,"Count":v} for k,v in s1["plan_dist"].items()])
+            st.dataframe(df, use_container_width=True, hide_index=True)
         st.subheader("🚨 DANGER: Paying but Dormant 30+ days")
         if s1["dormant_paying"]:
             st.dataframe(pd.DataFrame(s1["dormant_paying"]), use_container_width=True, hide_index=True)
-            st.error(f"⚠️ {len(s1['dormant_paying'])} paying customers haven't streamed in 30+ days")
 
-        st.subheader("🏆 Top 30 2025 Streamers")
-        if s1["top_2025_streamers"]:
-            st.dataframe(pd.DataFrame(s1["top_2025_streamers"]), use_container_width=True, hide_index=True)
-
-    # ── SUBSCRIPTIONS ──
+    # 6. SUBSCRIPTIONS
     with sections[5]:
         sub = data["subscriptions"]
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("🆕 New This Month", sub["count_new"])
-        m2.metric("⏰ Ending in 30d", sub["count_ending"])
+        m1,m2,m3,m4 = st.columns(4)
+        m1.metric("🆕 New", sub["count_new"])
+        m2.metric("⏰ Ending 30d", sub["count_ending"])
         m3.metric("❌ Expired", sub["count_expired"])
-        m4.metric("💎 Long-term (12+)", sub["count_long_term"])
-
-        st.subheader("🔥 At Risk - Ending Soon")
+        m4.metric("💎 Long-term", sub["count_long_term"])
+        st.subheader("🔥 Ending in 30 days - URGENT")
         if sub["ending_in_30d"]:
             st.dataframe(pd.DataFrame(sub["ending_in_30d"]), use_container_width=True, hide_index=True)
-            st.error(f"⚠️ {len(sub['ending_in_30d'])} subscriptions ending in 30 days - act NOW")
-
-        st.subheader("🆕 New This Month")
-        if sub["new_this_month"]:
-            st.dataframe(pd.DataFrame(sub["new_this_month"]), use_container_width=True, hide_index=True)
-
-        st.subheader("💎 Long-term Loyal Customers (12+ recurring)")
+        st.subheader("💎 Long-term Loyal (12+ payments)")
         if sub["long_term_customers"]:
             st.dataframe(pd.DataFrame(sub["long_term_customers"]), use_container_width=True, hide_index=True)
 
-        st.subheader("❌ Recently Expired")
-        if sub["expired"]:
-            st.dataframe(pd.DataFrame(sub["expired"]), use_container_width=True, hide_index=True)
-
-    # ── REVENUE ──
+    # 7. REVENUE
     with sections[6]:
         r = data["revenue"]
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Previous Total", f"${r['total_previous']:,.2f}")
-        m2.metric("Current Total", f"${r['total_current']:,.2f}")
-        m3.metric("Net Deviation", f"${r['total_deviation']:+,.2f}")
+        m1,m2,m3,m4 = st.columns(4)
+        m1.metric("Previous", f"${r['total_previous']:,.2f}")
+        m2.metric("Current", f"${r['total_current']:,.2f}")
+        m3.metric("Net Change", f"${r['total_deviation']:+,.2f}")
         m4.metric("Loss Customers", r["loss_customers"])
-
-        st.subheader("Revenue Changes (Net Loss/Gain by Customer)")
         if r["conversion_losses"]:
             df = pd.DataFrame(r["conversion_losses"])
             st.dataframe(df, use_container_width=True, hide_index=True)
-            fig = px.bar(df, x="email", y="deviation", color="deviation",
-                         color_continuous_scale=["red","gray","green"],
-                         title="Revenue Change per Customer")
-            fig.update_layout(xaxis_tickangle=-45)
-            st.plotly_chart(fig, use_container_width=True)
-
-        st.subheader("�� Stream Time Trend (All Periods)")
+        st.subheader("Stream Time Trend")
         st_trend = data["stream_trend"]
         if st_trend:
             df = pd.DataFrame(st_trend)
-            fig = px.line(df, x="period", y="stream_time", markers=True, title="Stream Time Over Time")
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(px.line(df, x="period", y="stream_time", markers=True), use_container_width=True)
 
-    # ── CORRELATIONS ──
+    # 8. CORRELATIONS
     with sections[7]:
         cor = data["correlations"]
         st.subheader("🏢 Churn Rate by Company Size")
         rate = cor["company_size_churn_rate"]
         if rate:
-            df = pd.DataFrame([{"Size": k, "Total": cor["size_totals"].get(k,0),
-                               "Churn Rate %": v} for k,v in rate.items()]).sort_values("Churn Rate %", ascending=False)
+            df = pd.DataFrame([{"Size":k,"Total":cor["size_totals"].get(k,0),"Churn %":v}
+                              for k,v in rate.items()]).sort_values("Churn %", ascending=False)
             st.dataframe(df, use_container_width=True, hide_index=True)
-            fig = px.bar(df, x="Size", y="Churn Rate %", color="Churn Rate %",
-                         color_continuous_scale="Reds", title="Which company sizes churn most")
-            st.plotly_chart(fig, use_container_width=True)
-            worst_size = df.iloc[0]
-            st.error(f"⚠️ **{worst_size['Size']}** companies have highest churn: **{worst_size['Churn Rate %']}%** ({cor['size_totals'].get(worst_size['Size'],0)} customers)")
-
+            st.plotly_chart(px.bar(df, x="Size", y="Churn %", color="Churn %", color_continuous_scale="Reds"),
+                          use_container_width=True)
         st.subheader("📊 Churn Rate by Plan")
-        rate = cor["plan_churn_rate"]
-        if rate:
-            df = pd.DataFrame([{"Plan": k, "Total": cor["plan_totals"].get(k,0),
-                               "Churn Rate %": v} for k,v in rate.items()]).sort_values("Churn Rate %", ascending=False)
+        if cor["plan_churn_rate"]:
+            df = pd.DataFrame([{"Plan":k,"Total":cor["plan_totals"].get(k,0),"Churn %":v}
+                              for k,v in cor["plan_churn_rate"].items()]).sort_values("Churn %", ascending=False)
             st.dataframe(df, use_container_width=True, hide_index=True)
-            fig = px.bar(df, x="Plan", y="Churn Rate %", color="Churn Rate %", color_continuous_scale="Reds")
-            st.plotly_chart(fig, use_container_width=True)
-
         st.subheader("🎯 Churn Rate by Perfect Fit")
-        rate = cor["perfect_fit_churn_rate"]
-        if rate:
-            df = pd.DataFrame([{"Fit": k, "Total": cor["fit_totals"].get(k,0),
-                               "Churn Rate %": v} for k,v in rate.items()]).sort_values("Churn Rate %", ascending=False)
+        if cor["perfect_fit_churn_rate"]:
+            df = pd.DataFrame([{"Fit":k,"Total":cor["fit_totals"].get(k,0),"Churn %":v}
+                              for k,v in cor["perfect_fit_churn_rate"].items()]).sort_values("Churn %", ascending=False)
             st.dataframe(df, use_container_width=True, hide_index=True)
 
-    # ── NO SUB USERS ──
+    # 9. NO SUB
     with sections[8]:
         n = data["no_sub"]
         st.metric("Total No-Sub Users", n["total"])
+        c1,c2,c3 = st.columns(3)
+        with c1:
+            st.dataframe(pd.DataFrame([{"Plan":k,"Count":v} for k,v in n["by_plan"].items()]), use_container_width=True, hide_index=True)
+        with c2:
+            st.dataframe(pd.DataFrame([{"Size":k,"Count":v} for k,v in n["by_size"].items()]), use_container_width=True, hide_index=True)
+        with c3:
+            st.dataframe(pd.DataFrame([{"Fit":k,"Count":v} for k,v in n["by_fit"].items()]), use_container_width=True, hide_index=True)
 
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.subheader("By Plan")
-            df = pd.DataFrame([{"Plan": k, "Count": v} for k,v in n["by_plan"].items()])
-            st.dataframe(df, use_container_width=True, hide_index=True)
-        with col2:
-            st.subheader("By Company Size")
-            df = pd.DataFrame([{"Size": k, "Count": v} for k,v in n["by_size"].items()])
-            st.dataframe(df, use_container_width=True, hide_index=True)
-        with col3:
-            st.subheader("By Perfect Fit")
-            df = pd.DataFrame([{"Fit": k, "Count": v} for k,v in n["by_fit"].items()])
-            st.dataframe(df, use_container_width=True, hide_index=True)
+    # 10. CONTACT INFO (NEW)
+    with sections[9]:
+        cc = data["contact"]
+        m1,m2,m3 = st.columns(3)
+        m1.metric("Total Customers", cc["total_customers"])
+        m2.metric("Fully Complete", cc["fully_complete"])
+        m3.metric("Missing All Contact", cc["missing_all_contact"])
+        st.subheader("Field Completeness")
+        df = pd.DataFrame([{"Field":f, "Filled":cc["field_completeness"][f],
+                           "Completeness %":cc["completeness_pct"][f]}
+                          for f in cc["field_completeness"]])
+        st.dataframe(df, use_container_width=True, hide_index=True)
+        st.plotly_chart(px.bar(df, x="Field", y="Completeness %", color="Completeness %",
+                              color_continuous_scale="RdYlGn", title="Contact Field Completeness"),
+                      use_container_width=True)
 
-        st.subheader("Users (First 50)")
-        if n["users"]:
-            st.dataframe(pd.DataFrame(n["users"]), use_container_width=True, hide_index=True)
+    # 11. PHONE CALLS (NEW)
+    with sections[10]:
+        ph = data["phone_calls"]
+        m1,m2,m3,m4 = st.columns(4)
+        m1.metric("Total Calls Made", ph["total_calls_made"])
+        m2.metric("Customers Called", ph["customers_called"])
+        m3.metric("Answered", ph["answered_calls"])
+        m4.metric("Answer Rate", f"{ph['answer_rate']}%")
+        if ph["call_statuses"]:
+            st.subheader("Call Status Distribution")
+            df = pd.DataFrame([{"Status":k,"Count":v} for k,v in ph["call_statuses"].items()])
+            st.plotly_chart(px.bar(df, x="Status", y="Count", color="Count"), use_container_width=True)
+        if ph["person_calling"]:
+            st.subheader("Person Making Calls")
+            st.dataframe(pd.DataFrame([{"Person":k,"Calls":v} for k,v in ph["person_calling"].items()]),
+                       use_container_width=True, hide_index=True)
+
+    # 12. GEOGRAPHY (NEW)
+    with sections[11]:
+        g = data["geography"]
+        m1,m2 = st.columns(2)
+        m1.metric("Unique Locations", g["unique_locations"])
+        m2.metric("Unique Timezones", g["unique_timezones"])
+        c1,c2 = st.columns(2)
+        with c1:
+            st.subheader("Top Locations")
+            df = pd.DataFrame([{"Location":k,"Count":v} for k,v in g["top_locations"].items()])
+            if not df.empty:
+                st.plotly_chart(px.bar(df.head(20), x="Location", y="Count", color="Count",
+                                      color_continuous_scale="Viridis"), use_container_width=True)
+                st.dataframe(df, use_container_width=True, hide_index=True)
+        with c2:
+            st.subheader("Top Timezones")
+            df = pd.DataFrame([{"Timezone":k,"Count":v} for k,v in g["top_timezones"].items()])
+            if not df.empty:
+                st.dataframe(df, use_container_width=True, hide_index=True)
+
+    # 13. PARENT ACCOUNTS (NEW)
+    with sections[12]:
+        pa = data["parent_accounts"]
+        m1,m2 = st.columns(2)
+        m1.metric("Customers with Parent", pa["customers_with_parent"])
+        m2.metric("Unique Parent Accounts", pa["unique_parent_accounts"])
+        if pa["top_parent_accounts"]:
+            st.subheader("Top Parent Accounts")
+            df = pd.DataFrame([{"Parent":k,"Sub-accounts":v} for k,v in pa["top_parent_accounts"].items()])
+            st.dataframe(df, use_container_width=True, hide_index=True)
+            st.plotly_chart(px.bar(df.head(15), x="Parent", y="Sub-accounts", color="Sub-accounts"),
+                          use_container_width=True)
+
+    # 14. RECENT ACTIVITY (NEW)
+    with sections[13]:
+        ra = data["recent_activity"]
+        m1,m2,m3 = st.columns(3)
+        m1.metric("🚀 Growing", ra["count_growing"])
+        m2.metric("📉 Declining", ra["count_declining"])
+        m3.metric("➡️ Steady", ra["count_steady"])
+        st.subheader("🚀 Growing (recent 3 periods vs prior)")
+        if ra["growing"]:
+            st.dataframe(pd.DataFrame(ra["growing"]), use_container_width=True, hide_index=True)
+        st.subheader("📉 Declining - URGENT outreach")
+        if ra["declining"]:
+            st.dataframe(pd.DataFrame(ra["declining"]), use_container_width=True, hide_index=True)
+            st.error(f"⚠️ {ra['count_declining']} customers showing declining usage")
+
+    # 15. CUSTOMER VALUE TIERS (NEW)
+    with sections[14]:
+        vt = data["value_tiers"]
+        m1,m2,m3,m4 = st.columns(4)
+        m1.metric("💎 VIP (18+)", vt["vip_count"])
+        m2.metric("⭐ High (12+)", vt["high_count"])
+        m3.metric("👤 Mid (6+)", vt["mid_count"])
+        m4.metric("🆕 Low (1-5)", vt["low_count"])
+        # Pie chart
+        df = pd.DataFrame({
+            "Tier":["VIP","High","Mid","Low"],
+            "Count":[vt["vip_count"],vt["high_count"],vt["mid_count"],vt["low_count"]]
+        })
+        st.plotly_chart(px.pie(df, values="Count", names="Tier", title="Customer Value Distribution",
+                              color_discrete_map={"VIP":"purple","High":"gold","Mid":"blue","Low":"gray"}),
+                      use_container_width=True)
+        st.subheader("💎 VIP Customers - Treat Like Royalty")
+        if vt["vip_customers"]:
+            st.dataframe(pd.DataFrame(vt["vip_customers"]), use_container_width=True, hide_index=True)
