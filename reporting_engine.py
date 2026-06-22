@@ -142,6 +142,25 @@ def send_email(subject, body):
     password = os.environ.get("EMAIL_APP_PASSWORD", "").strip()
     receiver = os.environ.get("EMAIL_TO", "").strip()
 
+    # Fallback to st.secrets (for Streamlit Cloud dashboard buttons)
+    if not sender or not password or not receiver:
+        try:
+            import streamlit as st
+            if "EMAIL_FROM" in st.secrets:
+                val = st.secrets["EMAIL_FROM"]
+                if val and str(val).strip():
+                    sender = str(val).strip()
+            if "EMAIL_APP_PASSWORD" in st.secrets:
+                val = st.secrets["EMAIL_APP_PASSWORD"]
+                if val and str(val).strip():
+                    password = str(val).strip()
+            if "EMAIL_TO" in st.secrets:
+                val = st.secrets["EMAIL_TO"]
+                if val and str(val).strip():
+                    receiver = str(val).strip()
+        except Exception:
+            pass
+
     if not sender or not password or not receiver:
         log("Email skipped: EMAIL_FROM/EMAIL_APP_PASSWORD/EMAIL_TO not set")
         return False
