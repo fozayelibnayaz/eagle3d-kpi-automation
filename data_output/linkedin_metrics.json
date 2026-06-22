@@ -1,8 +1,8 @@
 {
-  "scraped_at": "2026-06-22T18:35:02.453369",
+  "scraped_at": "2026-06-22T18:47:23.956898",
   "demo": false,
   "error": "It looks like you are using Playwright Sync API inside the asyncio loop.\nPlease use the Async API instead.",
   "followers": 2552,
   "company_name": "Eagle 3D Streaming",
-  "_cached_at": "2026-06-22T18:35:03.262207"
+  "_cached_at": "2026-06-22T18:47:24.741444"
 }
