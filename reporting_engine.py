@@ -213,6 +213,9 @@ def send_slack(text):
 
 def build_kpi_stats():
     """KPI System stats - uses Supabase as primary source"""
+    import os as _os_kpi
+    import sys as _sys_kpi
+    print(f"[KPI_STATS] Building... SUPABASE_URL={'SET' if _os_kpi.environ.get('SUPABASE_URL') else 'MISSING'} | KEY={'SET' if _os_kpi.environ.get('SUPABASE_SERVICE_KEY') else 'MISSING'}", file=_sys_kpi.stderr, flush=True)
     # Try Supabase first for fast accurate counts
     try:
         import os

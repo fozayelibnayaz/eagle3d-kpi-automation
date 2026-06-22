@@ -2555,6 +2555,14 @@ elif page == "📈 Google Analytics":
 # ═══════════════════════════════════════════════════════════════
 # PAGE: 🤖 ASK AI — Chat System
 # ═══════════════════════════════════════════════════════════════
+    # ── GA4 Pattern Analysis Section ──
+    with st.expander("📊 Pattern Analysis — Region + Time + Anomalies", expanded=False):
+        try:
+            from ga4_pattern_ui import render_ga4_pattern_analysis
+            render_ga4_pattern_analysis()
+        except Exception as _ge:
+            st.warning(f"GA4 pattern analysis: {_ge}")
+
 elif page == "🤖 Ask AI":
     st.markdown(
         '<div class="sec-head">🤖 AI Analytics Assistant</div>',

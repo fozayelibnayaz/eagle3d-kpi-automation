@@ -111,6 +111,7 @@ NEXT VIDEO
 
 Be specific. Reference the actual numbers. No generic advice."""
 
+    log_msg = ''
     if groq_key:
         try:
             import urllib.request
@@ -128,6 +129,8 @@ Be specific. Reference the actual numbers. No generic advice."""
                 headers={
                     "Authorization": f"Bearer {groq_key}",
                     "Content-Type": "application/json",
+                    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    "Accept": "application/json",
                 },
                 method="POST",
             )
@@ -137,8 +140,10 @@ Be specific. Reference the actual numbers. No generic advice."""
                 return {"data_signals": data_signals, "ai_analysis": ai_text, "source": "Groq Llama 3.3"}
         except urllib.error.HTTPError as e:
             err_body = e.read().decode() if hasattr(e,'read') else ''
-            return {"data_signals": data_signals, "ai_analysis": f"Groq error {e.code}: {err_body[:200]}", "source": "Groq error"}
+            log_msg = f"Groq error {e.code}: {err_body[:200]}"
+            # Fall through to Gemini instead of returning error
         except Exception as e:
+            log_msg = f"Groq exception: {e}"
             pass
 
     if gemini_key:
@@ -160,11 +165,17 @@ Be specific. Reference the actual numbers. No generic advice."""
                 return {"data_signals": data_signals, "ai_analysis": ai_text, "source": "Gemini 1.5"}
         except urllib.error.HTTPError as e:
             err_body = e.read().decode() if hasattr(e,'read') else ''
-            return {"data_signals": data_signals, "ai_analysis": f"Gemini error {e.code}: {err_body[:200]}", "source": "Gemini error"}
-        except Exception:
-            pass
+            log_msg = log_msg + f" | Gemini error {e.code}: {err_body[:200]}"
+        except Exception as e:
+            log_msg = log_msg + f" | Gemini exception: {e}"
 
-    # No AI - return data signals only
+    # No AI - return data signals + error log
+    msg = "AI providers tried but failed.\n\n"
+    if log_msg:
+        msg += f"Errors: {log_msg}\n\n"
+    msg += "DATA-DRIVEN INSIGHT (no AI):\n"
+    msg += "\n".join(f"- {s}" for s in data_signals) if data_signals else "No significant data signals."
+
     return {
         "data_signals": data_signals,
         "ai_analysis": "AI keys not configured. Data analysis above.",
