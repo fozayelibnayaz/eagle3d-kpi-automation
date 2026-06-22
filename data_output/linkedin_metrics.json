@@ -1,8 +1,9 @@
 {
-  "scraped_at": "2026-06-20T00:02:49.697355",
+  "scraped_at": "2026-06-22T08:14:33.769234",
   "demo": false,
   "source": "playwright_authenticated",
+  "company_page": "https://www.linkedin.com/company/eagle-3d-streaming/",
   "followers": 2552,
   "company_name": "Eagle 3D Streaming",
-  "_cached_at": "2026-06-20T00:04:14.503021"
+  "_cached_at": "2026-06-22T08:15:54.438959"
 }

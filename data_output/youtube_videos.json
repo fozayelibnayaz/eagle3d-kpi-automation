@@ -2689,11 +2689,11 @@
       "thumbnail": "https://i.ytimg.com/vi/qd_YlQ_k780/hqdefault.jpg",
       "duration_seconds": 2575,
       "duration_label": "42:55",
-      "views": 1287,
+      "views": 1288,
       "likes": 11,
       "comments": 2,
-      "engagement_rate": 1.01,
-      "like_rate": 0.855,
+      "engagement_rate": 1.009,
+      "like_rate": 0.854,
       "tags": [
         "unreal engine",
         "visualization",
@@ -4998,5 +4998,5 @@
       "demo": false
     }
   ],
-  "_cached_at": "2026-06-22T05:46:57.576633"
+  "_cached_at": "2026-06-22T08:16:17.373273"
 }
