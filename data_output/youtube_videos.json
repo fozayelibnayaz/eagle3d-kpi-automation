@@ -1687,11 +1687,11 @@
       "thumbnail": "https://i.ytimg.com/vi/OC6NqaghPFA/hqdefault.jpg",
       "duration_seconds": 1858,
       "duration_label": "30:58",
-      "views": 1223,
+      "views": 1224,
       "likes": 46,
       "comments": 1,
-      "engagement_rate": 3.843,
-      "like_rate": 3.761,
+      "engagement_rate": 3.84,
+      "like_rate": 3.758,
       "tags": [
         "Build and Deploy Your First BIM Project with Unreal Engine and Pixel Streaming",
         "bim project with unreal engine",
@@ -4998,5 +4998,5 @@
       "demo": false
     }
   ],
-  "_cached_at": "2026-06-22T04:10:40.688681"
+  "_cached_at": "2026-06-22T05:46:57.576633"
 }

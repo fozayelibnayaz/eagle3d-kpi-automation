@@ -4026,16 +4026,19 @@
     },
     {
       "date": "2026-06-22",
-      "scraped_at": "2026-06-22T04:10:22.998335",
+      "scraped_at": "2026-06-22T05:46:35.922678",
       "followers": 2551,
       "company_name": "Eagle 3D Streaming",
-      "employees": "",
+      "employees": 31,
       "industry": "",
       "search_appearances": 0,
       "competitors": "",
       "leads": 0,
-      "newsletters": 0
+      "newsletters": 0,
+      "posts": 10,
+      "post_likes": 38,
+      "post_comments": 2
     }
   ],
-  "_cached_at": "2026-06-22T04:10:22.999512"
+  "_cached_at": "2026-06-22T05:46:35.923952"
 }
