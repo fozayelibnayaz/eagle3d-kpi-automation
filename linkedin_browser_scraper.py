@@ -1,0 +1,653 @@
+#!/usr/bin/env python3
+"""
+LinkedIn Full Browser Scraper - All Admin Analytics Pages
+Scrapes 7 LinkedIn admin pages using Playwright + cookies:
+  1. /admin/analytics/updates/        - posts performance
+  2. /admin/analytics/visitors/       - visitor demographics
+  3. /admin/analytics/followers/      - follower growth + demographics
+  4. /admin/analytics/search-appearances/ - search visibility
+  5. /admin/analytics/competitors/    - competitor comparison
+  6. /admin/analytics/leads/          - lead gen analytics
+  7. /admin/analytics/newsletters/    - newsletter performance
+"""
+
+import os
+import json
+import re
+import time
+from datetime import datetime
+from pathlib import Path
+
+DATA_DIR     = Path("data_output")
+COOKIES_FILE = DATA_DIR / "linkedin_cookies.json"
+CACHE_FILE   = DATA_DIR / "linkedin_full_analytics.json"
+COMPANY_ID   = "68624141"
+NEWSLETTER_URN = "urn:li:fsd_contentSeries:7332986018540728320"
+
+URLS = {
+    "updates":            f"https://www.linkedin.com/company/{COMPANY_ID}/admin/analytics/updates/",
+    "visitors":           f"https://www.linkedin.com/company/{COMPANY_ID}/admin/analytics/visitors/",
+    "followers":          f"https://www.linkedin.com/company/{COMPANY_ID}/admin/analytics/followers/",
+    "search_appearances": f"https://www.linkedin.com/company/{COMPANY_ID}/admin/analytics/search-appearances/",
+    "competitors":        f"https://www.linkedin.com/company/{COMPANY_ID}/admin/analytics/competitors/",
+    "leads":              f"https://www.linkedin.com/company/{COMPANY_ID}/admin/analytics/leads/",
+    "newsletters":        f"https://www.linkedin.com/company/{COMPANY_ID}/admin/analytics/newsletters/{NEWSLETTER_URN}/",
+}
+
+
+def log(m):
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] [LinkedIn] {m}", flush=True)
+
+
+def _load_cookies():
+    if COOKIES_FILE.exists():
+        try:
+            c = json.loads(COOKIES_FILE.read_text())
+            return c if isinstance(c, list) else json.loads(c)
+        except Exception as e:
+            log(f"Cookie load error: {e}")
+    return []
+
+
+def _get_supabase():
+    url = os.environ.get("SUPABASE_URL", "")
+    key = os.environ.get("SUPABASE_SERVICE_KEY", "")
+    if not url or not key:
+        try:
+            import streamlit as st
+            url = str(st.secrets.get("SUPABASE_URL", "")).strip()
+            key = str(st.secrets.get("SUPABASE_SERVICE_KEY", "")).strip()
+        except Exception:
+            pass
+    if not url or not key:
+        return None
+    try:
+        from supabase import create_client
+        return create_client(url, key)
+    except Exception:
+        return None
+
+
+def _setup_browser(headless=False):
+    """If session_state.json exists, use headless. Otherwise show browser."""
+    from playwright.sync_api import sync_playwright
+    p = sync_playwright().start()
+    session_file = DATA_DIR / "linkedin_session_state.json"
+    use_headless = headless if session_file.exists() else False
+    browser = p.chromium.launch(
+        headless=use_headless,
+        args=['--disable-blink-features=AutomationControlled'],
+    )
+    # Prefer saved session state (more reliable than cookies alone)
+    session_file = DATA_DIR / "linkedin_session_state.json"
+    context_args = {
+        "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "viewport":   {"width": 1440, "height": 900},
+    }
+    if session_file.exists():
+        log(f"Using saved session state: {session_file}")
+        context_args["storage_state"] = str(session_file)
+    context = browser.new_context(**context_args)
+
+    # Load cookies (additional - in case session state missing or stale)
+    cookies = _load_cookies()
+    pw_cookies = []
+    for c in cookies:
+        try:
+            domain = c.get("domain", ".linkedin.com")
+            if not domain.startswith("."):
+                domain = "." + domain.lstrip(".")
+            pw_c = {
+                "name":     c["name"],
+                "value":    c["value"],
+                "domain":   domain,
+                "path":     c.get("path", "/"),
+                "secure":   c.get("secure", True),
+                "httpOnly": c.get("httpOnly", False),
+            }
+            exp = c.get("expirationDate")
+            if exp and not c.get("session"):
+                pw_c["expires"] = int(exp)
+            pw_cookies.append(pw_c)
+        except Exception:
+            continue
+    context.add_cookies(pw_cookies)
+    page = context.new_page()
+    return p, browser, page
+
+
+def _safe_int(s):
+    try:
+        return int(re.sub(r"[^\d]", "", str(s)) or "0")
+    except Exception:
+        return 0
+
+
+def _safe_float(s):
+    try:
+        return float(re.sub(r"[^\d.]", "", str(s)) or "0")
+    except Exception:
+        return 0.0
+
+
+def _wait_load(page, timeout=20000):
+    try:
+        page.wait_for_load_state("networkidle", timeout=timeout)
+    except Exception:
+        pass
+    time.sleep(3)
+
+
+def _set_max_date_range(page):
+    """Try to set date filter to maximum (last 365 days / last year)."""
+    try:
+        # Click date filter button
+        selectors = [
+            "button[aria-label*='date' i]",
+            "button:has-text('days')",
+            "button:has-text('2026')",
+            "button:has-text('2025')",
+            "[data-test-id*='date-picker']",
+        ]
+        for sel in selectors:
+            btn = page.query_selector(sel)
+            if btn:
+                btn.click()
+                time.sleep(2)
+                break
+
+        # Select longest range
+        for opt_text in ["Last 365 days", "Last year", "Past year", "365 days", "1 year"]:
+            opt = page.query_selector(f"button:has-text('{opt_text}'), li:has-text('{opt_text}'), [role='option']:has-text('{opt_text}')")
+            if opt:
+                opt.click()
+                time.sleep(3)
+                log(f"  Date range: {opt_text}")
+                return True
+    except Exception as e:
+        log(f"  Date range (non-fatal): {e}")
+    return False
+
+
+def _extract_highlights(page, patterns):
+    """Extract highlight metrics from page text using regex patterns."""
+    out = {}
+    try:
+        body = page.inner_text("body")
+        for key, pat in patterns.items():
+            m = re.search(pat, body, re.I)
+            if m:
+                try:
+                    out[key] = _safe_int(m.group(1))
+                except Exception:
+                    pass
+    except Exception as e:
+        log(f"  Highlights error: {e}")
+    return out
+
+
+def _scroll_full(page, max_scrolls=15):
+    """Scroll to load all dynamic content."""
+    for _ in range(max_scrolls):
+        page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+        time.sleep(1.5)
+
+
+def _extract_table_rows(page):
+    """Extract data from any tables/grids on page."""
+    rows_data = []
+    try:
+        # Try multiple selectors
+        rows = page.query_selector_all("tr, [role='row'], .artdeco-table tr, [data-test-id*='row']")
+        for row in rows:
+            try:
+                cells = row.query_selector_all("td, [role='cell'], [role='gridcell'], th")
+                if len(cells) < 2:
+                    continue
+                texts = []
+                for c in cells:
+                    try:
+                        texts.append(c.inner_text().strip())
+                    except Exception:
+                        texts.append("")
+                if any(texts):
+                    rows_data.append(texts)
+            except Exception:
+                continue
+    except Exception as e:
+        log(f"  Table extract: {e}")
+    return rows_data
+
+
+def _save_debug(page, name):
+    debug_path = DATA_DIR / f"linkedin_debug_{name}.html"
+    try:
+        debug_path.write_text(page.content())
+        log(f"  Debug HTML: {debug_path}")
+    except Exception:
+        pass
+
+
+# ─────────────────────────────────────────────────────────────
+# PAGE-SPECIFIC SCRAPERS
+# ─────────────────────────────────────────────────────────────
+
+def scrape_updates(page):
+    log("=" * 50)
+    log("UPDATES (Posts Analytics)")
+    log("=" * 50)
+    out = {"highlights": {}, "posts": []}
+
+    page.goto(URLS["updates"], timeout=45000, wait_until="domcontentloaded")
+    _wait_load(page)
+
+    if "authwall" in page.url or "login" in page.url:
+        log("LOGIN REDIRECT - cookies expired")
+        return out
+
+    _set_max_date_range(page)
+    _scroll_full(page)
+
+    # Highlights
+    out["highlights"] = _extract_highlights(page, {
+        "impressions": r"([\d,]+)\s*(?:\n|\s)+Impressions",
+        "reactions":   r"([\d,]+)\s*(?:\n|\s)+Reactions",
+        "comments":    r"([\d,]+)\s*(?:\n|\s)+Comments",
+        "reposts":     r"([\d,]+)\s*(?:\n|\s)+Reposts",
+        "clicks":      r"([\d,]+)\s*(?:\n|\s)+Clicks",
+        "engagement_rate": r"([\d.]+%?)\s*(?:\n|\s)+Engagement",
+    })
+    log(f"Highlights: {out['highlights']}")
+
+    # Posts from table
+    rows = _extract_table_rows(page)
+    for r in rows:
+        if not r or len(r) < 4:
+            continue
+        if any(h in r[0] for h in ["Post title", "Impressions", "Reactions"]):
+            continue
+        post = {
+            "title":           r[0][:300],
+            "post_type":       r[1] if len(r) > 1 else "",
+            "audience":        r[2] if len(r) > 2 else "",
+            "impressions":     _safe_int(r[3]) if len(r) > 3 else 0,
+            "views":           _safe_int(r[4]) if len(r) > 4 else 0,
+            "clicks":          _safe_int(r[5]) if len(r) > 5 else 0,
+            "ctr":             _safe_float(r[6]) if len(r) > 6 else 0.0,
+            "reactions":       _safe_int(r[7]) if len(r) > 7 else 0,
+            "comments":        _safe_int(r[8]) if len(r) > 8 else 0,
+            "reposts":         _safe_int(r[9]) if len(r) > 9 else 0,
+            "follows":         _safe_int(r[10]) if len(r) > 10 else 0,
+            "engagement_rate": _safe_float(r[11]) if len(r) > 11 else 0.0,
+            "scraped_at":      datetime.utcnow().isoformat(),
+        }
+        if post["impressions"] > 0 or post["reactions"] > 0:
+            out["posts"].append(post)
+
+    if not out["posts"]:
+        _save_debug(page, "updates")
+    log(f"Posts extracted: {len(out['posts'])}")
+    return out
+
+
+def scrape_visitors(page):
+    log("=" * 50)
+    log("VISITORS")
+    log("=" * 50)
+    out = {"highlights": {}, "demographics": {}, "by_date": []}
+
+    page.goto(URLS["visitors"], timeout=45000, wait_until="domcontentloaded")
+    _wait_load(page)
+    _set_max_date_range(page)
+    _scroll_full(page)
+
+    out["highlights"] = _extract_highlights(page, {
+        "page_views":       r"([\d,]+)\s*(?:Page views|page views)",
+        "unique_visitors":  r"([\d,]+)\s*(?:Unique visitors|unique visitors)",
+        "custom_button":    r"([\d,]+)\s*(?:Custom button)",
+    })
+    log(f"Visitor highlights: {out['highlights']}")
+
+    rows = _extract_table_rows(page)
+    for r in rows:
+        if len(r) >= 2 and r[0]:
+            out["by_date"].append({"category": r[0], "values": r[1:]})
+
+    if not out["highlights"]:
+        _save_debug(page, "visitors")
+    return out
+
+
+def scrape_followers(page):
+    log("=" * 50)
+    log("FOLLOWERS")
+    log("=" * 50)
+    out = {"total": 0, "highlights": {}, "demographics": {}, "by_date": []}
+
+    page.goto(URLS["followers"], timeout=45000, wait_until="domcontentloaded")
+    _wait_load(page)
+    _set_max_date_range(page)
+    _scroll_full(page)
+
+    body = page.inner_text("body")
+    m = re.search(r"([\d,]+)\s*(?:total\s+)?followers", body, re.I)
+    if m:
+        out["total"] = _safe_int(m.group(1))
+    log(f"Total followers: {out['total']}")
+
+    out["highlights"] = _extract_highlights(page, {
+        "new_followers":  r"([\d,]+)\s*(?:New followers|new followers)",
+        "organic":        r"([\d,]+)\s*(?:Organic|organic)",
+        "sponsored":      r"([\d,]+)\s*(?:Sponsored|sponsored)",
+    })
+
+    # Try to extract chart data
+    try:
+        chart_data = page.evaluate("""() => {
+            const scripts = document.querySelectorAll('script, code');
+            for (const s of scripts) {
+                const t = s.textContent || '';
+                if (t.includes('followerGains') || t.includes('organicFollowerCounts')) {
+                    return t.substring(0, 100000);
+                }
+            }
+            return null;
+        }""")
+        if chart_data:
+            pairs = re.findall(r'"start":(\d+).*?"organicFollowerGains":(\d+)', chart_data)
+            for ts, count in pairs[:400]:
+                try:
+                    d = datetime.fromtimestamp(int(ts) / 1000).strftime("%Y-%m-%d")
+                    out["by_date"].append({
+                        "date":          d,
+                        "organic_gains": _safe_int(count),
+                        "paid_gains":    0,
+                        "total":         _safe_int(count),
+                    })
+                except Exception:
+                    continue
+            log(f"Daily followers extracted: {len(out['by_date'])}")
+    except Exception as e:
+        log(f"Chart extract: {e}")
+
+    if not out["total"] and not out["by_date"]:
+        _save_debug(page, "followers")
+    return out
+
+
+def scrape_search_appearances(page):
+    log("=" * 50)
+    log("SEARCH APPEARANCES")
+    log("=" * 50)
+    out = {"highlights": {}, "keywords": [], "companies": []}
+
+    page.goto(URLS["search_appearances"], timeout=45000, wait_until="domcontentloaded")
+    _wait_load(page)
+    _set_max_date_range(page)
+    _scroll_full(page)
+
+    out["highlights"] = _extract_highlights(page, {
+        "appearances":     r"([\d,]+)\s*(?:Appearances|appearances)",
+        "search_keywords": r"([\d,]+)\s*(?:keywords|Keywords)",
+    })
+    log(f"Search appearances: {out['highlights']}")
+
+    rows = _extract_table_rows(page)
+    for r in rows:
+        if len(r) >= 2 and r[0]:
+            out["keywords"].append({
+                "keyword":     r[0],
+                "count":       _safe_int(r[1]) if len(r) > 1 else 0,
+                "extra":       r[2:] if len(r) > 2 else [],
+            })
+
+    if not out["highlights"] and not out["keywords"]:
+        _save_debug(page, "search_appearances")
+    return out
+
+
+def scrape_competitors(page):
+    log("=" * 50)
+    log("COMPETITORS")
+    log("=" * 50)
+    out = {"competitors": []}
+
+    page.goto(URLS["competitors"], timeout=45000, wait_until="domcontentloaded")
+    _wait_load(page)
+    _scroll_full(page)
+
+    rows = _extract_table_rows(page)
+    for r in rows:
+        if len(r) >= 2 and r[0]:
+            out["competitors"].append({
+                "name":              r[0],
+                "followers":         _safe_int(r[1]) if len(r) > 1 else 0,
+                "follower_growth":   r[2] if len(r) > 2 else "",
+                "post_engagements":  _safe_int(r[3]) if len(r) > 3 else 0,
+                "engagement_rate":   r[4] if len(r) > 4 else "",
+                "posts":             _safe_int(r[5]) if len(r) > 5 else 0,
+                "extra":             r[6:] if len(r) > 6 else [],
+            })
+
+    log(f"Competitors extracted: {len(out['competitors'])}")
+    if not out["competitors"]:
+        _save_debug(page, "competitors")
+    return out
+
+
+def scrape_leads(page):
+    log("=" * 50)
+    log("LEADS")
+    log("=" * 50)
+    out = {"highlights": {}, "forms": [], "leads_list": []}
+
+    page.goto(URLS["leads"], timeout=45000, wait_until="domcontentloaded")
+    _wait_load(page)
+    _set_max_date_range(page)
+    _scroll_full(page)
+
+    out["highlights"] = _extract_highlights(page, {
+        "leads":         r"([\d,]+)\s*(?:Leads|leads)\b",
+        "form_views":    r"([\d,]+)\s*(?:Form views|form views)",
+        "conversion":    r"([\d.]+%)\s*(?:Conversion|conversion)",
+    })
+    log(f"Leads highlights: {out['highlights']}")
+
+    rows = _extract_table_rows(page)
+    for r in rows:
+        if len(r) >= 2 and r[0]:
+            out["forms"].append({"form": r[0], "values": r[1:]})
+
+    if not out["highlights"] and not out["forms"]:
+        _save_debug(page, "leads")
+    return out
+
+
+def scrape_newsletters(page):
+    log("=" * 50)
+    log("NEWSLETTERS")
+    log("=" * 50)
+    out = {"highlights": {}, "articles": []}
+
+    page.goto(URLS["newsletters"], timeout=45000, wait_until="domcontentloaded")
+    _wait_load(page)
+    _scroll_full(page)
+
+    out["highlights"] = _extract_highlights(page, {
+        "subscribers":   r"([\d,]+)\s*(?:Subscribers|subscribers)",
+        "open_rate":     r"([\d.]+%)\s*(?:Open rate|open rate)",
+        "articles_count":r"([\d,]+)\s*(?:Articles|articles)",
+    })
+    log(f"Newsletter highlights: {out['highlights']}")
+
+    rows = _extract_table_rows(page)
+    for r in rows:
+        if len(r) >= 2 and r[0]:
+            out["articles"].append({
+                "title":      r[0][:300],
+                "views":      _safe_int(r[1]) if len(r) > 1 else 0,
+                "reactions":  _safe_int(r[2]) if len(r) > 2 else 0,
+                "comments":   _safe_int(r[3]) if len(r) > 3 else 0,
+                "shares":     _safe_int(r[4]) if len(r) > 4 else 0,
+            })
+
+    log(f"Articles: {len(out['articles'])}")
+    if not out["highlights"] and not out["articles"]:
+        _save_debug(page, "newsletters")
+    return out
+
+
+# ─────────────────────────────────────────────────────────────
+# MAIN
+# ─────────────────────────────────────────────────────────────
+
+def scrape_all():
+    result = {
+        "scraped_at":         datetime.utcnow().isoformat(),
+        "updates":            {},
+        "visitors":           {},
+        "followers":          {},
+        "search_appearances": {},
+        "competitors":        {},
+        "leads":              {},
+        "newsletters":        {},
+        "error":              None,
+    }
+
+    cookies = _load_cookies()
+    if not cookies:
+        result["error"] = "No cookies found at data_output/linkedin_cookies.json"
+        return result
+
+    try:
+        p, browser, page = _setup_browser()
+    except Exception as e:
+        result["error"] = f"Browser setup failed: {e}"
+        return result
+
+    try:
+        # Test login first
+        page.goto("https://www.linkedin.com/feed/", timeout=30000, wait_until="domcontentloaded")
+        time.sleep(3)
+        if "login" in page.url.lower() or "authwall" in page.url.lower():
+            result["error"] = f"Login redirect: {page.url}"
+            log(result["error"])
+            browser.close()
+            p.stop()
+            return result
+        log(f"Logged in: {page.url}")
+
+        # Run all scrapers
+        result["updates"]            = scrape_updates(page)
+        result["visitors"]           = scrape_visitors(page)
+        result["followers"]          = scrape_followers(page)
+        result["search_appearances"] = scrape_search_appearances(page)
+        result["competitors"]        = scrape_competitors(page)
+        result["leads"]              = scrape_leads(page)
+        result["newsletters"]        = scrape_newsletters(page)
+    finally:
+        try:
+            browser.close()
+        except Exception:
+            pass
+        try:
+            p.stop()
+        except Exception:
+            pass
+
+    DATA_DIR.mkdir(exist_ok=True)
+    CACHE_FILE.write_text(json.dumps(result, indent=2, default=str))
+    log(f"Saved: {CACHE_FILE}")
+
+    _save_to_supabase(result)
+
+    return result
+
+
+def _save_to_supabase(data):
+    sb = _get_supabase()
+    if not sb:
+        log("Supabase not configured - skipped")
+        return False
+
+    # Posts
+    posts = data.get("updates", {}).get("posts", [])
+    if posts:
+        rows = []
+        for p in posts:
+            urn = f"scraped::{abs(hash(p['title']))}"
+            rows.append({
+                "urn":              urn,
+                "text":             p["title"][:500],
+                "published_at":     None,
+                "impressions":      p.get("impressions", 0),
+                "clicks":           p.get("clicks", 0),
+                "ctr":              p.get("ctr", 0),
+                "reactions":        p.get("reactions", 0),
+                "comments":         p.get("comments", 0),
+                "shares":           p.get("reposts", 0),
+                "engagement_rate":  p.get("engagement_rate", 0),
+                "url":              "",
+                "updated_at":       datetime.utcnow().isoformat(),
+            })
+        try:
+            sb.table("linkedin_posts").upsert(rows, on_conflict="urn").execute()
+            log(f"Posts upserted: {len(rows)}")
+        except Exception as e:
+            log(f"Posts upsert error: {e}")
+
+    # Daily followers
+    fd = data.get("followers", {}).get("by_date", [])
+    if fd:
+        rows = [{
+            "date":          f["date"],
+            "organic_gains": f.get("organic_gains", 0),
+            "paid_gains":    f.get("paid_gains", 0),
+            "total":         f.get("total", 0),
+        } for f in fd if f.get("date")]
+        try:
+            sb.table("linkedin_followers_daily").upsert(rows, on_conflict="date").execute()
+            log(f"Follower days upserted: {len(rows)}")
+        except Exception as e:
+            log(f"Followers upsert error: {e}")
+
+    # Full snapshot in analytics_cache
+    try:
+        sb.table("analytics_cache").upsert({
+            "source":       "linkedin_full",
+            "metric_date":  datetime.now().strftime("%Y-%m-%d"),
+            "period_type":  "365days",
+            "data":         data,
+            "fetched_at":   datetime.utcnow().isoformat(),
+            "is_valid":     True,
+        }, on_conflict="source,metric_date").execute()
+        log("analytics_cache upserted")
+    except Exception as e:
+        log(f"analytics_cache error: {e}")
+
+    return True
+
+
+if __name__ == "__main__":
+    print("=" * 60)
+    print("LINKEDIN FULL SCRAPER - 7 ANALYTICS PAGES")
+    print("=" * 60)
+    print("\nBrowser will open. Wait for it to finish.\n")
+    result = scrape_all()
+
+    print("\n" + "=" * 60)
+    print("RESULT SUMMARY")
+    print("=" * 60)
+    if result.get("error"):
+        print(f"ERROR: {result['error']}")
+    else:
+        print(f"Updates posts:         {len(result['updates'].get('posts', []))}")
+        print(f"Updates highlights:    {result['updates'].get('highlights', {})}")
+        print(f"Visitors highlights:   {result['visitors'].get('highlights', {})}")
+        print(f"Followers total:       {result['followers'].get('total')}")
+        print(f"Follower days:         {len(result['followers'].get('by_date', []))}")
+        print(f"Search appearances:    {result['search_appearances'].get('highlights', {})}")
+        print(f"Search keywords:       {len(result['search_appearances'].get('keywords', []))}")
+        print(f"Competitors:           {len(result['competitors'].get('competitors', []))}")
+        print(f"Leads highlights:      {result['leads'].get('highlights', {})}")
+        print(f"Newsletter articles:   {len(result['newsletters'].get('articles', []))}")
