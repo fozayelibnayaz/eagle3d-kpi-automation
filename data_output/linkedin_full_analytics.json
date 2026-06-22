@@ -1,5 +1,5 @@
 {
-  "scraped_at": "2026-06-22T16:48:23.178235",
+  "scraped_at": "2026-06-22T17:01:02.495963",
   "updates": {
     "highlights": {
       "impressions": 39332,
@@ -12,7 +12,7 @@
         "title": "Unreal Engine 5.8 is officially here \u2014 and Eagle 3D Streaming fully supports it. \ud83d\ude80 Epic Games just released their biggest UE5 update yet at State of Unreal 2026, and several of the new features directly level up what's possible with pixel streaming. MegaLights is now Production-Ready \u2014 thousands of ",
         "post_type": "Image",
         "audience": "All followers",
-        "impressions": 18,
+        "impressions": 23,
         "views": 0,
         "clicks": 0,
         "ctr": 0.0,
@@ -21,22 +21,22 @@
         "reposts": 0,
         "follows": 0,
         "engagement_rate": 0.0,
-        "scraped_at": "2026-06-22T16:49:27.855031"
+        "scraped_at": "2026-06-22T17:02:15.251186"
       },
       {
         "title": "Running a client demo with a high-end 3D app used to mean expensive hardware, messy setup, and one person at the wheel while everyone else just watched. Eagle 3D Streaming flips that. Stream your Unreal Engine app directly in the browser \u2014 no installs, no GPU required on the client side. And the bes",
         "post_type": "Image",
         "audience": "All followers",
-        "impressions": 90,
+        "impressions": 91,
         "views": 0,
         "clicks": 7,
-        "ctr": 7.78,
+        "ctr": 7.69,
         "reactions": 1,
         "comments": 0,
         "reposts": 0,
         "follows": 0,
-        "engagement_rate": 8.89,
-        "scraped_at": "2026-06-22T16:49:27.855410"
+        "engagement_rate": 8.79,
+        "scraped_at": "2026-06-22T17:02:15.251299"
       },
       {
         "title": "Most VR developers hit these errors and think something is fundamentally wrong with their setup. It's not. These are fixable \u2014 in minutes. We broke down the 5 most common VR Pixel Streaming errors that trip up Unreal Engine developers, exactly why they happen, and the precise steps to resolve each o",
@@ -51,14 +51,14 @@
         "reposts": 0,
         "follows": 0,
         "engagement_rate": 4.19,
-        "scraped_at": "2026-06-22T16:49:27.855422"
+        "scraped_at": "2026-06-22T17:02:15.251311"
       }
     ]
   },
   "visitors": {
     "highlights": {
-      "page_views": 236,
-      "unique_visitors": 124,
+      "page_views": 3939,
+      "unique_visitors": 1548,
       "custom_button": 0
     },
     "demographics": {},
@@ -80,35 +80,7 @@
     "companies": []
   },
   "competitors": {
-    "competitors": [
-      {
-        "name": "Competitors",
-        "followers": 0,
-        "follower_growth": "Posts",
-        "post_engagements": 0,
-        "engagement_rate": "Comments per day",
-        "posts": 0,
-        "extra": []
-      },
-      {
-        "name": "1\n\nVagon\n\n2,657 followers",
-        "followers": 55400,
-        "follower_growth": "2",
-        "post_engagements": 1,
-        "engagement_rate": "0",
-        "posts": 205667,
-        "extra": []
-      },
-      {
-        "name": "2\n\nEagle 3D Streaming You\n\n2,552 followers",
-        "followers": 23652,
-        "follower_growth": "4\n\n50%",
-        "post_engagements": 100,
-        "engagement_rate": "0\n\n100%",
-        "posts": 22621,
-        "extra": []
-      }
-    ]
+    "competitors": []
   },
   "leads": {
     "highlights": {},

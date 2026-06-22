@@ -214,82 +214,84 @@ def send_slack(text):
 def build_kpi_stats():
     """KPI System stats - uses Supabase as primary source"""
     import os as _os_kpi
-    import sys as _sys_kpi
-    print(f"[KPI_STATS] Building... SUPABASE_URL={'SET' if _os_kpi.environ.get('SUPABASE_URL') else 'MISSING'} | KEY={'SET' if _os_kpi.environ.get('SUPABASE_SERVICE_KEY') else 'MISSING'}", file=_sys_kpi.stderr, flush=True)
-    # Try Supabase first for fast accurate counts
-    try:
-        import os
-        from supabase import create_client as _sb_cc
-        _url = os.environ.get("SUPABASE_URL","").strip()
-        _key = os.environ.get("SUPABASE_SERVICE_KEY","").strip()
-        if not _url:
-            try:
-                import streamlit as st
-                _url = str(st.secrets.get("SUPABASE_URL","")).strip()
-                _key = str(st.secrets.get("SUPABASE_SERVICE_KEY","")).strip()
-            except Exception:
-                pass
-        if _url and _key:
-            _sb = _sb_cc(_url, _key)
+    # ── HARD GUARD: ALWAYS use Supabase if env vars set ──
+    _su = _os_kpi.environ.get("SUPABASE_URL", "").strip()
+    _sk = _os_kpi.environ.get("SUPABASE_SERVICE_KEY", "").strip()
+    if not _su or not _sk:
+        try:
+            import streamlit as _st_kpi
+            _su = str(_st_kpi.secrets.get("SUPABASE_URL", "")).strip()
+            _sk = str(_st_kpi.secrets.get("SUPABASE_SERVICE_KEY", "")).strip()
+        except Exception:
+            pass
+
+    if _su and _sk:
+        try:
+            from supabase import create_client as _cc
+            _sb = _cc(_su, _sk)
             _today = datetime.now().strftime("%Y-%m-%d")
             _mstart = datetime.now().strftime("%Y-%m-01")
+            # Common period = first upload date (locked)
             _upload_start = "2025-12-01"
             try:
                 _ur = _sb.table("uploads").select("upload_date").eq("final_status","ACCEPTED").order("upload_date").limit(1).execute()
                 if _ur.data and _ur.data[0].get("upload_date"):
-                    _upload_start = _ur.data[0]["upload_date"][:10]
+                    _upload_start = str(_ur.data[0]["upload_date"])[:10]
             except Exception:
                 pass
-            _st = _sb.table("signups").select("count",count="exact").eq("final_status","ACCEPTED").gte("signup_date",_today).execute()
-            _ut = _sb.table("uploads").select("count",count="exact").eq("final_status","ACCEPTED").gte("upload_date",_today).execute()
-            _pt = _sb.table("payments").select("count",count="exact").eq("final_status","ACCEPTED").gte("first_payment_date",_today).execute()
+            # Today
+            _st_t = _sb.table("signups").select("count",count="exact").eq("final_status","ACCEPTED").gte("signup_date",_today).execute()
+            _ut_t = _sb.table("uploads").select("count",count="exact").eq("final_status","ACCEPTED").gte("upload_date",_today).execute()
+            _pt_t = _sb.table("payments").select("count",count="exact").eq("final_status","ACCEPTED").gte("first_payment_date",_today).execute()
+            # Month
             _sm = _sb.table("signups").select("count",count="exact").eq("final_status","ACCEPTED").gte("signup_date",_mstart).execute()
             _um = _sb.table("uploads").select("count",count="exact").eq("final_status","ACCEPTED").gte("upload_date",_mstart).execute()
             _pm = _sb.table("payments").select("count",count="exact").eq("final_status","ACCEPTED").gte("first_payment_date",_mstart).execute()
-            _sc = _sb.table("signups").select("count",count="exact").eq("final_status","ACCEPTED").gte("signup_date",_upload_start).execute()
-            _uc = _sb.table("uploads").select("count",count="exact").eq("final_status","ACCEPTED").gte("upload_date",_upload_start).execute()
-            _pc = _sb.table("payments").select("count",count="exact").eq("final_status","ACCEPTED").gte("first_payment_date",_upload_start).execute()
-            _sf = _sb.table("signups").select("count",count="exact").eq("final_status","ACCEPTED").execute()
-            _pf = _sb.table("payments").select("count",count="exact").eq("final_status","ACCEPTED").execute()
+            # All Time = COMMON PERIOD ONLY (Dec 2025 onwards)
+            _sa = _sb.table("signups").select("count",count="exact").eq("final_status","ACCEPTED").gte("signup_date",_upload_start).execute()
+            _ua = _sb.table("uploads").select("count",count="exact").eq("final_status","ACCEPTED").gte("upload_date",_upload_start).execute()
+            _pa = _sb.table("payments").select("count",count="exact").eq("final_status","ACCEPTED").gte("first_payment_date",_upload_start).execute()
             _ovr = _sb.table("manual_overrides").select("count",count="exact").eq("is_active",True).execute()
             _month_str = datetime.now().strftime("%Y-%m")
+            log(f"[Supabase] Today S/U/P={_st_t.count}/{_ut_t.count}/{_pt_t.count} Month={_sm.count}/{_um.count}/{_pm.count} Common={_sa.count}/{_ua.count}/{_pa.count}")
             return {
-                "signups_today":          _st.count or 0,
-                "uploads_today":          _ut.count or 0,
-                "paid_today":             _pt.count or 0,
+                "signups_today":          _st_t.count or 0,
+                "uploads_today":          _ut_t.count or 0,
+                "paid_today":             _pt_t.count or 0,
                 "signups_month":          _sm.count or 0,
                 "uploads_month":          _um.count or 0,
                 "paid_month":             _pm.count or 0,
-                "signups_all":            _sc.count or 0,
-                "uploads_all":            _uc.count or 0,
-                "paid_all":               _pc.count or 0,
-                "signups_full_db":        _sf.count or 0,
-                "uploads_full_db":        0,
-                "paid_full_db":           _pf.count or 0,
-                "signups_all_override":   _sc.count or 0,
-                "uploads_all_override":   _uc.count or 0,
-                "paid_all_override":      _pc.count or 0,
+                "signups_all":            _sa.count or 0,
+                "uploads_all":            _ua.count or 0,
+                "paid_all":               _pa.count or 0,
+                "signups_full_db":        _sa.count or 0,
+                "uploads_full_db":        _ua.count or 0,
+                "paid_full_db":           _pa.count or 0,
+                "signups_all_override":   _sa.count or 0,
+                "uploads_all_override":   _ua.count or 0,
+                "paid_all_override":      _pa.count or 0,
                 "signups_month_override": _sm.count or 0,
                 "uploads_month_override": _um.count or 0,
                 "paid_month_override":    _pm.count or 0,
                 "today_str":              _today,
                 "month_str":              _month_str,
-                "alltime_period":         f"Common Period ({_upload_start[:7]} to {_today[:7]})",
+                "alltime_period":         f"Common Period from {_upload_start}",
                 "alltime_start":          _upload_start,
                 "alltime_end":            _today,
                 "total_overrides":        _ovr.count or 0,
                 "validation_passed":      True,
                 "validation_warnings":    0,
-                "validation_summary":     "PASS - Supabase direct counts",
+                "validation_summary":     "PASS - Supabase common period (locked to first upload date)",
                 "validation_banner":      "",
-                "source":                 "supabase",
+                "source":                 "supabase-common-period",
             }
-    except Exception as _e:
-        import traceback
-        log(f"Supabase KPI stats error: {_e}")
-        log(f"Traceback: {traceback.format_exc()[:500]}")
-        log(f"Falling back to Google Sheets (may show wrong All-Time totals)")
+        except Exception as _e:
+            import traceback
+            log(f"[Supabase HARD GUARD] Failed: {_e}")
+            log(f"[Supabase HARD GUARD] Trace: {traceback.format_exc()[:300]}")
+            log(f"[Supabase HARD GUARD] Falling back to old logic")
 
+    """KPI System stats - uses Supabase as primary source"""
     # FALLBACK: original Sheets-based implementation
     """KPI System stats — counts from Verified tabs (always accurate) + Daily_Counts supplement."""
     from sheets_writer import read_tab_data
