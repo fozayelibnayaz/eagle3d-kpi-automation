@@ -64,44 +64,101 @@ st.set_page_config(
 
 
 # ── ACCESS CONTROL GATE ──
+def _get_client_ip():
+    """Best-effort client IP from Streamlit context."""
+    try:
+        from streamlit.runtime.scriptrunner import get_script_run_ctx
+        from streamlit.runtime import get_instance
+        ctx = get_script_run_ctx()
+        if ctx:
+            session_info = get_instance()._session_mgr.get_session_info(ctx.session_id)
+            if session_info and session_info.client:
+                # Try multiple attributes
+                req = getattr(session_info.client, "request", None)
+                if req:
+                    ip = req.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+                    if not ip:
+                        ip = req.headers.get("X-Real-IP", "")
+                    if not ip:
+                        ip = getattr(req, "remote_ip", "")
+                    return ip or "unknown"
+    except Exception:
+        pass
+    # Fallback: external service
+    try:
+        import urllib.request, json as _j
+        with urllib.request.urlopen("https://api.ipify.org?format=json", timeout=3) as r:
+            return _j.loads(r.read()).get("ip", "unknown")
+    except Exception:
+        return "unknown"
+
+
 def _enforce_access_control():
     try:
         from access_control import is_allowed, log_access
     except ImportError:
-        return  # access_control module not present
+        return
     if st.session_state.get("_access_checked"):
         return
-    # Get email from authenticated user (if any auth system in place)
+
     user_email = st.session_state.get("user_email", "") or st.session_state.get("auth_email", "")
+
     if not user_email:
-        # Show login screen
-        st.markdown("# 🔒 Eagle3D KPI Hub - Login Required")
-        st.markdown("Only authorized emails can access this dashboard.")
-        with st.form("access_login"):
-            entered = st.text_input("Email address")
-            submit = st.form_submit_button("Verify Access")
+        # ── CLEAN LOGIN SCREEN: hide sidebar + center content ──
+        st.markdown("""
+        <style>
+            [data-testid="stSidebar"] {display: none !important;}
+            [data-testid="stSidebarNav"] {display: none !important;}
+            [data-testid="collapsedControl"] {display: none !important;}
+            section[data-testid="stSidebar"] {display: none !important;}
+            .main .block-container {
+                max-width: 480px !important;
+                padding-top: 5rem !important;
+                margin: 0 auto !important;
+            }
+            header {visibility: hidden;}
+            #MainMenu {visibility: hidden;}
+            footer {visibility: hidden;}
+        </style>
+        """, unsafe_allow_html=True)
+
+        st.markdown("# 🔒 Eagle3D KPI Hub")
+        st.markdown("### Login Required")
+        st.caption("Only authorized emails can access this dashboard.")
+        st.markdown("---")
+
+        with st.form("access_login", clear_on_submit=False):
+            entered = st.text_input("Email address", placeholder="you@eagle3dstreaming.com")
+            submit = st.form_submit_button("🔓 Verify Access", use_container_width=True)
             if submit:
+                client_ip = _get_client_ip()
                 if not entered or "@" not in entered:
                     st.error("Valid email required")
+                    log_access(entered or "empty", "login_attempt", False, client_ip)
                     st.stop()
                 allowed, role, reason = is_allowed(entered)
-                log_access(entered, "login", allowed)
+                log_access(entered, "login", allowed, client_ip)
                 if allowed:
                     st.session_state["user_email"] = entered.strip().lower()
                     st.session_state["user_role"] = role
+                    st.session_state["user_ip"] = client_ip
                     st.session_state["_access_checked"] = True
-                    st.success(f"Welcome! Role: {role}")
+                    st.success(f"Welcome! Role: {role} | IP: {client_ip}")
                     st.rerun()
                 else:
                     st.error(f"Access denied: {reason}")
+                    st.caption(f"Attempt logged from IP: {client_ip}")
                     st.stop()
+
+        st.markdown("---")
+        st.caption("Need access? Contact your administrator.")
         st.stop()
     else:
         allowed, role, reason = is_allowed(user_email)
         if not allowed:
             st.error(f"Access revoked: {reason}")
             if st.button("Sign out"):
-                for k in ("user_email", "user_role", "_access_checked"):
+                for k in ("user_email", "user_role", "_access_checked", "user_ip"):
                     st.session_state.pop(k, None)
                 st.rerun()
             st.stop()
@@ -1126,6 +1183,11 @@ with st.sidebar:
     with st.expander("💼 LinkedIn", expanded=page == "💼 LinkedIn"):
         if st.button("💼 LinkedIn", use_container_width=True, key="nav_li"):
             st.session_state["nav_page"] = "💼 LinkedIn"
+            st.rerun()
+
+    with st.expander("🎯 Customer Success", expanded=page == "🎯 Customer Success"):
+        if st.button("🎯 Customer Success", use_container_width=True, key="nav_cs"):
+            st.session_state["nav_page"] = "🎯 Customer Success"
             st.rerun()
 
     with st.expander("🔗 Cross-Platform", expanded=page == "🔗 Cross-Platform"):
@@ -4695,7 +4757,7 @@ elif page == "⚙️ Settings":
         with st.expander("🔍 Stripe Details — Accept/Reject Breakdown"):
             if "category" in stripe_raw.columns:
                 _cat_counts = stripe_raw.groupby("category").size().reset_index(name="Count").sort_values("Count", ascending=False)
-                _df(_cat_counts, height=300)
+                st.dataframe(_cat_counts, height=300, use_container_width=True, hide_index=True)
 
             if _s_has_fp < _s_acc:
                 st.warning(
