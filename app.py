@@ -541,6 +541,28 @@ def get_creds_path():
     return None
 
 
+
+# SUPABASE_PATCH_APPLIED
+# Load Supabase credentials into environment so supabase_data_loader can find them
+import os as _os
+try:
+    _sb_url = st.secrets.get("SUPABASE_URL", "")
+    _sb_key = st.secrets.get("SUPABASE_SERVICE_KEY", "")
+    if _sb_url:
+        _os.environ["SUPABASE_URL"] = str(_sb_url).strip()
+    if _sb_key:
+        _os.environ["SUPABASE_SERVICE_KEY"] = str(_sb_key).strip()
+except Exception:
+    pass
+
+# Import Supabase data loader
+try:
+    from supabase_data_loader import load_tab as _sb_load_tab, get_connection_status as _sb_status
+    _SUPABASE_ACTIVE = _sb_status().get("connected", False)
+except Exception as _e:
+    _sb_load_tab = None
+    _SUPABASE_ACTIVE = False
+
 def get_secret(k, d=None):
     try:
         if k in st.secrets:
@@ -577,6 +599,15 @@ if not CREDS_PATH:
 
 @st.cache_data(ttl=120)
 def load_sheet(tab):
+    # PRIMARY: Try Supabase first
+    if _SUPABASE_ACTIVE and _sb_load_tab is not None:
+        try:
+            _df = _sb_load_tab(tab)
+            if not _df.empty:
+                return _df
+        except Exception as _e:
+            pass  # Fall through to Google Sheets
+    # FALLBACK: Google Sheets
     if not MASTER_SHEET_URL:
         return pd.DataFrame()
     _creds = CREDS_PATH
