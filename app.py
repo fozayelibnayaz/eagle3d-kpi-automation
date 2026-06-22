@@ -662,15 +662,32 @@ def get_supabase_kpi_fast():
 
 @st.cache_data(ttl=300)
 def load_sheet(tab):
-    # PRIMARY: Try Supabase first
+    # PRIMARY: Supabase - fast, no cold start, no quota limits
     if _SUPABASE_ACTIVE and _sb_load_tab is not None:
         try:
             _df = _sb_load_tab(tab)
-            if not _df.empty:
+            if _df is not None and not _df.empty:
                 return _df
-        except Exception as _e:
-            pass  # Fall through to Google Sheets
-    # FALLBACK: Google Sheets
+        except Exception:
+            pass
+    # SECONDARY: local JSON cache (instant, no network)
+    _cache_map = {
+        "Daily_Counts":        "data_output/daily_counts.json",
+        "Verified_FREE":       None,
+        "Verified_FIRST_UPLOAD": None,
+        "Verified_STRIPE":     None,
+    }
+    if tab in _cache_map and _cache_map[tab]:
+        try:
+            import json as _json
+            _p = Path(_cache_map[tab])
+            if _p.exists():
+                _data = _json.loads(_p.read_text())
+                if _data:
+                    return pd.DataFrame(_data)
+        except Exception:
+            pass
+    # TERTIARY: Google Sheets (slow fallback only)
     if not MASTER_SHEET_URL:
         return pd.DataFrame()
     _creds = CREDS_PATH
@@ -1098,6 +1115,15 @@ with st.sidebar:
                 lines.append("⚠️ No AI keys in secrets — using rule-based")
             for line in lines:
                 st.caption(line)
+    
+    # ── Connection Status (fast check) ──
+    try:
+        if _SUPABASE_ACTIVE:
+            st.sidebar.caption("🟢 Supabase Connected")
+        else:
+            st.sidebar.caption("🔴 Supabase Offline - using Sheets fallback")
+    except Exception:
+        pass
     st.caption(f"🦅 Eagle Analytics Hub v7.2 | {datetime.now().strftime('%H:%M')}")
     # Logout button
     if st.button("🔒 Sign Out", key="_auth_logout", use_container_width=True):
@@ -1908,13 +1934,19 @@ if page == "📊 Dashboard":
 
     # ── Monthly Goals Tracker ──
     _cur_month = datetime.now().strftime("%Y-%m")
-    _month_kpi = kpi_all.copy() if not kpi_all.empty else pd.DataFrame()
-    if not _month_kpi.empty and "date" in _month_kpi.columns:
-        _month_kpi["_d"] = pd.to_datetime(_month_kpi["date"], errors="coerce").dt.strftime("%Y-%m")
-        _month_kpi = _month_kpi[_month_kpi["_d"] == _cur_month].drop(columns=["_d"])
-    _month_s = int(_month_kpi["signups"].sum()) if not _month_kpi.empty and "signups" in _month_kpi.columns else 0
-    _month_u = int(_month_kpi["first_uploads"].sum()) if not _month_kpi.empty and "first_uploads" in _month_kpi.columns else 0
-    _month_p = int(_month_kpi["paid_customers"].sum()) if not _month_kpi.empty and "paid_customers" in _month_kpi.columns else 0
+    # Use Supabase direct counts (fast + accurate)
+    if _sb_kpi:
+        _month_s = _sb_kpi["month_signups"]
+        _month_u = _sb_kpi["month_uploads"]
+        _month_p = _sb_kpi["month_paid"]
+    else:
+        _month_kpi = kpi_all.copy() if not kpi_all.empty else pd.DataFrame()
+        if not _month_kpi.empty and "date" in _month_kpi.columns:
+            _month_kpi["_d"] = pd.to_datetime(_month_kpi["date"], errors="coerce").dt.strftime("%Y-%m")
+            _month_kpi = _month_kpi[_month_kpi["_d"] == _cur_month].drop(columns=["_d"])
+        _month_s = int(_month_kpi["signups"].sum()) if not _month_kpi.empty and "signups" in _month_kpi.columns else 0
+        _month_u = int(_month_kpi["first_uploads"].sum()) if not _month_kpi.empty and "first_uploads" in _month_kpi.columns else 0
+        _month_p = int(_month_kpi["paid_customers"].sum()) if not _month_kpi.empty and "paid_customers" in _month_kpi.columns else 0
 
     _goals_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data_output", "monthly_goals.json")
 
@@ -3346,6 +3378,78 @@ elif page == "🔬 EDA Lab":
 # ═══════════════════════════════════════════════════════════════
 # PAGE: 🔍 BROWSE DATA
 # ═══════════════════════════════════════════════════════════════
+
+# ── FAST BROWSE DATA: server-side filtered from Supabase ──
+@st.cache_data(ttl=60)
+def _browse_supabase(table_key, status_filter, search_val, date_start, date_end, limit=1000):
+    """Server-side filtered browse data from Supabase - much faster than client-side."""
+    try:
+        import os
+        from supabase import create_client as _sb_cc
+        _url = os.environ.get("SUPABASE_URL","")
+        _key = os.environ.get("SUPABASE_SERVICE_KEY","")
+        if not _url:
+            try:
+                _url = str(st.secrets.get("SUPABASE_URL","")).strip()
+                _key = str(st.secrets.get("SUPABASE_SERVICE_KEY","")).strip()
+            except Exception:
+                pass
+        if not _url or not _key:
+            return None, {}
+
+        _sb = _sb_cc(_url, _key)
+
+        _table_map = {
+            "Sign-ups":     ("signups",  "signup_date",        "email"),
+            "First Uploads":("uploads",  "upload_date",        "email"),
+            "Stripe":       ("payments", "first_payment_date", "email"),
+        }
+        if table_key not in _table_map:
+            return None, {}
+
+        _tbl, _date_col, _email_col = _table_map[table_key]
+
+        # Build query
+        _q = _sb.table(_tbl).select("*")
+
+        # Date filter
+        if date_start:
+            _q = _q.gte(_date_col, str(date_start))
+        if date_end:
+            _q = _q.lte(_date_col, str(date_end))
+
+        # Status filter
+        if status_filter and status_filter != "All":
+            _q = _q.eq("final_status", status_filter.upper())
+
+        # Search (email only for server-side)
+        if search_val and "@" in search_val:
+            _q = _q.ilike(_email_col, f"%{search_val}%")
+
+        _q = _q.order(_date_col, desc=True).limit(limit)
+        _resp = _q.execute()
+        _data = _resp.data or []
+
+        _total = len(_data)
+        _accepted = sum(1 for r in _data if str(r.get("final_status","")).upper() == "ACCEPTED")
+        _rejected = _total - _accepted
+
+        _diag = {
+            "raw_total": _total,
+            "after_date_filter": _total,
+            "after_status_filter": _total,
+            "after_search_filter": _total,
+            "source": "supabase",
+            "table": _tbl,
+            "date_col": _date_col,
+            "accepted": _accepted,
+            "rejected": _rejected,
+        }
+
+        return pd.DataFrame(_data), _diag
+    except Exception as _e:
+        return None, {"error": str(_e)}
+
 elif page == "🔍 Browse Data":
     st.markdown(
         '<div class="sec-head">🔍 Browse Customer Data</div>',
@@ -3552,12 +3656,43 @@ elif page == "🔍 Browse Data":
         ],
     ):
         with _tab:
-            if _df_data.empty:
-                st.warning(f"No {_lb} data — check Google Sheets connection")
+            # Try Supabase server-side filtered browse first (fast)
+            _sb_browse_df, _sb_diag = _browse_supabase(
+                _lb, _bd_status, _bd_search,
+                _bd_ds if _bd_preset != "All Time" else None,
+                _bd_de if _bd_preset != "All Time" else None,
+                limit=2000,
+            )
+            if _sb_browse_df is not None and not _sb_browse_df.empty:
+                fl = _sb_browse_df
+                _acc = _sb_diag.get("accepted", 0)
+                _rej = _sb_diag.get("rejected", 0)
+                _sc1, _sc2, _sc3, _sc4 = st.columns(4)
+                _sc1.metric("✅ Accepted", _acc)
+                _sc2.metric("❌ Rejected", _rej)
+                _sc3.metric("📋 Total", len(fl))
+                _sc4.metric("🗄️ Source", "Supabase")
+                if _bd_preset != "All Time":
+                    st.caption(f"📅 Supabase filtered: {_bd_ds} → {_bd_de} | Status: {_bd_status}")
+            elif _sb_browse_df is not None and _sb_browse_df.empty:
+                st.info(f"No {_lb} records found for selected filters.")
+                st.caption(f"📅 Period: {_bd_ds} → {_bd_de} | Status: {_bd_status}")
+                if _sb_diag.get("error"):
+                    st.caption(f"Error: {_sb_diag['error']}")
                 continue
-
-            # Apply all filters
-            fl = _apply_browse_filters(_df_data, _lb)
+            else:
+                # Fallback: client-side filter from loaded DataFrame
+                if _df_data.empty:
+                    st.warning(f"No {_lb} data — check Supabase connection")
+                    continue
+                fl = _apply_browse_filters(_df_data, _lb)
+                if "final_status" in fl.columns:
+                    _acc = sum(1 for _, r in fl.iterrows() if str(r.get("final_status","")).upper() in ("ACCEPTED","ALREADY_COUNTED"))
+                    _rej = len(fl) - _acc
+                    _sc1, _sc2, _sc3 = st.columns(3)
+                    _sc1.metric("✅ Accepted", _acc)
+                    _sc2.metric("❌ Rejected", _rej)
+                    _sc3.metric("📋 Total", len(fl))
 
             # Status summary
             if "final_status" in fl.columns:
