@@ -138,8 +138,13 @@ jobs:
           GA4_PROPERTY_ID: '374525971'
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: |
           echo "=== Pipeline Start ==="
+          echo "SUPABASE_URL set: $([ -n "$SUPABASE_URL" ] && echo YES || echo NO)"
+          echo "SUPABASE_SERVICE_KEY set: $([ -n "$SUPABASE_SERVICE_KEY" ] && echo YES || echo NO)"
           python3 daily_pipeline.py
 
       - name: Show state files AFTER run
