@@ -8580,6 +8580,24 @@
     ],
     "reputation_score": 0.25
   },
+  "level13design.com": {
+    "checked_at": "2026-06-22T16:22:05.933535",
+    "domain": "level13design.com",
+    "domain_age_days": null,
+    "has_a_record": true,
+    "has_dmarc": false,
+    "has_spf": true,
+    "is_disposable": false,
+    "is_major_provider": false,
+    "mx_ok": true,
+    "mx_records": [
+      [
+        1,
+        "smtp.google.com"
+      ]
+    ],
+    "reputation_score": 0.35
+  },
   "lgstech.com.br": {
     "checked_at": "2026-06-18T06:57:12.793918",
     "domain": "lgstech.com.br",

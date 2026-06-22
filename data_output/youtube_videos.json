@@ -1255,11 +1255,11 @@
       "thumbnail": "https://i.ytimg.com/vi/Qy_ndmBnaq4/hqdefault.jpg",
       "duration_seconds": 54,
       "duration_label": "0:54",
-      "views": 540,
+      "views": 541,
       "likes": 9,
       "comments": 0,
-      "engagement_rate": 1.667,
-      "like_rate": 1.667,
+      "engagement_rate": 1.664,
+      "like_rate": 1.664,
       "tags": [],
       "category_id": "28",
       "demo": false
@@ -4998,5 +4998,5 @@
       "demo": false
     }
   ],
-  "_cached_at": "2026-06-22T16:00:45.102692"
+  "_cached_at": "2026-06-22T16:24:45.109249"
 }
