@@ -8,6 +8,19 @@ Reports, Alerts, EDA Lab, Browse Data, Settings.
 """
 
 import streamlit as st
+# ── SUPABASE ENV VAR INJECTION (must run before any imports that use Supabase) ──
+import os as _early_os
+try:
+    import streamlit as _early_st
+    _early_su = str(_early_st.secrets.get("SUPABASE_URL", "")).strip()
+    _early_sk = str(_early_st.secrets.get("SUPABASE_SERVICE_KEY", "")).strip()
+    if _early_su:
+        _early_os.environ["SUPABASE_URL"] = _early_su
+    if _early_sk:
+        _early_os.environ["SUPABASE_SERVICE_KEY"] = _early_sk
+except Exception:
+    pass
+
 import pandas as pd
 import numpy as np
 import plotly.express as px

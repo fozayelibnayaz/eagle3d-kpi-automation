@@ -282,7 +282,10 @@ def build_kpi_stats():
                 "source":                 "supabase",
             }
     except Exception as _e:
-        log(f"Supabase KPI stats error (falling back to Sheets): {_e}")
+        import traceback
+        log(f"Supabase KPI stats error: {_e}")
+        log(f"Traceback: {traceback.format_exc()[:500]}")
+        log(f"Falling back to Google Sheets (may show wrong All-Time totals)")
 
     # FALLBACK: original Sheets-based implementation
     """KPI System stats — counts from Verified tabs (always accurate) + Daily_Counts supplement."""
@@ -415,18 +418,18 @@ def build_ga4_stats():
                     # Today
                     today_utm = utm[utm["date"].dt.strftime("%Y-%m-%d") == today_str]
                     result["today_sessions"] = si(today_utm.get("sessions", pd.Series([0])).sum())
-                    result["today_users"] = si(today_utm.get("activeUsers", pd.Series([0])).sum())
+                    result["today_users"] = si(today_utm.get("totalUsers", pd.Series([0])).sum())
                     # This month
                     month_utm = utm[utm["date"].dt.strftime("%Y-%m") == cur_month_str]
                     result["month_sessions"] = si(month_utm.get("sessions", pd.Series([0])).sum())
-                    result["month_users"] = si(month_utm.get("activeUsers", pd.Series([0])).sum())
+                    result["month_users"] = si(month_utm.get("totalUsers", pd.Series([0])).sum())
                     # Previous month
                     prev_utm = utm[utm["date"].dt.strftime("%Y-%m") == prev_month_str]
                     result["prev_month_sessions"] = si(prev_utm.get("sessions", pd.Series([0])).sum())
-                    result["prev_month_users"] = si(prev_utm.get("activeUsers", pd.Series([0])).sum())
+                    result["prev_month_users"] = si(prev_utm.get("totalUsers", pd.Series([0])).sum())
                 # All time (what we have)
                 result["all_time_sessions"] = si(utm.get("sessions", pd.Series([0])).sum())
-                result["all_time_users"] = si(utm.get("activeUsers", pd.Series([0])).sum())
+                result["all_time_users"] = si(utm.get("totalUsers", pd.Series([0])).sum())
                 if "sourceMedium" in utm.columns:
                     top = utm.groupby("sourceMedium")["sessions"].sum().sort_values(ascending=False).head(5)
                     result["top_sources"] = [(s, int(v)) for s, v in top.items()]
@@ -501,7 +504,7 @@ def build_ga4_stats():
                     property=f"properties/{_prop_id}",
                     date_ranges=[DateRange(start_date=_start_30d, end_date=_end)],
                     dimensions=[Dimension(name="sourceMedium")],
-                    metrics=[Metric(name="sessions"), Metric(name="activeUsers")],
+                    metrics=[Metric(name="sessions"), Metric(name="totalUsers")],
                 )
                 _resp = client.run_report(_body)
                 _total_sessions = 0
@@ -528,7 +531,7 @@ def build_ga4_stats():
                         property=f"properties/{_prop_id}",
                         date_ranges=[DateRange(start_date=_prev_start, end_date=_prev_end)],
                         dimensions=[],
-                        metrics=[Metric(name="sessions"), Metric(name="activeUsers")],
+                        metrics=[Metric(name="sessions"), Metric(name="totalUsers")],
                     )
                     _prev_resp = client.run_report(_prev_body)
                     for row in _prev_resp.rows:
@@ -544,7 +547,7 @@ def build_ga4_stats():
                         property=f"properties/{_prop_id}",
                         date_ranges=[DateRange(start_date=today_str, end_date=today_str)],
                         dimensions=[],
-                        metrics=[Metric(name="sessions"), Metric(name="activeUsers")],
+                        metrics=[Metric(name="sessions"), Metric(name="totalUsers")],
                     )
                     _today_resp = client.run_report(_today_body)
                     for row in _today_resp.rows:
