@@ -25,15 +25,61 @@ def render_youtube_command_center():
     c1, c2, c3 = st.columns([2, 1, 1])
     with c1:
         period = st.selectbox("📅 Period", [
-            "Last 7 Days", "Last 28 Days", "Last 90 Days", "Last 365 Days"
-        ], index=1, key="yt_cc_period")
+            "Today", "Yesterday", "This Week", "Last Week",
+            "Last 7 Days", "Last 14 Days", "Last 28 Days", "Last 30 Days",
+            "This Month", "Last Month", "Last 90 Days", "Last 6 Months",
+            "This Year", "Last Year", "Last 365 Days", "All Time",
+            "Custom Range",
+        ], index=6, key="yt_cc_period")
     with c2:
         if st.button("🔄 Refresh", key="yt_cc_refresh"):
             st.cache_data.clear()
             st.rerun()
     with c3:
-        days_map = {"Last 7 Days": 7, "Last 28 Days": 28, "Last 90 Days": 90, "Last 365 Days": 365}
-        days = days_map.get(period, 28)
+        # Compute days based on period selection
+        from datetime import date, timedelta
+        _today = date.today()
+        if period == "Today":
+            days = 1
+        elif period == "Yesterday":
+            days = 2
+        elif period == "This Week":
+            days = _today.weekday() + 1
+        elif period == "Last Week":
+            days = _today.weekday() + 8
+        elif period == "Last 7 Days":
+            days = 7
+        elif period == "Last 14 Days":
+            days = 14
+        elif period == "Last 28 Days":
+            days = 28
+        elif period == "Last 30 Days":
+            days = 30
+        elif period == "This Month":
+            days = _today.day
+        elif period == "Last Month":
+            _first = _today.replace(day=1)
+            _last_month_end = _first - timedelta(days=1)
+            _last_month_start = _last_month_end.replace(day=1)
+            days = (_today - _last_month_start).days + 1
+        elif period == "Last 90 Days":
+            days = 90
+        elif period == "Last 6 Months":
+            days = 180
+        elif period == "This Year":
+            days = _today.timetuple().tm_yday
+        elif period == "Last Year":
+            days = 730
+        elif period == "Last 365 Days":
+            days = 365
+        elif period == "All Time":
+            days = 3650
+        elif period == "Custom Range":
+            _cs = st.date_input("Start", value=_today - timedelta(days=28), key="yt_cc_cs")
+            _ce = st.date_input("End", value=_today, key="yt_cc_ce")
+            days = (_ce - _cs).days + 1
+        else:
+            days = 28
         st.metric("Days", days)
 
     # Fetch data
