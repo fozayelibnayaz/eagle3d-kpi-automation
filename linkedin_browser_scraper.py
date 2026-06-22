@@ -243,7 +243,7 @@ def _extract_highlights(page, patterns):
     return out
 
 
-def _scroll_full(page, max_scrolls=30):
+def _scroll_full(page, max_scrolls=80):
     """Scroll to load all dynamic content (LinkedIn lazy loads)."""
     last_height = 0
     same_count = 0
