@@ -363,7 +363,7 @@ def get_daily_analytics(start_date: str, end_date: str) -> pd.DataFrame:
     params = {
         "ids": f"channel=={channel_id}",
         "startDate": start_date, "endDate": end_date,
-        "metrics": "views,estimatedMinutesWatched,averageViewDuration,averageViewPercentage,likes,comments,shares,subscribersGained,subscribersLost,impressions,ctr",
+        "metrics": "views,estimatedMinutesWatched,averageViewDuration,averageViewPercentage,likes,comments,shares,subscribersGained,subscribersLost,views,ctr",
         "dimensions": "day", "sort": "day",
     }
     data = _analytics_request(params)
@@ -413,7 +413,7 @@ def get_video_analytics_batch(video_ids: List[str], start_date: str, end_date: s
         params = {
             "ids": f"channel=={channel_id}" if channel_id else "channel==MINE",
             "startDate": start_date, "endDate": end_date,
-            "metrics": "views,estimatedMinutesWatched,averageViewDuration,averageViewPercentage,likes,comments,shares,subscribersGained,subscribersLost,impressions,ctr",
+            "metrics": "views,estimatedMinutesWatched,averageViewDuration,averageViewPercentage,likes,comments,shares,subscribersGained,subscribersLost,views,ctr",
             "dimensions": "video", "filters": f"video=={vid}",
         }
         data = _analytics_request(params)

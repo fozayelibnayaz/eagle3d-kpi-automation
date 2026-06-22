@@ -1193,9 +1193,12 @@ with st.sidebar:
     # ── Connection Status (fast check) ──
     try:
         if _SUPABASE_ACTIVE:
-            st.sidebar.caption("🟢 Supabase Connected")
+            st.sidebar.success("🟢 SUPABASE CONNECTED")
+            st.sidebar.caption("Fast mode • Live data")
         else:
-            st.sidebar.caption("🔴 Supabase Offline - using Sheets fallback")
+            st.sidebar.error("🔴 SUPABASE OFFLINE")
+            st.sidebar.caption("Using Google Sheets fallback (slow)")
+            st.sidebar.caption("Add SUPABASE_URL + SUPABASE_SERVICE_KEY to secrets")
     except Exception:
         pass
     st.caption(f"🦅 Eagle Analytics Hub v7.2 | {datetime.now().strftime('%H:%M')}")
@@ -1262,6 +1265,21 @@ counts_raw = _norm_cols(counts_raw, {
     "last_updated":      "LastUpdated",
     "date":              "Date",
 })
+
+# ── DATA SOURCE BANNER (visible on every page) ──
+try:
+    _sb_chk = _sb_status()
+    if _sb_chk.get("connected"):
+        _rows = _sb_chk.get("daily_kpis_rows", 0)
+        st.success(f"🟢 LIVE: Supabase | daily_kpis={_rows} rows | Fast queries enabled")
+    else:
+        _msg = _sb_chk.get("message", "Unknown")
+        st.error(f"🔴 SUPABASE NOT CONNECTED: {_msg}")
+        st.warning("⚠️ Add SUPABASE_URL and SUPABASE_SERVICE_KEY to Streamlit Cloud Secrets, then Reboot app")
+except Exception as _e:
+    st.error(f"🔴 Supabase check failed: {_e}")
+
+
 
 # Auto-trigger check (runs once per day per session)
 if not st.session_state.get(_auto_trigger_key):
