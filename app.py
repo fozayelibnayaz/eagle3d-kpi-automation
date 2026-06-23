@@ -912,7 +912,7 @@ def load_sheet(tab):
     if not _creds:
         return pd.DataFrame()
     try:
-        import gspread
+        # import gspread  # disabled - using Supabase
         from google.oauth2.service_account import Credentials
         creds = Credentials.from_service_account_file(_creds, scopes=SCOPES)
         gc = gspread.authorize(creds)

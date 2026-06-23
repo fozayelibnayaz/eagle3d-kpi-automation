@@ -4,7 +4,7 @@ PHASE 2 ORCHESTRATOR v2
 - Skips rows where Lead Source contains 'internal', 'test', etc.
 - Robust column detection (works even if headers row got lost)
 """
-import gspread
+# import gspread  # disabled - using Supabase
 import pandas as pd
 from datetime import datetime
 from google.oauth2.service_account import Credentials

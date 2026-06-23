@@ -18,7 +18,7 @@ SHEET_TAB_PAID_RAW     = "Verified_STRIPE"
 def _get_sheet_client():
     """Build authenticated Google Sheets client from secrets or local file."""
     try:
-        import gspread
+        # import gspread  # disabled - using Supabase
         from google.oauth2 import service_account
 
         SCOPES = [

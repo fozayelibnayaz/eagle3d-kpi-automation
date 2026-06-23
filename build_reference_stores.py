@@ -11,7 +11,7 @@ from pathlib import Path
 from datetime import datetime
 from email.utils import parsedate_to_datetime
 
-import gspread
+# import gspread  # disabled - using Supabase
 from google.oauth2.service_account import Credentials
 
 DATA_DIR = Path("data_output")

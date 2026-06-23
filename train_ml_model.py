@@ -48,7 +48,7 @@ def worksheet_to_dict_rows(ws):
 
 
 def fetch_ground_truth_from_sheet():
-    import gspread
+    # import gspread  # disabled - using Supabase
     from google.oauth2.service_account import Credentials
 
     sheet_url = "https://docs.google.com/spreadsheets/d/1lwffyXWOa7Q7xim2EX9i4AdIs7dtkjOPyKYVBtPpfgY"
