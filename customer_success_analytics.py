@@ -573,8 +573,8 @@ def recent_activity_analysis():
             elif pct < -20: declining.append(rec)
             else: steady.append(rec)
         elif recent > 0: growing.append(rec)
-    growing.sort(key=lambda x: -x.get("growth_pct") or 0)
-    declining.sort(key=lambda x: x.get("growth_pct") or 0)
+    growing.sort(key=lambda x: -(x.get("growth_pct") or 0))
+    declining.sort(key=lambda x: (x.get("growth_pct") or 0))
     return {
         "growing":    growing[:30],
         "declining":  declining[:30],
