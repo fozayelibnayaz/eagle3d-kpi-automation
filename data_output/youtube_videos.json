@@ -1287,11 +1287,11 @@
       "thumbnail": "https://i.ytimg.com/vi/dxfh3IDQftY/hqdefault.jpg",
       "duration_seconds": 60,
       "duration_label": "1:00",
-      "views": 227,
+      "views": 229,
       "likes": 7,
       "comments": 2,
-      "engagement_rate": 3.965,
-      "like_rate": 3.084,
+      "engagement_rate": 3.93,
+      "like_rate": 3.057,
       "tags": [],
       "category_id": "28",
       "demo": false
@@ -1687,11 +1687,11 @@
       "thumbnail": "https://i.ytimg.com/vi/OC6NqaghPFA/hqdefault.jpg",
       "duration_seconds": 1858,
       "duration_label": "30:58",
-      "views": 1226,
+      "views": 1227,
       "likes": 46,
       "comments": 1,
-      "engagement_rate": 3.834,
-      "like_rate": 3.752,
+      "engagement_rate": 3.83,
+      "like_rate": 3.749,
       "tags": [
         "Build and Deploy Your First BIM Project with Unreal Engine and Pixel Streaming",
         "bim project with unreal engine",
@@ -1956,11 +1956,11 @@
       "thumbnail": "https://i.ytimg.com/vi/qEt64-apn-w/hqdefault.jpg",
       "duration_seconds": 496,
       "duration_label": "8:16",
-      "views": 4309,
+      "views": 4310,
       "likes": 71,
       "comments": 8,
       "engagement_rate": 1.833,
-      "like_rate": 1.648,
+      "like_rate": 1.647,
       "tags": [
         "how to create world terrain using cesium",
         "how to use cesium in unreal engine",
@@ -4673,11 +4673,11 @@
       "thumbnail": "https://i.ytimg.com/vi/redph5-ThLY/hqdefault.jpg",
       "duration_seconds": 1926,
       "duration_label": "32:06",
-      "views": 293,
+      "views": 294,
       "likes": 8,
       "comments": 0,
-      "engagement_rate": 2.73,
-      "like_rate": 2.73,
+      "engagement_rate": 2.721,
+      "like_rate": 2.721,
       "tags": [],
       "category_id": "28",
       "demo": false
@@ -4998,5 +4998,5 @@
       "demo": false
     }
   ],
-  "_cached_at": "2026-06-23T04:43:20.935730"
+  "_cached_at": "2026-06-23T05:31:24.514625"
 }
