@@ -4319,36 +4319,87 @@ elif page == "🔗 Cross-Platform":
 elif page == "⚙️ Settings":
 
     # ── ACCESS CONTROL MANAGEMENT ──
-    with st.expander("👥 User Access Management", expanded=False):
+    with st.expander("👥 User Access Management", expanded=True):
         try:
             from access_control import list_users, add_email, remove_email, get_access_logs
             users = list_users()
-            st.markdown(f"**Authorized Users ({len(users)})**")
+            active_users = [u for u in users if u.get("is_active")]
+            st.markdown(f"### Authorized Users ({len(active_users)} active / {len(users)} total)")
+
             if users:
                 import pandas as _pd
-                _df = _pd.DataFrame(users)[["email", "role", "is_active", "added_by", "added_at"]]
-                st.dataframe(_df, use_container_width=True, hide_index=True)
+                _df = _pd.DataFrame(users)
+                _cols = [c for c in ["email", "role", "is_active", "added_by", "added_at", "notes"] if c in _df.columns]
+                st.dataframe(_df[_cols], use_container_width=True, hide_index=True)
 
-            with st.form("add_user_form"):
-                _c1, _c2 = st.columns(2)
-                _new_email = _c1.text_input("Email")
-                _new_role = _c2.selectbox("Role", ["viewer", "editor", "admin"])
-                _notes = st.text_input("Notes (optional)")
-                if st.form_submit_button("Add User"):
-                    r = add_email(_new_email, _new_role, st.session_state.get("user_email","admin"), _notes)
-                    if r["success"]:
-                        st.success(r["message"])
-                        st.rerun()
-                    else:
-                        st.error(r["message"])
+            st.markdown("---")
+            st.markdown("### ➕ Add New User")
 
-            with st.form("remove_user_form"):
-                _rem_email = st.text_input("Email to revoke")
-                if st.form_submit_button("Revoke Access"):
-                    r = remove_email(_rem_email, st.session_state.get("user_email","admin"))
-                    if r["success"]:
-                        st.success(r["message"])
-                        st.rerun()
+            # OUTSIDE st.form so button is always visible
+            _add_c1, _add_c2 = st.columns([2, 1])
+            with _add_c1:
+                _new_email = st.text_input("Email address", key="ac_new_email", placeholder="user@example.com")
+            with _add_c2:
+                _new_role = st.selectbox("Role", ["viewer", "editor", "admin"], key="ac_new_role")
+            _notes = st.text_input("Notes (optional)", key="ac_new_notes", placeholder="What is this user for?")
+
+            if st.button("➕ ADD USER", key="ac_add_btn", type="primary", use_container_width=True):
+                if not _new_email or "@" not in _new_email:
+                    st.error("Please enter a valid email address")
+                else:
+                    try:
+                        r = add_email(
+                            _new_email.strip().lower(),
+                            _new_role,
+                            st.session_state.get("user_email", "admin"),
+                            _notes or "",
+                        )
+                        if r.get("success"):
+                            st.success(f"✅ {r['message']}")
+                            import time as _t
+                            _t.sleep(1)
+                            st.rerun()
+                        else:
+                            st.error(f"❌ {r.get('message', 'Unknown error')}")
+                    except Exception as _e:
+                        st.error(f"Error: {_e}")
+
+            st.markdown("---")
+            st.markdown("### ❌ Revoke Access")
+            _rem_c1, _rem_c2 = st.columns([3, 1])
+            with _rem_c1:
+                _rem_email = st.text_input("Email to revoke", key="ac_rem_email", placeholder="user@example.com")
+            with _rem_c2:
+                _rem_reason = st.text_input("Reason", key="ac_rem_reason", placeholder="Why?")
+            if st.button("❌ REVOKE ACCESS", key="ac_rem_btn", use_container_width=True):
+                if not _rem_email or "@" not in _rem_email:
+                    st.error("Please enter a valid email")
+                else:
+                    try:
+                        r = remove_email(_rem_email.strip().lower(), st.session_state.get("user_email","admin"))
+                        if r.get("success"):
+                            st.success(f"✅ {r['message']}")
+                            import time as _t
+                            _t.sleep(1)
+                            st.rerun()
+                        else:
+                            st.error(f"❌ {r.get('message','Unknown error')}")
+                    except Exception as _e:
+                        st.error(f"Error: {_e}")
+
+            st.markdown("---")
+            st.markdown("### 📊 Recent Access Logs (last 30)")
+            try:
+                _logs = get_access_logs(30)
+                if _logs:
+                    import pandas as _pd
+                    _ldf = _pd.DataFrame(_logs)
+                    _lcols = [c for c in ["timestamp","email","action","success","ip"] if c in _ldf.columns]
+                    st.dataframe(_ldf[_lcols], use_container_width=True, hide_index=True)
+                else:
+                    st.info("No access logs yet")
+            except Exception as _le:
+                st.warning(f"Log read error: {_le}")
 
             st.markdown("**Recent Access Logs**")
             logs = get_access_logs(50)
