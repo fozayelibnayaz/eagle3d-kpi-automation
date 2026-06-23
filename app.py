@@ -4322,70 +4322,95 @@ elif page == "⚙️ Settings":
     with st.expander("👥 User Access Management", expanded=True):
         try:
             from access_control import list_users, add_email, remove_email, get_access_logs
-            users = list_users()
-            active_users = [u for u in users if u.get("is_active")]
-            st.markdown(f"### Authorized Users ({len(active_users)} active / {len(users)} total)")
 
+            # Initialize message state
+            if "_user_mgmt_msg" not in st.session_state:
+                st.session_state["_user_mgmt_msg"] = None
+
+            # Show last action result
+            msg = st.session_state.get("_user_mgmt_msg")
+            if msg:
+                if msg["type"] == "success":
+                    st.success(msg["text"])
+                else:
+                    st.error(msg["text"])
+                st.session_state["_user_mgmt_msg"] = None
+
+            # Current users
+            users = list_users()
+            active = [u for u in users if u.get("is_active")]
+            st.markdown(f"### Authorized Users ({len(active)} active / {len(users)} total)")
             if users:
                 import pandas as _pd
                 _df = _pd.DataFrame(users)
-                _cols = [c for c in ["email", "role", "is_active", "added_by", "added_at", "notes"] if c in _df.columns]
+                _cols = [c for c in ["email","role","is_active","added_by","added_at","notes"] if c in _df.columns]
                 st.dataframe(_df[_cols], use_container_width=True, hide_index=True)
 
             st.markdown("---")
             st.markdown("### ➕ Add New User")
 
-            # OUTSIDE st.form so button is always visible
-            _add_c1, _add_c2 = st.columns([2, 1])
-            with _add_c1:
-                _new_email = st.text_input("Email address", key="ac_new_email", placeholder="user@example.com")
-            with _add_c2:
-                _new_role = st.selectbox("Role", ["viewer", "editor", "admin"], key="ac_new_role")
-            _notes = st.text_input("Notes (optional)", key="ac_new_notes", placeholder="What is this user for?")
+            _ac1, _ac2 = st.columns([2, 1])
+            with _ac1:
+                _add_email_val = st.text_input("Email address",
+                                                key="ac_new_email",
+                                                placeholder="user@example.com")
+            with _ac2:
+                _add_role_val = st.selectbox("Role", ["viewer","editor","admin"], key="ac_new_role")
+            _add_notes_val = st.text_input("Notes (optional)",
+                                            key="ac_new_notes",
+                                            placeholder="What is this user for?")
 
-            if st.button("➕ ADD USER", key="ac_add_btn", type="primary", use_container_width=True):
-                if not _new_email or "@" not in _new_email:
-                    st.error("Please enter a valid email address")
-                else:
-                    try:
-                        r = add_email(
-                            _new_email.strip().lower(),
-                            _new_role,
-                            st.session_state.get("user_email", "admin"),
-                            _notes or "",
-                        )
-                        if r.get("success"):
-                            st.success(f"✅ {r['message']}")
-                            import time as _t
-                            _t.sleep(1)
-                            st.rerun()
-                        else:
-                            st.error(f"❌ {r.get('message', 'Unknown error')}")
-                    except Exception as _e:
-                        st.error(f"Error: {_e}")
+            # Define callback for add button
+            def _do_add_user():
+                em = st.session_state.get("ac_new_email", "").strip().lower()
+                role = st.session_state.get("ac_new_role", "viewer")
+                notes = st.session_state.get("ac_new_notes", "")
+                if not em or "@" not in em:
+                    st.session_state["_user_mgmt_msg"] = {"type":"error", "text":"Please enter a valid email address"}
+                    return
+                try:
+                    from access_control import add_email as _add_em
+                    result = _add_em(em, role, st.session_state.get("user_email","admin"), notes)
+                    if result.get("success"):
+                        st.session_state["_user_mgmt_msg"] = {"type":"success", "text":f"Added: {em} as {role}"}
+                        # Clear inputs
+                        st.session_state["ac_new_email"] = ""
+                        st.session_state["ac_new_notes"] = ""
+                    else:
+                        st.session_state["_user_mgmt_msg"] = {"type":"error", "text":f"Failed: {result.get('message','Unknown error')}"}
+                except Exception as e:
+                    st.session_state["_user_mgmt_msg"] = {"type":"error", "text":f"Exception: {e}"}
+
+            st.button("➕ ADD USER", key="ac_add_btn", type="primary",
+                       use_container_width=True, on_click=_do_add_user)
 
             st.markdown("---")
             st.markdown("### ❌ Revoke Access")
-            _rem_c1, _rem_c2 = st.columns([3, 1])
-            with _rem_c1:
-                _rem_email = st.text_input("Email to revoke", key="ac_rem_email", placeholder="user@example.com")
-            with _rem_c2:
-                _rem_reason = st.text_input("Reason", key="ac_rem_reason", placeholder="Why?")
-            if st.button("❌ REVOKE ACCESS", key="ac_rem_btn", use_container_width=True):
-                if not _rem_email or "@" not in _rem_email:
-                    st.error("Please enter a valid email")
-                else:
-                    try:
-                        r = remove_email(_rem_email.strip().lower(), st.session_state.get("user_email","admin"))
-                        if r.get("success"):
-                            st.success(f"✅ {r['message']}")
-                            import time as _t
-                            _t.sleep(1)
-                            st.rerun()
-                        else:
-                            st.error(f"❌ {r.get('message','Unknown error')}")
-                    except Exception as _e:
-                        st.error(f"Error: {_e}")
+            _rc1, _rc2 = st.columns([3, 1])
+            with _rc1:
+                _rem_email_val = st.text_input("Email to revoke", key="ac_rem_email", placeholder="user@example.com")
+            with _rc2:
+                _rem_reason_val = st.text_input("Reason", key="ac_rem_reason", placeholder="Why?")
+
+            def _do_revoke():
+                em = st.session_state.get("ac_rem_email","").strip().lower()
+                reason = st.session_state.get("ac_rem_reason","")
+                if not em or "@" not in em:
+                    st.session_state["_user_mgmt_msg"] = {"type":"error", "text":"Please enter a valid email"}
+                    return
+                try:
+                    from access_control import remove_email as _rem_em
+                    r = _rem_em(em, st.session_state.get("user_email","admin"))
+                    if r.get("success"):
+                        st.session_state["_user_mgmt_msg"] = {"type":"success", "text":f"Revoked: {em}"}
+                        st.session_state["ac_rem_email"] = ""
+                    else:
+                        st.session_state["_user_mgmt_msg"] = {"type":"error", "text":f"Failed: {r.get('message','Unknown')}"}
+                except Exception as e:
+                    st.session_state["_user_mgmt_msg"] = {"type":"error", "text":f"Exception: {e}"}
+
+            st.button("❌ REVOKE ACCESS", key="ac_rem_btn",
+                       use_container_width=True, on_click=_do_revoke)
 
             st.markdown("---")
             st.markdown("### 📊 Recent Access Logs (last 30)")
@@ -4400,32 +4425,12 @@ elif page == "⚙️ Settings":
                     st.info("No access logs yet")
             except Exception as _le:
                 st.warning(f"Log read error: {_le}")
+        except Exception as _e:
+            st.error(f"Access management error: {_e}")
+            import traceback as _tb
+            st.code(_tb.format_exc()[:1500])
 
-            st.markdown("**Recent Access Logs**")
-            logs = get_access_logs(50)
-            if logs:
-                import pandas as _pd
-                st.dataframe(_pd.DataFrame(logs), use_container_width=True, hide_index=True)
-        except Exception as _ae:
-            st.warning(f"Access control unavailable: {_ae}")
-    st.markdown(
-        '<div class="sec-head">⚙️ System Settings & Diagnostics</div>',
-        unsafe_allow_html=True,
-    )
-
-    st.markdown("#### 🏥 Module Status")
-    _mods = {
-        "KPI Bridge": "kpi_bridge",
-        "GA4 Connector": "ga4_connector",
-        "Source Intel": "source_intel",
-        "Smart Q&A": "smart_qa",
-        "Strategic": "strategic",
-        "Notifications": "notifications",
-        "Intelligence": "intelligence",
-        "AI Engine": "ai_engine",
-        "Predictions": "prediction_engine",
-        "Reports": "report_generator",
-        "Source Normalizer": "source_normalizer",
+izer": "source_normalizer",
     }
     _mc = st.columns(4)
     _act = 0
