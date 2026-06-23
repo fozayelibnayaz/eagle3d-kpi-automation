@@ -1303,11 +1303,11 @@
       "thumbnail": "https://i.ytimg.com/vi/WU-PosmGvjM/hqdefault.jpg",
       "duration_seconds": 62,
       "duration_label": "1:02",
-      "views": 328,
+      "views": 330,
       "likes": 6,
       "comments": 0,
-      "engagement_rate": 1.829,
-      "like_rate": 1.829,
+      "engagement_rate": 1.818,
+      "like_rate": 1.818,
       "tags": [],
       "category_id": "28",
       "demo": false
@@ -1447,11 +1447,11 @@
       "thumbnail": "https://i.ytimg.com/vi/_y3qAp5b1PA/hqdefault.jpg",
       "duration_seconds": 59,
       "duration_label": "0:59",
-      "views": 257,
+      "views": 258,
       "likes": 3,
       "comments": 0,
-      "engagement_rate": 1.167,
-      "like_rate": 1.167,
+      "engagement_rate": 1.163,
+      "like_rate": 1.163,
       "tags": [],
       "category_id": "28",
       "demo": false
@@ -1527,7 +1527,7 @@
       "thumbnail": "https://i.ytimg.com/vi/BpXjau5J-uE/hqdefault.jpg",
       "duration_seconds": 33,
       "duration_label": "0:33",
-      "views": 1968,
+      "views": 1969,
       "likes": 15,
       "comments": 0,
       "engagement_rate": 0.762,
@@ -1956,7 +1956,7 @@
       "thumbnail": "https://i.ytimg.com/vi/qEt64-apn-w/hqdefault.jpg",
       "duration_seconds": 496,
       "duration_label": "8:16",
-      "views": 4316,
+      "views": 4317,
       "likes": 71,
       "comments": 8,
       "engagement_rate": 1.83,
@@ -4998,5 +4998,5 @@
       "demo": false
     }
   ],
-  "_cached_at": "2026-06-23T17:31:11.244935"
+  "_cached_at": "2026-06-23T17:40:50.869926"
 }
