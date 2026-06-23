@@ -1319,11 +1319,11 @@
       "thumbnail": "https://i.ytimg.com/vi/UrgWRpHflaE/hqdefault.jpg",
       "duration_seconds": 50,
       "duration_label": "0:50",
-      "views": 346,
+      "views": 347,
       "likes": 2,
       "comments": 0,
-      "engagement_rate": 0.578,
-      "like_rate": 0.578,
+      "engagement_rate": 0.576,
+      "like_rate": 0.576,
       "tags": [],
       "category_id": "28",
       "demo": false
@@ -1687,11 +1687,11 @@
       "thumbnail": "https://i.ytimg.com/vi/OC6NqaghPFA/hqdefault.jpg",
       "duration_seconds": 1858,
       "duration_label": "30:58",
-      "views": 1227,
+      "views": 1226,
       "likes": 46,
       "comments": 1,
-      "engagement_rate": 3.83,
-      "like_rate": 3.749,
+      "engagement_rate": 3.834,
+      "like_rate": 3.752,
       "tags": [
         "Build and Deploy Your First BIM Project with Unreal Engine and Pixel Streaming",
         "bim project with unreal engine",
@@ -4049,7 +4049,7 @@
       "thumbnail": "https://i.ytimg.com/vi/5emquzcJIUQ/hqdefault.jpg",
       "duration_seconds": 827,
       "duration_label": "13:47",
-      "views": 6774,
+      "views": 6775,
       "likes": 109,
       "comments": 8,
       "engagement_rate": 1.727,
@@ -4998,5 +4998,5 @@
       "demo": false
     }
   ],
-  "_cached_at": "2026-06-23T04:15:44.838921"
+  "_cached_at": "2026-06-23T04:43:20.935730"
 }
