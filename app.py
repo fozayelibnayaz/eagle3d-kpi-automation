@@ -4430,7 +4430,18 @@ elif page == "⚙️ Settings":
             import traceback as _tb
             st.code(_tb.format_exc()[:1500])
 
-izer": "source_normalizer",
+    # ── MODULE STATUS ──
+    st.markdown('<div class="sec-head">🏥 Module Status</div>', unsafe_allow_html=True)
+    _mods = {
+        "KPI Bridge":         "kpi_bridge",
+        "Strategic":          "ga4_strategic",
+        "Predictions":        "prediction_engine",
+        "GA4 Connector":      "ga4_connector",
+        "Notifications":      "notifications",
+        "Reports":            "report_generator",
+        "Source Intel":       "ga4_source_intel",
+        "Intelligence":       "ml_intelligence",
+        "Source Normalizer": "source_normalizer",
     }
     _mc = st.columns(4)
     _act = 0
