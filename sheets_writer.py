@@ -183,6 +183,114 @@ def _get_or_create_ws(ss, tab_name: str):
         raise RuntimeError(f"Cannot get/create worksheet '{tab_name}': {e}")
 
 
+
+def _auto_push_to_supabase(tab_name, rows):
+    """Auto-mirror Sheets writes to Supabase (no Sheets dependency for reads)."""
+    import os as _os
+    url = _os.environ.get("SUPABASE_URL","")
+    key = _os.environ.get("SUPABASE_SERVICE_KEY","")
+    if not url or not key:
+        try:
+            import streamlit as _st
+            url = str(_st.secrets.get("SUPABASE_URL","")).strip()
+            key = str(_st.secrets.get("SUPABASE_SERVICE_KEY","")).strip()
+        except Exception:
+            return
+    if not url or not key:
+        return
+    if not rows:
+        return
+    try:
+        from supabase import create_client
+        sb = create_client(url, key)
+    except Exception:
+        return
+
+    import re as _re
+    def _parse_date(v):
+        if not v: return None
+        s = str(v).strip()
+        for fmt in ("%Y-%m-%d %H:%M:%S","%Y-%m-%d","%m/%d/%y, %I:%M %p","%m/%d/%Y, %I:%M %p",
+                    "%a, %d %b %Y %H:%M:%S %Z","%a, %d %b %Y %H:%M:%S GMT","%b %d, %Y"):
+            try:
+                from datetime import datetime as _dt
+                return _dt.strptime(s.split("+")[0], fmt).strftime("%Y-%m-%d")
+            except Exception:
+                pass
+        m = _re.search(r"(\d{4})-(\d{1,2})-(\d{1,2})", s)
+        if m:
+            return f"{m.group(1)}-{int(m.group(2)):02d}-{int(m.group(3)):02d}"
+        return None
+
+    def _parse_amount(v):
+        if not v: return 0.0
+        s = _re.sub(r"[$,\s\n\r]", "", str(v))
+        s = _re.sub(r"[A-Za-z]+$", "", s).strip()
+        try: return float(s)
+        except: return 0.0
+
+    def _norm_email(r):
+        em = str(r.get("Email","") or r.get("email","") or r.get("__email_normalized__","")).strip().lower()
+        return em if em and "@" in em else ""
+
+    tab_to_table = {
+        "Verified_FREE":         ("signups", "signup_date", ["Account Created On","row_date_used","__scraped_date__"], None),
+        "Verified_FIRST_UPLOAD": ("uploads", "upload_date", ["Upload Date","row_date_used","__scraped_date__"], None),
+        "Verified_STRIPE":       ("payments","first_payment_date",["First payment","row_date_used","Created","Created (UTC)"], "amount"),
+    }
+    cfg = tab_to_table.get(tab_name)
+    if not cfg:
+        return  # only mirror Verified_* tabs
+    table, date_col, date_fields, has_amount = cfg
+
+    upsert = []
+    for r in rows:
+        em = _norm_email(r)
+        if not em: continue
+        d = None
+        for f in date_fields:
+            v = r.get(f)
+            if v:
+                d = _parse_date(v)
+                if d: break
+        row = {
+            "email": em, "email_normalized": em,
+            date_col: d,
+            "final_status": str(r.get("final_status","PENDING") or "PENDING").upper()[:20],
+            "category": str(r.get("category","") or "")[:50],
+        }
+        if has_amount:
+            for af in ("Amount","Total spend","Total Spend","__amount__"):
+                v = r.get(af)
+                if v:
+                    a = _parse_amount(v)
+                    if a > 0:
+                        row["total_spend"] = a
+                        break
+            try:
+                row["payment_count"] = int(r.get("Payment Count", r.get("payment_count",0)) or 0)
+            except:
+                row["payment_count"] = 0
+        if tab_name == "Verified_FREE":
+            row["lead_source"] = str(r.get("Lead Source","") or "")[:200]
+            row["rejection_reason"] = str(r.get("__rejection_reason__","") or "")[:300]
+        upsert.append(row)
+
+    log(f"[Supabase mirror] {tab_name} -> {table}: {len(upsert)} rows")
+    errors = 0
+    for i in range(0, len(upsert), 50):
+        try:
+            sb.table(table).upsert(upsert[i:i+50], on_conflict="email_normalized").execute()
+        except Exception as e:
+            errors += 1
+            if errors <= 2:
+                log(f"  Upsert err: {e}")
+    if errors == 0:
+        log(f"[Supabase mirror] {table} synced OK")
+    else:
+        log(f"[Supabase mirror] {table}: {errors} chunk errors")
+
+
 def write_tab_data(tab_name: str, rows: list) -> bool:
     """Write rows to Sheets. CSV fallback if Sheets fails."""
     if not rows:
