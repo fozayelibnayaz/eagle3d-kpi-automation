@@ -633,5 +633,16 @@ try:
 except Exception as _li_e:
     print(f"[Daily] LinkedIn pipeline error: {_li_e}")
 
+
+
+# ── STAGE: Comprehensive Multi-System Alerts ──
+try:
+    from comprehensive_alerts import send_all_alerts
+    print("\n[Daily] Sending comprehensive alerts to Telegram...")
+    sent = send_all_alerts()
+    print(f"[Daily] Sent {sent} alert sections")
+except Exception as _ae:
+    print(f"[Daily] Comprehensive alerts error: {_ae}")
+
 if __name__ == "__main__":
     sys.exit(main())

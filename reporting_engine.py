@@ -114,21 +114,41 @@ def send_telegram(message, parse_mode="HTML"):
 
     try:
         url     = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+
+        # Try requests first (proven faster on this network)
+        try:
+            import requests
+            r = requests.post(url, json={"chat_id": chat_id, "text": message, "parse_mode": parse_mode}, timeout=30)
+            body = r.json()
+            if body.get("ok"):
+                log("Telegram sent (requests)")
+                return True
+            log(f"Telegram API error: {body.get('description','')}")
+            # If parse error, retry without parse_mode
+            if "parse" in str(body.get('description','')).lower():
+                r2 = requests.post(url, json={"chat_id": chat_id, "text": message}, timeout=30)
+                if r2.json().get("ok"):
+                    log("Telegram sent (no parse_mode)")
+                    return True
+            return False
+        except Exception as e:
+            log(f"requests failed: {e}, trying urllib...")
+
+        # Fallback to urllib
         payload = json.dumps({
             "chat_id":    chat_id,
             "text":       message,
             "parse_mode": parse_mode,
         }).encode("utf-8")
-
         req = urllib.request.Request(
             url, data=payload,
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with urllib.request.urlopen(req, timeout=30) as resp:
             body = json.loads(resp.read())
             if body.get("ok"):
-                log("✅ Telegram sent to group")
+                log("Telegram sent (urllib)")
                 return True
             log(f"Telegram API error: {body}")
             return False
