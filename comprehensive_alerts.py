@@ -413,17 +413,52 @@ def alert_ga4():
         from google.analytics.data_v1beta import BetaAnalyticsDataClient
         from google.analytics.data_v1beta.types import RunReportRequest, DateRange, Dimension, Metric
         from google.oauth2 import service_account
+        import json as _json
+        SCOPES = ["https://www.googleapis.com/auth/analytics.readonly"]
         creds = None
+
+        # Try 1: Streamlit secrets ga4_service_account
         try:
             import streamlit as st
             sa = dict(st.secrets["ga4_service_account"])
             if "private_key" in sa:
                 sa["private_key"] = sa["private_key"].replace("\\n","\n")
-            creds = service_account.Credentials.from_service_account_info(sa, scopes=["https://www.googleapis.com/auth/analytics.readonly"])
+            creds = service_account.Credentials.from_service_account_info(sa, scopes=SCOPES)
         except Exception:
             pass
+
+        # Try 2: google_creds.json file (GitHub Actions writes this)
+        if not creds and os.path.exists("google_creds.json"):
+            try:
+                creds = service_account.Credentials.from_service_account_file("google_creds.json", scopes=SCOPES)
+            except Exception as e:
+                print(f"google_creds.json load err: {e}")
+
+        # Try 3: GOOGLE_CREDS_JSON env var
         if not creds:
-            return "\n🌐 <b>GA4</b> No credentials\n"
+            gc_json = os.environ.get("GOOGLE_CREDS_JSON", "")
+            if gc_json:
+                try:
+                    sa = _json.loads(gc_json)
+                    if "private_key" in sa:
+                        sa["private_key"] = sa["private_key"].replace("\\n","\n")
+                    creds = service_account.Credentials.from_service_account_info(sa, scopes=SCOPES)
+                except Exception as e:
+                    print(f"GOOGLE_CREDS_JSON parse err: {e}")
+
+        # Try 4: Streamlit GOOGLE_CREDS
+        if not creds:
+            try:
+                import streamlit as st
+                sa = dict(st.secrets["GOOGLE_CREDS"])
+                if "private_key" in sa:
+                    sa["private_key"] = sa["private_key"].replace("\\n","\n")
+                creds = service_account.Credentials.from_service_account_info(sa, scopes=SCOPES)
+            except Exception:
+                pass
+
+        if not creds:
+            return "\n🌐 <b>GA4</b> No credentials (tried ga4_service_account, google_creds.json, GOOGLE_CREDS_JSON, GOOGLE_CREDS)\n"
 
         pid = os.environ.get("GA4_PROPERTY_ID","374525971")
         try:
