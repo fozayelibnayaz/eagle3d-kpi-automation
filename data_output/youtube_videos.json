@@ -1956,11 +1956,11 @@
       "thumbnail": "https://i.ytimg.com/vi/qEt64-apn-w/hqdefault.jpg",
       "duration_seconds": 496,
       "duration_label": "8:16",
-      "views": 4312,
+      "views": 4314,
       "likes": 71,
       "comments": 8,
-      "engagement_rate": 1.832,
-      "like_rate": 1.647,
+      "engagement_rate": 1.831,
+      "like_rate": 1.646,
       "tags": [
         "how to create world terrain using cesium",
         "how to use cesium in unreal engine",
@@ -4998,5 +4998,5 @@
       "demo": false
     }
   ],
-  "_cached_at": "2026-06-23T13:37:19.705203"
+  "_cached_at": "2026-06-23T14:52:00.529068"
 }
