@@ -52,14 +52,28 @@ def run_all():
     except Exception as e:
         print(f"Comprehensive alerts error: {e}")
 
-    # ── 4 SCHEDULED REPORTS ──
+    # ── 4 SCHEDULED REPORTS (optional - skip if module missing) ──
     try:
         from role_alerts import daily_standup, marketer_weekly, cs_lead_weekly, founder_monthly
         print("\nBuilding 4 scheduled reports...")
-        alerts.append(("Daily Standup",     daily_standup()))
-        alerts.append(("Marketer Weekly",   marketer_weekly()))
-        alerts.append(("CS Lead Weekly",    cs_lead_weekly()))
-        alerts.append(("Founder Monthly",   founder_monthly()))
+        try:
+            alerts.append(("Daily Standup",     daily_standup()))
+        except Exception as e:
+            print(f"  Daily Standup error: {e}")
+        try:
+            alerts.append(("Marketer Weekly",   marketer_weekly()))
+        except Exception as e:
+            print(f"  Marketer Weekly error: {e}")
+        try:
+            alerts.append(("CS Lead Weekly",    cs_lead_weekly()))
+        except Exception as e:
+            print(f"  CS Lead Weekly error: {e}")
+        try:
+            alerts.append(("Founder Monthly",   founder_monthly()))
+        except Exception as e:
+            print(f"  Founder Monthly error: {e}")
+    except ImportError as e:
+        print(f"role_alerts not available - skipping scheduled reports: {e}")
     except Exception as e:
         print(f"Scheduled reports error: {e}")
 

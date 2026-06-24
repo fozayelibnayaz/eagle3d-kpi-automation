@@ -76,7 +76,7 @@ def _setup_browser(headless=False):
     use_headless = headless if session_file.exists() else False
     browser = p.chromium.launch(
         headless=use_headless,
-        args=['--disable-blink-features=AutomationControlled'],
+        args=["--no-sandbox","--disable-setuid-sandbox","--disable-dev-shm-usage","--disable-gpu",'--disable-blink-features=AutomationControlled'],
     )
     # Prefer saved session state (more reliable than cookies alone)
     session_file = DATA_DIR / "linkedin_session_state.json"

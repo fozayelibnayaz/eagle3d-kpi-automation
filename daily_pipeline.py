@@ -1,3 +1,20 @@
+#!/usr/bin/env python3
+"""Daily pipeline orchestrator. Runs all scrapers + sends alerts."""
+# ── ASYNCIO LOOP FIX FOR PLAYWRIGHT SYNC API ──
+# GitHub Actions runners sometimes have an active event loop that breaks sync_playwright
+# nest_asyncio + close any existing loop fixes this
+import asyncio as _asyncio
+try:
+    _asyncio.set_event_loop(_asyncio.new_event_loop())
+except Exception:
+    pass
+try:
+    import nest_asyncio as _nest_asyncio
+    _nest_asyncio.apply()
+except ImportError:
+    pass
+# ── END ASYNCIO FIX ──
+
 """
 daily_pipeline.py — MASTER ORCHESTRATOR
 All 7 layers + YouTube + LinkedIn. reporting_engine handles ALL notifications.

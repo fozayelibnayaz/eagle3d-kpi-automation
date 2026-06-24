@@ -14,3 +14,4 @@ requests>=2.31
 stripe>=8.0.0
 google-analytics-data>=0.18.0
 supabase>=2.0.0
+nest-asyncio>=1.6.0
