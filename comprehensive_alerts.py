@@ -239,6 +239,7 @@ def alert_customer_success():
 # ALERT 3: LINKEDIN DETAILED
 # ═══════════════════════════════════════════════
 def alert_linkedin():
+    """Show daily/period DELTAS instead of cumulative totals."""
     sb = _get_sb()
     if not sb:
         return ""
@@ -249,63 +250,88 @@ def alert_linkedin():
         week_ago  = (today_dt - timedelta(days=7)).isoformat()
         month_ago = (today_dt - timedelta(days=30)).isoformat()
 
-        def hl_range(start_dt, end_dt=today_str):
-            r = sb.table("linkedin_highlights_daily").select("*").gte("snapshot_date", start_dt).lte("snapshot_date", end_dt).order("snapshot_date", desc=True).execute().data or []
-            if not r:
-                return {}
-            agg = {"impressions":0, "reactions":0, "comments":0, "reposts":0, "clicks":0,
-                   "page_views":0, "unique_visitors":0}
-            for row in r:
-                for k in agg:
-                    agg[k] += row.get(k, 0) or 0
-            agg["total_followers"]        = r[0].get("total_followers", 0)
-            agg["newsletter_subscribers"] = r[0].get("newsletter_subscribers", 0)
-            agg["snapshot_date"]          = r[0].get("snapshot_date", "")
-            return agg
+        def snap_on(date_str):
+            """Get exact snapshot on a specific date."""
+            r = sb.table("linkedin_highlights_daily").select("*").eq("snapshot_date", date_str).limit(1).execute().data or []
+            return r[0] if r else {}
 
-        latest = hl_range(today_str, today_str)
-        if not latest:
-            latest = hl_range(yest_str, yest_str)
+        def latest_snap():
+            r = sb.table("linkedin_highlights_daily").select("*").order("snapshot_date", desc=True).limit(1).execute().data or []
+            return r[0] if r else {}
+
+        latest = latest_snap()
         if not latest:
             return "\n" + chr(128188) + " <b>LINKEDIN</b> No data yet\n"
 
-        week  = hl_range(week_ago)
-        month = hl_range(month_ago)
-        all_time = hl_range("2020-01-01")
+        latest_date = latest.get("snapshot_date", "")
+
+        # Get snapshots at boundaries for delta calc
+        yest_snap = snap_on(yest_str)
+        week_ago_snap = snap_on(week_ago)
+        month_ago_snap = snap_on(month_ago)
+
+        # DELTA calculations (today vs previous)
+        def delta(curr_val, prev_val):
+            return curr_val - prev_val if prev_val else curr_val
+
+        today_imp_delta = delta(latest.get("impressions",0), yest_snap.get("impressions",0)) if yest_snap else 0
+        today_rxn_delta = delta(latest.get("reactions",0),   yest_snap.get("reactions",0))   if yest_snap else 0
+        today_com_delta = delta(latest.get("comments",0),    yest_snap.get("comments",0))    if yest_snap else 0
+        today_rep_delta = delta(latest.get("reposts",0),     yest_snap.get("reposts",0))     if yest_snap else 0
+
+        week_imp_delta = delta(latest.get("impressions",0), week_ago_snap.get("impressions",0)) if week_ago_snap else 0
+        week_rxn_delta = delta(latest.get("reactions",0),   week_ago_snap.get("reactions",0))   if week_ago_snap else 0
+        week_com_delta = delta(latest.get("comments",0),    week_ago_snap.get("comments",0))    if week_ago_snap else 0
+
+        month_imp_delta = delta(latest.get("impressions",0), month_ago_snap.get("impressions",0)) if month_ago_snap else 0
+        month_rxn_delta = delta(latest.get("reactions",0),   month_ago_snap.get("reactions",0))   if month_ago_snap else 0
+        month_com_delta = delta(latest.get("comments",0),    month_ago_snap.get("comments",0))    if month_ago_snap else 0
+
+        # Follower deltas
+        today_fol_delta = delta(latest.get("total_followers",0), yest_snap.get("total_followers",0)) if yest_snap else 0
+        week_fol_delta  = delta(latest.get("total_followers",0), week_ago_snap.get("total_followers",0)) if week_ago_snap else 0
+        month_fol_delta = delta(latest.get("total_followers",0), month_ago_snap.get("total_followers",0)) if month_ago_snap else 0
 
         posts_count = sb.table("linkedin_posts").select("count", count="exact").execute().count or 0
         top_post = sb.table("linkedin_posts").select("title,impressions,reactions").order("impressions", desc=True).limit(1).execute().data
         top = top_post[0] if top_post else {}
 
+        def fmt_d(v):
+            return ("+" + str(v)) if v > 0 else str(v)
+
         msg = "\n" + chr(128188) + " <b>LINKEDIN ALERT</b>\n"
         msg += "----------------------------------------\n"
-        msg += f"Latest snapshot: <code>{latest.get('snapshot_date', 'N/A')}</code>\n\n"
-        msg += "<b>Today</b>\n"
-        msg += f"- Impressions: <code>{latest.get('impressions',0):,}</code>\n"
-        msg += f"- Reactions:   <code>{latest.get('reactions',0)}</code>\n"
-        msg += f"- Comments:    <code>{latest.get('comments',0)}</code>\n"
-        msg += f"- Reposts:     <code>{latest.get('reposts',0)}</code>\n\n"
-        msg += "<b>Last 7 Days</b>\n"
-        msg += f"- Impressions: <code>{week.get('impressions',0):,}</code>\n"
-        msg += f"- Reactions:   <code>{week.get('reactions',0)}</code>\n"
-        msg += f"- Comments:    <code>{week.get('comments',0)}</code>\n\n"
-        msg += "<b>Last 30 Days</b>\n"
-        msg += f"- Impressions: <code>{month.get('impressions',0):,}</code>\n"
-        msg += f"- Reactions:   <code>{month.get('reactions',0)}</code>\n"
-        msg += f"- Comments:    <code>{month.get('comments',0)}</code>\n\n"
-        msg += "<b>All Time</b>\n"
-        msg += f"- Impressions: <code>{all_time.get('impressions',0):,}</code>\n"
-        msg += f"- Reactions:   <code>{all_time.get('reactions',0)}</code>\n"
-        msg += f"- Comments:    <code>{all_time.get('comments',0)}</code>\n\n"
-        msg += "<b>Audience (now)</b>\n"
-        msg += f"- Followers:        <code>{latest.get('total_followers',0):,}</code>\n"
-        msg += f"- Page Views:       <code>{latest.get('page_views',0):,}</code>\n"
-        msg += f"- Unique Visitors:  <code>{latest.get('unique_visitors',0):,}</code>\n"
-        msg += f"- Newsletter:       <code>{latest.get('newsletter_subscribers',0):,}</code>\n\n"
+        msg += "Latest snapshot: <code>" + str(latest_date) + "</code>\n\n"
+
+        msg += "<b>Today (delta vs yesterday)</b>\n"
+        msg += "- Impressions: " + fmt_d(today_imp_delta) + "\n"
+        msg += "- Reactions:   " + fmt_d(today_rxn_delta) + "\n"
+        msg += "- Comments:    " + fmt_d(today_com_delta) + "\n"
+        msg += "- Reposts:     " + fmt_d(today_rep_delta) + "\n"
+        msg += "- Followers:   " + fmt_d(today_fol_delta) + "\n\n"
+
+        msg += "<b>Last 7 Days (delta)</b>\n"
+        msg += "- Impressions: " + fmt_d(week_imp_delta) + "\n"
+        msg += "- Reactions:   " + fmt_d(week_rxn_delta) + "\n"
+        msg += "- Comments:    " + fmt_d(week_com_delta) + "\n"
+        msg += "- Followers:   " + fmt_d(week_fol_delta) + "\n\n"
+
+        msg += "<b>Last 30 Days (delta)</b>\n"
+        msg += "- Impressions: " + fmt_d(month_imp_delta) + "\n"
+        msg += "- Reactions:   " + fmt_d(month_rxn_delta) + "\n"
+        msg += "- Comments:    " + fmt_d(month_com_delta) + "\n"
+        msg += "- Followers:   " + fmt_d(month_fol_delta) + "\n\n"
+
+        msg += "<b>Current Totals (snapshot)</b>\n"
+        msg += "- Total Impressions: <code>" + "{:,}".format(latest.get("impressions",0)) + "</code>\n"
+        msg += "- Total Reactions:   <code>" + str(latest.get("reactions",0)) + "</code>\n"
+        msg += "- Total Followers:   <code>" + "{:,}".format(latest.get("total_followers",0)) + "</code>\n"
+        msg += "- Newsletter Subs:   <code>" + "{:,}".format(latest.get("newsletter_subscribers",0)) + "</code>\n\n"
+
         msg += "<b>Content</b>\n"
-        msg += f"- Posts tracked: <code>{posts_count}</code>\n"
+        msg += "- Posts tracked: <code>" + str(posts_count) + "</code>\n"
         if top:
-            msg += f"- Top: <code>{_esc(top.get('title','')[:50])}</code> ({top.get('impressions',0):,} imp)\n"
+            msg += "- Top: <code>" + _esc(top.get('title','')[:50]) + "</code> (" + "{:,}".format(top.get('impressions',0)) + " imp)\n"
         return msg
     except Exception as e:
         return "\n" + chr(128188) + " <b>LINKEDIN</b> Error: " + _esc(str(e))[:200] + "\n"
