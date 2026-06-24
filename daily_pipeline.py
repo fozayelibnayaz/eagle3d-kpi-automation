@@ -1,20 +1,5 @@
 #!/usr/bin/env python3
 """Daily pipeline orchestrator. Runs all scrapers + sends alerts."""
-# ── ASYNCIO LOOP FIX FOR PLAYWRIGHT SYNC API ──
-# GitHub Actions runners sometimes have an active event loop that breaks sync_playwright
-# nest_asyncio + close any existing loop fixes this
-import asyncio as _asyncio
-try:
-    _asyncio.set_event_loop(_asyncio.new_event_loop())
-except Exception:
-    pass
-try:
-    import nest_asyncio as _nest_asyncio
-    _nest_asyncio.apply()
-except ImportError:
-    pass
-# ── END ASYNCIO FIX ──
-
 """
 daily_pipeline.py — MASTER ORCHESTRATOR
 All 7 layers + YouTube + LinkedIn. reporting_engine handles ALL notifications.
@@ -65,9 +50,13 @@ def main():
     results = {}
 
     def s1():
-        from scrape_kpi import main as run
-        run()
-        # Validate: KPI scrape produced data
+        # Run scrape_kpi.py as subprocess - guarantees fresh interpreter without asyncio loop
+        import subprocess as _sp, sys as _sys
+        log("Running scrape_kpi.py as subprocess (clean asyncio context)...")
+        r = _sp.run([_sys.executable, "scrape_kpi.py"], capture_output=False)
+        if r.returncode != 0:
+            raise RuntimeError(f"scrape_kpi.py exited with code {r.returncode}")
+        # Validate
         from sheets_writer import read_tab_data
         free_rows = read_tab_data("Raw_FREE")
         upload_rows = read_tab_data("Raw_FIRST_UPLOAD")
@@ -78,8 +67,11 @@ def main():
     results["stage1_kpi"] = "ok" if ok1 else f"failed: {e1}"
 
     def s2():
-        from scrape_stripe import main as run
-        run()
+        import subprocess as _sp, sys as _sys
+        log("Running scrape_stripe.py as subprocess...")
+        r = _sp.run([_sys.executable, "scrape_stripe.py"], capture_output=False)
+        if r.returncode != 0:
+            raise RuntimeError(f"scrape_stripe.py exited with code {r.returncode}")
         # Validate: Stripe scrape produced data
         from sheets_writer import read_tab_data
         stripe_rows = read_tab_data("Raw_STRIPE")
