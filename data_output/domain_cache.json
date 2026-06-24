@@ -427,6 +427,24 @@
     ],
     "reputation_score": 0.35
   },
+  "addverb.com": {
+    "checked_at": "2026-06-24T06:46:14.580191",
+    "domain": "addverb.com",
+    "domain_age_days": null,
+    "has_a_record": true,
+    "has_dmarc": true,
+    "has_spf": true,
+    "is_disposable": false,
+    "is_major_provider": false,
+    "mx_ok": true,
+    "mx_records": [
+      [
+        0,
+        "addverb-com.mail.protection.outlook.com"
+      ]
+    ],
+    "reputation_score": 0.45
+  },
   "admindagency.com": {
     "checked_at": "2026-06-18T06:58:03.051872",
     "domain": "admindagency.com",
