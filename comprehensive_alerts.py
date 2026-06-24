@@ -408,57 +408,98 @@ Each alert should be 1-2 sentences max, with specific numbers from the data."""
 # ALERT 6: YOUTUBE DETAILED
 # ═══════════════════════════════════════════════
 def alert_youtube():
+    """YouTube alert with daily/period deltas."""
     try:
         from youtube_command_center import get_cached_or_fetch
-        d = get_cached_or_fetch(period_days=30)
-        ch = d.get("channel", {})
-        ana = d.get("analytics", {})
-        vids = d.get("videos", [])
+        d_today = get_cached_or_fetch(period_days=1)
+        d_yest  = get_cached_or_fetch(period_days=2)
+        d_week  = get_cached_or_fetch(period_days=7)
+        d_2week = get_cached_or_fetch(period_days=14)
+        d_month = get_cached_or_fetch(period_days=30)
+        d_2month = get_cached_or_fetch(period_days=60)
+
+        ch = d_month.get("channel", {}) or {}
+        vids = d_month.get("videos", []) or []
         if not ch:
-            return "\n📺 <b>YOUTUBE</b> No data\n"
-        top5 = sorted(vids, key=lambda v: v.get("views",0), reverse=True)[:5]
-        worst5 = sorted([v for v in vids if v.get("views",0)>0], key=lambda v: v.get("views",0))[:5]
+            return "\n" + chr(128250) + " <b>YOUTUBE</b> No data\n"
+
+        def ana(d):
+            a = d.get("analytics", {}) or {}
+            return {
+                "views":              a.get("views", 0),
+                "watch_hours":        a.get("watch_hours", 0),
+                "subscribers_gained": a.get("subscribers_gained", 0),
+                "likes":              a.get("likes", 0),
+                "comments":           a.get("comments", 0),
+            }
+
+        t = ana(d_today)
+        y = ana(d_yest)
+        w = ana(d_week)
+        w2 = ana(d_2week)
+        m = ana(d_month)
+        m2 = ana(d_2month)
+
+        # Deltas - prev period = total - current period
+        y_views = max(0, y["views"] - t["views"])
+        prev_w_views = max(0, w2["views"] - w["views"])
+        prev_m_views = max(0, m2["views"] - m["views"])
+        prev_w_watch = max(0, w2["watch_hours"] - w["watch_hours"])
+        prev_m_watch = max(0, m2["watch_hours"] - m["watch_hours"])
+        prev_w_subs = max(0, w2["subscribers_gained"] - w["subscribers_gained"])
+        prev_m_subs = max(0, m2["subscribers_gained"] - m["subscribers_gained"])
+
+        def fmt_d(v, p):
+            if p == 0:
+                return ("+" + str(round(v))) if v > 0 else str(round(v))
+            d = v - p
+            pct = (d/p*100) if p else 0
+            sign = "+" if d >= 0 else ""
+            return sign + str(round(d)) + " (" + sign + str(round(pct)) + "%)"
+
         total_likes = sum(v.get("likes",0) for v in vids)
         total_comments = sum(v.get("comments",0) for v in vids)
         engagement = ((total_likes+total_comments) / max(ch.get("total_views",1),1)) * 100
         dead_count = sum(1 for v in vids if v.get("views_per_day",0) < 1)
+        top3 = sorted(vids, key=lambda v: v.get("views",0), reverse=True)[:3]
 
-        msg = (
-            f"\n📺 <b>YOUTUBE ALERT</b>\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"📋 Channel: <code>{_esc(ch.get('title',''))[:40]}</code>\n"
-            f"\n"
-            f"📊 <b>Channel Stats</b>\n"
-            f"├ 👥 Subscribers: <code>{ch.get('subscribers',0):,}</code>\n"
-            f"├ 👁 Total Views: <code>{ch.get('total_views',0):,}</code>\n"
-            f"├ 📹 Videos: <code>{ch.get('video_count',0)}</code>\n"
-            f"├ 👍 Total Likes: <code>{total_likes:,}</code>\n"
-            f"├ 💬 Comments: <code>{total_comments}</code>\n"
-            f"└ 📊 Engagement: <code>{engagement:.2f}%</code>\n"
-            f"\n"
-            f"📊 <b>Last 30 Days</b>\n"
-            f"├ 👁 Views: <code>{ana.get('views',0):,}</code>\n"
-            f"├ ⏱ Watch Hours: <code>{ana.get('watch_hours',0):,.0f}h</code>\n"
-            f"├ ➕ Subs Gained: <code>{ana.get('subscribers_gained',0)}</code>\n"
-            f"└ 💰 Revenue: <code>${d.get('revenue',{}).get('estimated',0):,.2f}</code>\n"
-            f"\n"
-            f"🚨 <b>Health</b>\n"
-            f"├ 🪦 Dead videos: <code>{dead_count}</code>\n"
-            f"└ ❌ Engagement: " + ("🔴 Critical (<1%)" if engagement < 1 else "🟡 Low" if engagement < 2 else "🟢 Healthy") + "\n"
-            f"\n"
-            f"🏆 <b>Top 3 Videos</b>\n"
-        )
-        for v in top5[:3]:
-            msg += f"• {_esc(v.get('title','')[:50])}: {v.get('views',0):,} views\n"
+        msg = "\n" + chr(128250) + " <b>YOUTUBE ALERT</b>\n"
+        msg += "----------------------------------------\n"
+        msg += "Channel: <code>" + _esc(ch.get('title',''))[:40] + "</code>\n\n"
+
+        msg += "<b>Today (vs yesterday)</b>\n"
+        msg += "- Views: <code>" + str(t['views']) + "</code> " + fmt_d(t['views'], y_views) + "\n"
+        msg += "- Watch: <code>" + str(round(t['watch_hours'],1)) + "h</code>\n"
+        msg += "- Subs Gained: <code>" + str(t['subscribers_gained']) + "</code>\n\n"
+
+        msg += "<b>Last 7 Days (vs previous 7d)</b>\n"
+        msg += "- Views: <code>" + str(w['views']) + "</code> " + fmt_d(w['views'], prev_w_views) + "\n"
+        msg += "- Watch: <code>" + str(round(w['watch_hours'],1)) + "h</code> " + fmt_d(w['watch_hours'], prev_w_watch) + "\n"
+        msg += "- Subs Gained: <code>" + str(w['subscribers_gained']) + "</code> " + fmt_d(w['subscribers_gained'], prev_w_subs) + "\n\n"
+
+        msg += "<b>Last 30 Days (vs previous 30d)</b>\n"
+        msg += "- Views: <code>" + str(m['views']) + "</code> " + fmt_d(m['views'], prev_m_views) + "\n"
+        msg += "- Watch: <code>" + str(round(m['watch_hours'],1)) + "h</code> " + fmt_d(m['watch_hours'], prev_m_watch) + "\n"
+        msg += "- Subs Gained: <code>" + str(m['subscribers_gained']) + "</code> " + fmt_d(m['subscribers_gained'], prev_m_subs) + "\n\n"
+
+        msg += "<b>Channel Totals (current)</b>\n"
+        msg += "- Subs:   <code>" + "{:,}".format(ch.get('subscribers',0)) + "</code>\n"
+        msg += "- Views:  <code>" + "{:,}".format(ch.get('total_views',0)) + "</code>\n"
+        msg += "- Videos: <code>" + str(ch.get('video_count',0)) + "</code>\n"
+        msg += "- Engagement: <code>" + str(round(engagement,2)) + "%</code>\n"
+        msg += "- Dead videos: <code>" + str(dead_count) + "</code>\n\n"
+
+        msg += "<b>Top 3 All-Time</b>\n"
+        for v in top3:
+            msg += "- <code>" + _esc(v.get('title','')[:50]) + "</code>: " + "{:,}".format(v.get('views',0)) + "v\n"
         return msg
     except Exception as e:
-        return f"\n📺 <b>YOUTUBE</b> Error: {_esc(str(e))[:200]}\n"
+        return "\n" + chr(128250) + " <b>YOUTUBE</b> Error: " + _esc(str(e))[:200] + "\n"
 
 
-# ═══════════════════════════════════════════════
-# ALERT 7: GA4 DETAILED
-# ═══════════════════════════════════════════════
+
 def alert_ga4():
+    """Show daily deltas - what NEW today, this week, this month."""
     try:
         from google.analytics.data_v1beta import BetaAnalyticsDataClient
         from google.analytics.data_v1beta.types import RunReportRequest, DateRange, Dimension, Metric
@@ -466,8 +507,6 @@ def alert_ga4():
         import json as _json
         SCOPES = ["https://www.googleapis.com/auth/analytics.readonly"]
         creds = None
-
-        # Try 1: Streamlit secrets ga4_service_account
         try:
             import streamlit as st
             sa = dict(st.secrets["ga4_service_account"])
@@ -476,39 +515,23 @@ def alert_ga4():
             creds = service_account.Credentials.from_service_account_info(sa, scopes=SCOPES)
         except Exception:
             pass
-
-        # Try 2: google_creds.json file (GitHub Actions writes this)
         if not creds and os.path.exists("google_creds.json"):
             try:
                 creds = service_account.Credentials.from_service_account_file("google_creds.json", scopes=SCOPES)
-            except Exception as e:
-                print(f"google_creds.json load err: {e}")
-
-        # Try 3: GOOGLE_CREDS_JSON env var
+            except Exception:
+                pass
         if not creds:
-            gc_json = os.environ.get("GOOGLE_CREDS_JSON", "")
-            if gc_json:
+            gc = os.environ.get("GOOGLE_CREDS_JSON","")
+            if gc:
                 try:
-                    sa = _json.loads(gc_json)
+                    sa = _json.loads(gc)
                     if "private_key" in sa:
                         sa["private_key"] = sa["private_key"].replace("\\n","\n")
                     creds = service_account.Credentials.from_service_account_info(sa, scopes=SCOPES)
-                except Exception as e:
-                    print(f"GOOGLE_CREDS_JSON parse err: {e}")
-
-        # Try 4: Streamlit GOOGLE_CREDS
+                except Exception:
+                    pass
         if not creds:
-            try:
-                import streamlit as st
-                sa = dict(st.secrets["GOOGLE_CREDS"])
-                if "private_key" in sa:
-                    sa["private_key"] = sa["private_key"].replace("\\n","\n")
-                creds = service_account.Credentials.from_service_account_info(sa, scopes=SCOPES)
-            except Exception:
-                pass
-
-        if not creds:
-            return "\n🌐 <b>GA4</b> No credentials (tried ga4_service_account, google_creds.json, GOOGLE_CREDS_JSON, GOOGLE_CREDS)\n"
+            return "\n" + chr(127760) + " <b>GA4</b> No credentials\n"
 
         pid = os.environ.get("GA4_PROPERTY_ID","374525971")
         try:
@@ -518,118 +541,168 @@ def alert_ga4():
             pass
 
         client = BetaAnalyticsDataClient(credentials=creds)
-        today = date.today().strftime("%Y-%m-%d")
-        month_start = date.today().strftime("%Y-%m-01")
-        last_month_end = (date.today().replace(day=1) - timedelta(days=1)).strftime("%Y-%m-%d")
-        last_month_start = (date.today().replace(day=1) - timedelta(days=1)).replace(day=1).strftime("%Y-%m-%d")
+        today_dt = date.today()
+        today = today_dt.strftime("%Y-%m-%d")
+        yest = (today_dt - timedelta(days=1)).strftime("%Y-%m-%d")
+        week_ago = (today_dt - timedelta(days=7)).strftime("%Y-%m-%d")
+        prev_week_ago = (today_dt - timedelta(days=14)).strftime("%Y-%m-%d")
+        month_ago = (today_dt - timedelta(days=30)).strftime("%Y-%m-%d")
+        prev_month_ago = (today_dt - timedelta(days=60)).strftime("%Y-%m-%d")
 
-        def _q(start, end):
-            r = client.run_report(RunReportRequest(
+        def q(start, end):
+            try:
+                r = client.run_report(RunReportRequest(
+                    property=f"properties/{pid}",
+                    date_ranges=[DateRange(start_date=start, end_date=end)],
+                    metrics=[Metric(name="sessions"), Metric(name="totalUsers"), Metric(name="screenPageViews")],
+                ))
+                if r.rows:
+                    row = r.rows[0]
+                    return (int(row.metric_values[0].value), int(row.metric_values[1].value), int(row.metric_values[2].value))
+            except Exception:
+                pass
+            return (0, 0, 0)
+
+        # Period values
+        t_s, t_u, t_p = q(today, today)
+        y_s, y_u, y_p = q(yest, yest)
+        w_s, w_u, w_p = q(week_ago, today)
+        pw_s, pw_u, pw_p = q(prev_week_ago, week_ago)
+        m_s, m_u, m_p = q(month_ago, today)
+        pm_s, pm_u, pm_p = q(prev_month_ago, month_ago)
+
+        # If today is 0 (GA4 delay), use yesterday as today
+        if t_s == 0:
+            t_s, t_u, t_p = y_s, y_u, y_p
+            today_label = "Yesterday (GA4 delay)"
+        else:
+            today_label = "Today"
+
+        # Deltas
+        def fmt_d(v, p):
+            if p == 0:
+                return ("+" + str(v)) if v > 0 else str(v)
+            d = v - p
+            pct = (d/p*100) if p else 0
+            sign = "+" if d >= 0 else ""
+            return sign + str(d) + " (" + sign + str(round(pct)) + "%)"
+
+        # Top countries last 30d
+        try:
+            rc = client.run_report(RunReportRequest(
                 property=f"properties/{pid}",
-                date_ranges=[DateRange(start_date=start, end_date=end)],
-                metrics=[Metric(name="sessions"), Metric(name="totalUsers"), Metric(name="screenPageViews")],
+                date_ranges=[DateRange(start_date=month_ago, end_date=today)],
+                dimensions=[Dimension(name="country")],
+                metrics=[Metric(name="sessions")],
+                limit=5,
             ))
-            if r.rows:
-                row = r.rows[0]
-                return (int(row.metric_values[0].value), int(row.metric_values[1].value), int(row.metric_values[2].value))
-            return (0,0,0)
+            countries = [(rw.dimension_values[0].value, int(rw.metric_values[0].value)) for rw in rc.rows]
+        except Exception:
+            countries = []
 
-        t_s, t_u, t_p = _q(today, today)
-        m_s, m_u, m_p = _q(month_start, today)
-        l_s, l_u, l_p = _q(last_month_start, last_month_end)
+        msg = "\n" + chr(127760) + " <b>GA4 ALERT</b>\n"
+        msg += "----------------------------------------\n"
+        msg += "<b>" + today_label + " (vs yesterday)</b>\n"
+        msg += "- Users:      <code>" + str(t_u) + "</code> " + fmt_d(t_u, y_u) + "\n"
+        msg += "- Sessions:   <code>" + str(t_s) + "</code> " + fmt_d(t_s, y_s) + "\n"
+        msg += "- Page Views: <code>" + str(t_p) + "</code> " + fmt_d(t_p, y_p) + "\n\n"
 
-        # Top countries (last 30d)
-        rc = client.run_report(RunReportRequest(
-            property=f"properties/{pid}",
-            date_ranges=[DateRange(start_date=month_start, end_date=today)],
-            dimensions=[Dimension(name="country")],
-            metrics=[Metric(name="sessions")],
-            limit=5,
-        ))
-        countries = [(rw.dimension_values[0].value, int(rw.metric_values[0].value)) for rw in rc.rows]
+        msg += "<b>Last 7 Days (vs previous 7d)</b>\n"
+        msg += "- Users:      <code>" + str(w_u) + "</code> " + fmt_d(w_u, pw_u) + "\n"
+        msg += "- Sessions:   <code>" + str(w_s) + "</code> " + fmt_d(w_s, pw_s) + "\n"
+        msg += "- Page Views: <code>" + str(w_p) + "</code> " + fmt_d(w_p, pw_p) + "\n\n"
 
-        def d(c,p):
-            if p == 0: return ""
-            pct = (c-p)/p*100
-            return f"{'+' if pct>=0 else ''}{pct:.0f}%"
+        msg += "<b>Last 30 Days (vs previous 30d)</b>\n"
+        msg += "- Users:      <code>" + str(m_u) + "</code> " + fmt_d(m_u, pm_u) + "\n"
+        msg += "- Sessions:   <code>" + str(m_s) + "</code> " + fmt_d(m_s, pm_s) + "\n"
+        msg += "- Page Views: <code>" + str(m_p) + "</code> " + fmt_d(m_p, pm_p) + "\n\n"
 
-        msg = (
-            f"\n🌐 <b>GA4 ALERT</b>\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"📅 <b>Today</b>\n"
-            f"├ 👥 Users: <code>{t_u:,}</code>\n"
-            f"├ 📊 Sessions: <code>{t_s:,}</code>\n"
-            f"└ 📄 Page Views: <code>{t_p:,}</code>\n"
-            f"\n"
-            f"📆 <b>This Month vs Last Month</b>\n"
-            f"├ 👥 Users: <code>{m_u:,}</code> (last {l_u:,}) {d(m_u,l_u)}\n"
-            f"├ 📊 Sessions: <code>{m_s:,}</code> (last {l_s:,}) {d(m_s,l_s)}\n"
-            f"└ 📄 Page Views: <code>{m_p:,}</code> (last {l_p:,}) {d(m_p,l_p)}\n"
-            f"\n"
-            f"�� <b>Top 5 Countries (this month)</b>\n"
-        )
+        msg += "<b>Top 5 Countries (30d)</b>\n"
         for country, sess in countries:
-            msg += f"• {_esc(country)}: <code>{sess:,}</code>\n"
+            msg += "- " + _esc(country) + ": <code>" + "{:,}".format(sess) + "</code>\n"
         return msg
     except Exception as e:
-        return f"\n🌐 <b>GA4</b> Error: {_esc(str(e))[:200]}\n"
+        return "\n" + chr(127760) + " <b>GA4</b> Error: " + _esc(str(e))[:200] + "\n"
 
 
-# ═══════════════════════════════════════════════
-# ALERT 8: CROSS-PLATFORM CORRELATION
-# ═══════════════════════════════════════════════
+
 def alert_cross_platform():
+    """Cross-platform correlation - daily deltas across all systems."""
     sb = _get_sb()
     if not sb:
         return ""
     try:
-        # Get all platform snapshots
-        today = date.today().strftime("%Y-%m-%d")
-        month_start = date.today().strftime("%Y-%m-01")
+        today_dt = date.today()
+        today = today_dt.strftime("%Y-%m-%d")
+        yest = (today_dt - timedelta(days=1)).strftime("%Y-%m-%d")
+        week_ago = (today_dt - timedelta(days=7)).strftime("%Y-%m-%d")
 
-        # KPI today
+        # KPI today vs yesterday
         s_t = sb.table("signups").select("count",count="exact").eq("final_status","ACCEPTED").gte("signup_date",today).execute().count or 0
+        s_y = sb.table("signups").select("count",count="exact").eq("final_status","ACCEPTED").gte("signup_date",yest).lte("signup_date",yest).execute().count or 0
+        s_w = sb.table("signups").select("count",count="exact").eq("final_status","ACCEPTED").gte("signup_date",week_ago).execute().count or 0
+
         p_t = sb.table("payments").select("count",count="exact").eq("final_status","ACCEPTED").gte("first_payment_date",today).execute().count or 0
+        p_y = sb.table("payments").select("count",count="exact").eq("final_status","ACCEPTED").gte("first_payment_date",yest).lte("first_payment_date",yest).execute().count or 0
+        p_w = sb.table("payments").select("count",count="exact").eq("final_status","ACCEPTED").gte("first_payment_date",week_ago).execute().count or 0
 
-        # LinkedIn latest
-        hl = sb.table("linkedin_highlights_daily").select("*").order("snapshot_date",desc=True).limit(1).execute().data
-        li_imp = hl[0].get("impressions",0) if hl else 0
-        li_followers = hl[0].get("total_followers",0) if hl else 0
+        u_t = sb.table("uploads").select("count",count="exact").eq("final_status","ACCEPTED").gte("upload_date",today).execute().count or 0
+        u_y = sb.table("uploads").select("count",count="exact").eq("final_status","ACCEPTED").gte("upload_date",yest).lte("upload_date",yest).execute().count or 0
 
-        # Detect cross-platform patterns
-        msg = (
-            f"\n🔗 <b>CROSS-PLATFORM CORRELATION</b>\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━\n"
-        )
+        # LinkedIn deltas
+        li_today = sb.table("linkedin_highlights_daily").select("*").eq("snapshot_date", today).limit(1).execute().data or []
+        li_yest = sb.table("linkedin_highlights_daily").select("*").eq("snapshot_date", yest).limit(1).execute().data or []
+        li_imp_today = li_today[0].get("impressions",0) if li_today else 0
+        li_imp_yest = li_yest[0].get("impressions",0) if li_yest else 0
+        li_imp_delta = li_imp_today - li_imp_yest if li_yest else 0
+        li_followers = (li_today[0] if li_today else (li_yest[0] if li_yest else {})).get("total_followers",0)
 
-        # Pattern detections
+        # Patterns detection
         patterns = []
-        if s_t == 0 and li_imp > 1000:
-            patterns.append("⚠️ LinkedIn has impressions but ZERO signups - landing page issue?")
+        if s_t == 0 and li_imp_today > 100:
+            patterns.append("- LinkedIn has impressions today but ZERO signups - landing page issue?")
         if s_t > 5 and p_t == 0:
-            patterns.append(f"⚠️ {s_t} signups but 0 paid today - check upgrade flow")
+            patterns.append("- " + str(s_t) + " signups today but 0 paid - check upgrade flow")
         if li_followers > 2500 and s_t < 3:
-            patterns.append(f"⚠️ {li_followers:,} LinkedIn followers but only {s_t} signups today - audience-product mismatch")
+            patterns.append("- " + "{:,}".format(li_followers) + " LinkedIn followers but only " + str(s_t) + " signups today - audience mismatch")
+        if p_t > p_y * 2 and p_y > 0:
+            patterns.append("- Paid customers SPIKED today (" + str(p_t) + " vs " + str(p_y) + " yesterday)")
         if not patterns:
-            patterns.append("✅ No critical cross-platform issues detected today")
+            patterns.append("- No critical cross-platform issues detected today")
 
-        msg += "\n".join(patterns) + "\n\n"
+        def fmt_d(v, p):
+            if p == 0:
+                return ("+" + str(v)) if v > 0 else str(v)
+            d = v - p
+            sign = "+" if d >= 0 else ""
+            return sign + str(d)
 
-        msg += (
-            f"📊 <b>System Health</b>\n"
-            f"├ KPI: " + ("🟢" if s_t > 0 else "🔴") + f" Today {s_t} signups\n"
-            f"├ LinkedIn: " + ("��" if li_imp > 100 else "🟡") + f" {li_imp:,} impressions\n"
-            f"└ Stripe: " + ("🟢" if p_t > 0 else "🟡") + f" {p_t} paid today\n"
-        )
+        msg = "\n" + chr(128279) + " <b>CROSS-PLATFORM CORRELATION</b>\n"
+        msg += "----------------------------------------\n\n"
 
+        msg += "<b>Today vs Yesterday</b>\n"
+        msg += "- Signups:   <code>" + str(s_t) + "</code> " + fmt_d(s_t, s_y) + "\n"
+        msg += "- Uploads:   <code>" + str(u_t) + "</code> " + fmt_d(u_t, u_y) + "\n"
+        msg += "- Paid:      <code>" + str(p_t) + "</code> " + fmt_d(p_t, p_y) + "\n"
+        msg += "- LI Impressions: " + fmt_d(li_imp_delta, 0) + "\n\n"
+
+        msg += "<b>Last 7 Days Total</b>\n"
+        msg += "- Signups: <code>" + str(s_w) + "</code>\n"
+        msg += "- Paid:    <code>" + str(p_w) + "</code>\n\n"
+
+        msg += "<b>Pattern Detection</b>\n"
+        for p in patterns:
+            msg += p + "\n"
+        msg += "\n<b>System Health</b>\n"
+        msg += "- KPI: " + ("[OK]" if s_t > 0 else "[!]") + " " + str(s_t) + " signups today\n"
+        msg += "- LinkedIn: " + ("[OK]" if li_imp_today > 100 else "[!]") + " " + "{:,}".format(li_imp_today) + " impressions\n"
+        msg += "- Stripe: " + ("[OK]" if p_t > 0 else "[!]") + " " + str(p_t) + " paid today\n"
         return msg
     except Exception as e:
-        return f"\n🔗 <b>CROSS-PLATFORM</b> Error: {_esc(str(e))[:200]}\n"
+        return "\n" + chr(128279) + " <b>CROSS-PLATFORM</b> Error: " + _esc(str(e))[:200] + "\n"
 
 
-# ═══════════════════════════════════════════════
-# MAIN: send all alerts
-# ═══════════════════════════════════════════════
+
 def send_all_alerts():
     print("Building comprehensive alerts...")
     today = date.today().strftime("%Y-%m-%d")
