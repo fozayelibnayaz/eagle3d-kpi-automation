@@ -221,6 +221,15 @@ def main():
     ok5, e5 = run_stage(5, "YouTube Data Fetch", s5)
     results["stage5_youtube"] = "ok" if ok5 else f"failed: {e5}"
 
+    # Also fetch YouTube Command Center data for cache
+    try:
+        from youtube_command_center import fetch_command_center_data
+        log("Fetching YouTube Command Center cache...")
+        _yt_cc = fetch_command_center_data(period_days=30)
+        log(f"YouTube CC: {len(_yt_cc.get('videos',[]))} videos cached")
+    except Exception as _yte:
+        log(f"YouTube CC cache (non-fatal): {_yte}")
+
     # ── LinkedIn Scrape via Daily Pipeline (Stage 6) ──
     def s6():
         """Run our LinkedIn daily pipeline as subprocess - writes to Supabase + JSON cache."""
