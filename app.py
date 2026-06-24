@@ -3224,15 +3224,6 @@ elif page == "🔔 Alerts":
                     except Exception as _e:
                         st.error(f"❌ {_e}")
 
-            st.markdown("#### 🦅 Full System Report")
-            if st.button("📤 Send ALL Reports", type="primary", use_container_width=True, key="tg_all"):
-                with st.spinner("Sending full system report..."):
-                    try:
-                        from reporting_engine import main as _rep_main
-                        _rep_main()
-                        st.success("✅ All subsystem reports sent to Telegram!")
-                    except Exception as _e:
-                        st.error(f"❌ {_e}")
 
 # ═══════════════════════════════════════════════════════════════
 # PAGE: 🔬 EDA LAB
@@ -4317,6 +4308,171 @@ elif page == "🔗 Cross-Platform":
 # PAGE: ⚙️ SETTINGS (with Run Pipeline + Secrets Editor + Cache Clear)
 # ═══════════════════════════════════════════════════════════════
 elif page == "⚙️ Settings":
+
+    # ── TELEGRAM ALERTS CONTROL CENTER ──
+    st.markdown("### 📨 Telegram Alerts Control")
+    st.caption("Send alerts to the main Telegram group manually")
+
+    _ta_c1, _ta_c2, _ta_c3 = st.columns(3)
+
+    with _ta_c1:
+        if st.button("📤 Send ALL 12 Alerts", type="primary", use_container_width=True, key="tg_send_all_12"):
+            with st.spinner("Sending all 12 alerts to Telegram..."):
+                try:
+                    from all_alerts import run_all as _send_all
+                    n = _send_all()
+                    st.success(f"✅ Sent {n}/12 alerts to Telegram group")
+                except Exception as _e:
+                    st.error(f"❌ {_e}")
+                    import traceback as _tb
+                    st.code(_tb.format_exc()[:1500])
+
+    with _ta_c2:
+        if st.button("📊 Send Legacy Full Report", use_container_width=True, key="tg_legacy"):
+            with st.spinner("Sending legacy full system report..."):
+                try:
+                    from reporting_engine import main as _rep_main
+                    _rep_main()
+                    st.success("✅ Legacy report sent")
+                except Exception as _e:
+                    st.error(f"❌ {_e}")
+
+    with _ta_c3:
+        if st.button("🔄 Run Full Pipeline + Alerts", use_container_width=True, key="tg_full_pipeline"):
+            with st.spinner("Running full pipeline (5-10 min)..."):
+                try:
+                    import subprocess as _sp, sys as _sys
+                    r = _sp.run([_sys.executable, "daily_pipeline.py"], capture_output=True, text=True, timeout=900)
+                    if r.returncode == 0:
+                        st.success("✅ Pipeline completed - alerts sent")
+                    else:
+                        st.warning(f"⚠️ Pipeline exited with code {r.returncode}")
+                    with st.expander("Pipeline log"):
+                        st.code((r.stdout or "")[-3000:])
+                        if r.stderr:
+                            st.code(r.stderr[-1500:])
+                except Exception as _e:
+                    st.error(f"❌ {_e}")
+
+    st.markdown("**Individual Alert Tests:**")
+    _ia_c1, _ia_c2, _ia_c3, _ia_c4 = st.columns(4)
+    with _ia_c1:
+        if st.button("📊 KPI", use_container_width=True, key="ind_kpi"):
+            try:
+                from comprehensive_alerts import alert_kpi_detailed, _send_telegram
+                msg = alert_kpi_detailed()
+                if _send_telegram(msg):
+                    st.success("✅ Sent")
+                else:
+                    st.error("❌ Failed")
+            except Exception as _e:
+                st.error(str(_e))
+    with _ia_c2:
+        if st.button("🌐 GA4", use_container_width=True, key="ind_ga4"):
+            try:
+                from comprehensive_alerts import alert_ga4, _send_telegram
+                msg = alert_ga4()
+                if _send_telegram(msg):
+                    st.success("✅ Sent")
+            except Exception as _e:
+                st.error(str(_e))
+    with _ia_c3:
+        if st.button("📺 YouTube", use_container_width=True, key="ind_yt"):
+            try:
+                from comprehensive_alerts import alert_youtube, _send_telegram
+                msg = alert_youtube()
+                if _send_telegram(msg):
+                    st.success("✅ Sent")
+            except Exception as _e:
+                st.error(str(_e))
+    with _ia_c4:
+        if st.button("💼 LinkedIn", use_container_width=True, key="ind_li"):
+            try:
+                from comprehensive_alerts import alert_linkedin, _send_telegram
+                msg = alert_linkedin()
+                if _send_telegram(msg):
+                    st.success("✅ Sent")
+            except Exception as _e:
+                st.error(str(_e))
+
+    _ia_c5, _ia_c6, _ia_c7, _ia_c8 = st.columns(4)
+    with _ia_c5:
+        if st.button("💳 Stripe", use_container_width=True, key="ind_stripe"):
+            try:
+                from comprehensive_alerts import alert_stripe, _send_telegram
+                msg = alert_stripe()
+                if _send_telegram(msg):
+                    st.success("✅ Sent")
+            except Exception as _e:
+                st.error(str(_e))
+    with _ia_c6:
+        if st.button("🎯 CS", use_container_width=True, key="ind_cs"):
+            try:
+                from comprehensive_alerts import alert_customer_success, _send_telegram
+                msg = alert_customer_success()
+                if _send_telegram(msg):
+                    st.success("✅ Sent")
+            except Exception as _e:
+                st.error(str(_e))
+    with _ia_c7:
+        if st.button("🔗 Cross-Platform", use_container_width=True, key="ind_cp"):
+            try:
+                from comprehensive_alerts import alert_cross_platform, _send_telegram
+                msg = alert_cross_platform()
+                if _send_telegram(msg):
+                    st.success("✅ Sent")
+            except Exception as _e:
+                st.error(str(_e))
+    with _ia_c8:
+        if st.button("🤖 AI Insights", use_container_width=True, key="ind_ai"):
+            try:
+                from comprehensive_alerts import alert_ai_insights, _send_telegram
+                msg = alert_ai_insights()
+                if _send_telegram(msg):
+                    st.success("✅ Sent")
+            except Exception as _e:
+                st.error(str(_e))
+
+    _ia_c9, _ia_c10, _ia_c11, _ia_c12 = st.columns(4)
+    with _ia_c9:
+        if st.button("☀️ Daily Standup", use_container_width=True, key="ind_standup"):
+            try:
+                from role_alerts import daily_standup, _send_telegram
+                msg = daily_standup()
+                if _send_telegram(msg):
+                    st.success("✅ Sent")
+            except Exception as _e:
+                st.error(str(_e))
+    with _ia_c10:
+        if st.button("📊 Marketer Weekly", use_container_width=True, key="ind_mark"):
+            try:
+                from role_alerts import marketer_weekly, _send_telegram
+                msg = marketer_weekly()
+                if _send_telegram(msg):
+                    st.success("✅ Sent")
+            except Exception as _e:
+                st.error(str(_e))
+    with _ia_c11:
+        if st.button("🚨 CS Lead Weekly", use_container_width=True, key="ind_csl"):
+            try:
+                from role_alerts import cs_lead_weekly, _send_telegram
+                msg = cs_lead_weekly()
+                if _send_telegram(msg):
+                    st.success("✅ Sent")
+            except Exception as _e:
+                st.error(str(_e))
+    with _ia_c12:
+        if st.button("📈 Founder Monthly", use_container_width=True, key="ind_founder"):
+            try:
+                from role_alerts import founder_monthly, _send_telegram
+                msg = founder_monthly()
+                if _send_telegram(msg):
+                    st.success("✅ Sent")
+            except Exception as _e:
+                st.error(str(_e))
+
+    st.divider()
+
 
     # ── ACCESS CONTROL MANAGEMENT ──
     with st.expander("👥 User Access Management", expanded=True):
