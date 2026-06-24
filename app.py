@@ -3483,3 +3483,549 @@ with _fc3:
             else "🧠 Rules"
         )
         st.caption(f"AI: {_prl}")
+
+
+elif page == "⚙️ Settings":
+
+    # ── TELEGRAM ALERTS CONTROL CENTER ──
+    st.markdown("### 📨 Telegram Alerts Control")
+    st.caption("Send alerts to the main Telegram group manually")
+
+    # State for showing result
+    if "_alert_msg" not in st.session_state:
+        st.session_state["_alert_msg"] = None
+
+    msg = st.session_state.get("_alert_msg")
+    if msg:
+        if msg["type"] == "success":
+            st.success(msg["text"])
+        else:
+            st.error(msg["text"])
+        st.session_state["_alert_msg"] = None
+
+    # ── Callback functions for buttons ──
+    def _alert_callback(name, func_path):
+        try:
+            # func_path = ("module", "function")
+            mod_name, fn_name = func_path
+            mod = __import__(mod_name)
+            fn = getattr(mod, fn_name)
+            from comprehensive_alerts import _send_telegram
+            content_msg = fn()
+            if not content_msg or not str(content_msg).strip():
+                st.session_state["_alert_msg"] = {"type":"error", "text":f"❌ {name}: empty content"}
+                return
+            ok = _send_telegram(content_msg)
+            if ok:
+                st.session_state["_alert_msg"] = {"type":"success", "text":f"✅ {name} sent to Telegram"}
+            else:
+                st.session_state["_alert_msg"] = {"type":"error", "text":f"❌ {name}: Telegram send failed (check logs)"}
+        except Exception as e:
+            import traceback as _tb
+            st.session_state["_alert_msg"] = {"type":"error", "text":f"❌ {name}: {e}\n{_tb.format_exc()[:500]}"}
+
+    def _send_all_callback():
+        try:
+            from all_alerts import run_all
+            n = run_all()
+            st.session_state["_alert_msg"] = {"type":"success", "text":f"✅ Sent {n}/12 alerts to Telegram"}
+        except Exception as e:
+            import traceback as _tb
+            st.session_state["_alert_msg"] = {"type":"error", "text":f"❌ Send all error: {e}\n{_tb.format_exc()[:500]}"}
+
+    def _legacy_callback():
+        try:
+            from reporting_engine import main as _rm
+            _rm()
+            st.session_state["_alert_msg"] = {"type":"success", "text":"✅ Legacy full report sent"}
+        except Exception as e:
+            st.session_state["_alert_msg"] = {"type":"error", "text":f"❌ Legacy: {e}"}
+
+    # ── 3 MAIN BUTTONS ──
+    _ta_c1, _ta_c2 = st.columns(2)
+    with _ta_c1:
+        st.button("📤 Send ALL 12 Alerts", type="primary", use_container_width=True,
+                  key="tg_send_all_12", on_click=_send_all_callback)
+    with _ta_c2:
+        st.button("📊 Send Legacy Full Report", use_container_width=True,
+                  key="tg_legacy", on_click=_legacy_callback)
+
+    st.markdown("**Individual Alert Tests:**")
+
+    # ── 12 INDIVIDUAL BUTTONS ──
+    buttons = [
+        ("📊 KPI",              ("comprehensive_alerts", "alert_kpi_detailed")),
+        ("🌐 GA4",              ("comprehensive_alerts", "alert_ga4")),
+        ("📺 YouTube",          ("comprehensive_alerts", "alert_youtube")),
+        ("💼 LinkedIn",         ("comprehensive_alerts", "alert_linkedin")),
+        ("💳 Stripe",           ("comprehensive_alerts", "alert_stripe")),
+        ("🎯 Customer Success", ("comprehensive_alerts", "alert_customer_success")),
+        ("🔗 Cross-Platform",   ("comprehensive_alerts", "alert_cross_platform")),
+        ("🤖 AI Insights",      ("comprehensive_alerts", "alert_ai_insights")),
+        ("☀️ Daily Standup",    ("role_alerts",          "daily_standup")),
+        ("📊 Marketer Weekly",  ("role_alerts",          "marketer_weekly")),
+        ("🚨 CS Lead Weekly",   ("role_alerts",          "cs_lead_weekly")),
+        ("📈 Founder Monthly",  ("role_alerts",          "founder_monthly")),
+    ]
+
+    # Render in 4-column grid (3 rows)
+    for row_i in range(0, len(buttons), 4):
+        cols = st.columns(4)
+        for col_i, (label, func_path) in enumerate(buttons[row_i:row_i+4]):
+            with cols[col_i]:
+                # Capture variables for closure
+                _captured_name = label
+                _captured_path = func_path
+                st.button(
+                    label,
+                    use_container_width=True,
+                    key=f"ind_btn_{row_i+col_i}",
+                    on_click=lambda n=_captured_name, p=_captured_path: _alert_callback(n, p),
+                )
+
+    st.divider()
+
+
+    # ── ACCESS CONTROL MANAGEMENT ──
+    with st.expander("👥 User Access Management", expanded=True):
+        try:
+            from access_control import list_users, add_email, remove_email, get_access_logs
+
+            # Initialize message state
+            if "_user_mgmt_msg" not in st.session_state:
+                st.session_state["_user_mgmt_msg"] = None
+
+            # Show last action result
+            msg = st.session_state.get("_user_mgmt_msg")
+            if msg:
+                if msg["type"] == "success":
+                    st.success(msg["text"])
+                else:
+                    st.error(msg["text"])
+                st.session_state["_user_mgmt_msg"] = None
+
+            # Current users
+            users = list_users()
+            active = [u for u in users if u.get("is_active")]
+            st.markdown(f"### Authorized Users ({len(active)} active / {len(users)} total)")
+            if users:
+                import pandas as _pd
+                _df = _pd.DataFrame(users)
+                _cols = [c for c in ["email","role","is_active","added_by","added_at","notes"] if c in _df.columns]
+                st.dataframe(_df[_cols], use_container_width=True, hide_index=True)
+
+            st.markdown("---")
+            st.markdown("### ➕ Add New User")
+
+            _ac1, _ac2 = st.columns([2, 1])
+            with _ac1:
+                _add_email_val = st.text_input("Email address",
+                                                key="ac_new_email",
+                                                placeholder="user@example.com")
+            with _ac2:
+                _add_role_val = st.selectbox("Role", ["viewer","editor","admin"], key="ac_new_role")
+            _add_notes_val = st.text_input("Notes (optional)",
+                                            key="ac_new_notes",
+                                            placeholder="What is this user for?")
+
+            # Define callback for add button
+            def _do_add_user():
+                em = st.session_state.get("ac_new_email", "").strip().lower()
+                role = st.session_state.get("ac_new_role", "viewer")
+                notes = st.session_state.get("ac_new_notes", "")
+                if not em or "@" not in em:
+                    st.session_state["_user_mgmt_msg"] = {"type":"error", "text":"Please enter a valid email address"}
+                    return
+                try:
+                    from access_control import add_email as _add_em
+                    result = _add_em(em, role, st.session_state.get("user_email","admin"), notes)
+                    if result.get("success"):
+                        st.session_state["_user_mgmt_msg"] = {"type":"success", "text":f"Added: {em} as {role}"}
+                        # Clear inputs
+                        st.session_state["ac_new_email"] = ""
+                        st.session_state["ac_new_notes"] = ""
+                    else:
+                        st.session_state["_user_mgmt_msg"] = {"type":"error", "text":f"Failed: {result.get('message','Unknown error')}"}
+                except Exception as e:
+                    st.session_state["_user_mgmt_msg"] = {"type":"error", "text":f"Exception: {e}"}
+
+            st.button("➕ ADD USER", key="ac_add_btn", type="primary",
+                       use_container_width=True, on_click=_do_add_user)
+
+            st.markdown("---")
+            st.markdown("### ❌ Revoke Access")
+            _rc1, _rc2 = st.columns([3, 1])
+            with _rc1:
+                _rem_email_val = st.text_input("Email to revoke", key="ac_rem_email", placeholder="user@example.com")
+            with _rc2:
+                _rem_reason_val = st.text_input("Reason", key="ac_rem_reason", placeholder="Why?")
+
+            def _do_revoke():
+                em = st.session_state.get("ac_rem_email","").strip().lower()
+                reason = st.session_state.get("ac_rem_reason","")
+                if not em or "@" not in em:
+                    st.session_state["_user_mgmt_msg"] = {"type":"error", "text":"Please enter a valid email"}
+                    return
+                try:
+                    from access_control import remove_email as _rem_em
+                    r = _rem_em(em, st.session_state.get("user_email","admin"))
+                    if r.get("success"):
+                        st.session_state["_user_mgmt_msg"] = {"type":"success", "text":f"Revoked: {em}"}
+                        st.session_state["ac_rem_email"] = ""
+                    else:
+                        st.session_state["_user_mgmt_msg"] = {"type":"error", "text":f"Failed: {r.get('message','Unknown')}"}
+                except Exception as e:
+                    st.session_state["_user_mgmt_msg"] = {"type":"error", "text":f"Exception: {e}"}
+
+            st.button("❌ REVOKE ACCESS", key="ac_rem_btn",
+                       use_container_width=True, on_click=_do_revoke)
+
+            st.markdown("---")
+            st.markdown("### 📊 Recent Access Logs (last 30)")
+            try:
+                _logs = get_access_logs(30)
+                if _logs:
+                    import pandas as _pd
+                    _ldf = _pd.DataFrame(_logs)
+                    _lcols = [c for c in ["timestamp","email","action","success","ip"] if c in _ldf.columns]
+                    st.dataframe(_ldf[_lcols], use_container_width=True, hide_index=True)
+                else:
+                    st.info("No access logs yet")
+            except Exception as _le:
+                st.warning(f"Log read error: {_le}")
+        except Exception as _e:
+            st.error(f"Access management error: {_e}")
+            import traceback as _tb
+            st.code(_tb.format_exc()[:1500])
+
+    # ── MODULE STATUS ──
+    st.markdown('<div class="sec-head">🏥 Module Status</div>', unsafe_allow_html=True)
+    _mods = {
+        "KPI Bridge":         "kpi_bridge",
+        "Strategic":          "ga4_strategic",
+        "Predictions":        "prediction_engine",
+        "GA4 Connector":      "ga4_connector",
+        "Notifications":      "notifications",
+        "Reports":            "report_generator",
+        "Source Intel":       "ga4_source_intel",
+        "Intelligence":       "ml_intelligence",
+        "Source Normalizer": "source_normalizer",
+    }
+    _mc = st.columns(4)
+    _act = 0
+    for _i, (_mname, _ky) in enumerate(_mods.items()):
+        with _mc[_i % 4]:
+            _ok = _ky in MOD
+            if _ok:
+                _act += 1
+            _bd = (
+                '<span class="badge badge-ok">✅</span>'
+                if _ok
+                else '<span class="badge badge-err">❌</span>'
+            )
+            st.markdown(f"**{_mname}** {_bd}", unsafe_allow_html=True)
+    st.metric("Active", f"{_act}/{len(_mods)}")
+
+    st.markdown("#### 🤖 AI Provider")
+    _ai_mod = MOD.get("ai_engine")
+    if _ai_mod:
+        _pr = _ai_mod._get_provider()
+        _pi2 = {
+            "groq": ("⚡ Groq Cloud", "Ultra-fast"),
+            "gemini": ("💎 Gemini", "Reasoning"),
+            "rule_based": ("🧠 Rule-Based", "No key"),
+        }
+        _n2, _d2 = _pi2.get(_pr, ("?", ""))
+        st.info(f"{_n2} — {_d2}")
+        if _pr == "rule_based":
+            _has_grok = False
+            _has_gem = False
+            try:
+                if st.secrets.get("GROQ_API_KEY", ""):
+                    _has_grok = True
+                if st.secrets.get("GEMINI_API_KEY", ""):
+                    _has_gem = True
+            except Exception:
+                pass
+            if not _has_grok and not _has_gem:
+                st.warning(
+                    "💡 Add API keys in **Streamlit Cloud → Settings → Secrets**:\n\n"
+                    "```toml\n"
+                    'GROQ_API_KEY = "your-key"\n'
+                    'GEMINI_API_KEY = "your-key"\n'
+                    "```\n\n"
+                    "Get free keys: [Groq](https://console.groq.com) · "
+                    "[Gemini](https://aistudio.google.com)"
+                )
+            else:
+                st.error(f"⚠️ Keys found in secrets but detection failed! Groq={_has_grok}, Gemini={_has_gem}")
+    else:
+        st.error("AI Engine not loaded")
+
+    st.markdown("#### 🔐 Secrets Status")
+    for _ky, _ds in [
+        ("MASTER_SHEET_URL", "Google Sheets URL"),
+        ("GOOGLE_CREDS", "Google Credentials"),
+        ("GROQ_API_KEY", "Groq AI"),
+        ("GEMINI_API_KEY", "Gemini AI"),
+        ("TELEGRAM_BOT_TOKEN", "Telegram Bot"),
+        ("TELEGRAM_CHAT_ID", "Telegram Chat ID"),
+        ("YOUTUBE_API_KEY", "YouTube Data API"),
+        ("YOUTUBE_CHANNEL_ID", "YouTube Channel ID"),
+        ("YOUTUBE_OAUTH_TOKEN", "YouTube OAuth Token"),
+        ("YOUTUBE_REFRESH_TOKEN", "YouTube Refresh Token"),
+        ("YOUTUBE_CLIENT_ID", "YouTube Client ID"),
+        ("YOUTUBE_CLIENT_SECRET", "YouTube Client Secret"),
+        ("LINKEDIN_COMPANY_PAGE", "LinkedIn Company Page"),
+        ("LINKEDIN_COOKIES_JSON", "LinkedIn Cookies"),
+        ("STRIPE_COOKIES_JSON", "Stripe Cookies"),
+    ]:
+        _vl = get_secret(_ky)
+        if _vl:
+            st.success(f"✅ {_ds}")
+        else:
+            st.warning(f"⚠️ {_ds}: Not set")
+
+    st.markdown("---")
+    st.markdown("#### 📊 Data Summary")
+    _total_s = int(kpi_all["signups"].sum()) if not kpi_all.empty and "signups" in kpi_all.columns else 0
+    _total_u = int(kpi_all["first_uploads"].sum()) if not kpi_all.empty and "first_uploads" in kpi_all.columns else 0
+    _total_p = int(kpi_all["paid_customers"].sum()) if not kpi_all.empty and "paid_customers" in kpi_all.columns else 0
+    _data_src = "Google Sheets (live)" if not counts_raw.empty else "Historical JSON (offline)"
+    _di = {
+        "Data Source": _data_src,
+        "KPI Rows": f"{len(kpi_all):,}",
+        "Total Sign-ups": f"{_total_s:,}",
+        "Total Uploads": f"{_total_u:,}",
+        "Total Paid": f"{_total_p:,}",
+        "Period Rows": f"{len(kpi):,}",
+        "Sheet Sign-ups": f"{len(free_rows):,}",
+        "Sheet Uploads": f"{len(upload_rows):,}",
+    }
+    _ic = st.columns(3)
+    for _idx, (_l, _c) in enumerate(_di.items()):
+        with _ic[_idx % 3]:
+            st.metric(_l, _c)
+
+    st.markdown("---")
+    st.markdown("#### 💳 Stripe Data Diagnostics")
+    if not stripe_raw.empty:
+        _s_acc = sum(1 for _, r in stripe_raw.iterrows() if str(r.get("final_status", "")).upper() == "ACCEPTED")
+        _s_rej = sum(1 for _, r in stripe_raw.iterrows() if str(r.get("final_status", "")).upper() == "REJECTED")
+        _s_has_fp = sum(1 for _, r in stripe_raw.iterrows() if str(r.get("First payment", "")).strip() not in ("", "nan", "None", "—"))
+        _s_has_spend = sum(1 for _, r in stripe_raw.iterrows() if str(r.get("Total spend", "")).strip() not in ("", "nan", "None", "—", "$0.00", "$0"))
+        _s_cur_month = datetime.now().strftime("%Y-%m")
+        _s_fp_month = 0
+        _s_created_month = 0
+        for _, r in stripe_raw.iterrows():
+            if str(r.get("final_status", "")).upper() == "ACCEPTED":
+                _fp = str(r.get("First payment", "")).strip()
+                _cr = str(r.get("Created", "")).strip()
+                _rd = str(r.get("row_date_used", "")).strip()
+                if _fp and _fp.startswith(_s_cur_month):
+                    _s_fp_month += 1
+                if _cr and _cr.startswith(_s_cur_month):
+                    _s_created_month += 1
+                if _rd and _rd.startswith(_s_cur_month):
+                    _s_created_month += 1  # row_date_used counts too
+
+        _sc1, _sc2, _sc3, _sc4 = st.columns(4)
+        with _sc1:
+            st.metric("Total Rows", f"{len(stripe_raw):,}")
+        with _sc2:
+            st.metric("✅ ACCEPTED", f"{_s_acc:,}")
+        with _sc3:
+            st.metric("❌ REJECTED", f"{_s_rej:,}")
+        with _sc4:
+            st.metric("This Month (Accepted)", f"{_s_fp_month} (FP) / {_s_created_month} (Created)")
+
+        # Stripe API Live Verification
+        _stripe_api_key = get_secret("STRIPE_SECRET_KEY", "")
+        if _stripe_api_key and str(_stripe_api_key).startswith("sk_"):
+            with st.expander("🟢 Stripe API Live Verification", expanded=True):
+                if st.button("🔍 Verify with Stripe API", key="verify_stripe_api"):
+                    try:
+                        import stripe as _stripe_lib
+                        _stripe_lib.api_key = str(_stripe_api_key)
+                        _now = datetime.now()
+                        _ms = int(datetime(_now.year, _now.month, 1).timestamp())
+                        _all_pi = []
+                        _has_more = True
+                        _sa = None
+                        while _has_more:
+                            _params = {"created": {"gte": _ms}, "limit": 100}
+                            if _sa:
+                                _params["starting_after"] = _sa
+                            _resp = _stripe_lib.PaymentIntent.list(**_params)
+                            _all_pi.extend(_resp.data)
+                            _has_more = _resp.has_more
+                            if _has_more and _resp.data:
+                                _sa = _resp.data[-1].id
+                        _api_total = len(_all_pi)
+                        _api_accepted = sum(1 for i in _all_pi if i.status == "succeeded")
+                        _api_declined = sum(
+                            1 for i in _all_pi if i.status in ["requires_payment_method", "canceled", "payment_failed"]
+                        )
+                        _api_revenue = sum(i.amount / 100 for i in _all_pi if i.status == "succeeded")
+                        _va1, _va2, _va3, _va4 = st.columns(4)
+                        with _va1:
+                            st.metric("API Total Payments", f"{_api_total:,}")
+                        with _va2:
+                            st.metric("API Succeeded (Accepted)", f"{_api_accepted:,}")
+                        with _va3:
+                            st.metric("API Declined", f"{_api_declined:,}")
+                        with _va4:
+                            st.metric("API Revenue", f"${_api_revenue:,.2f}")
+                        if _api_accepted != _s_acc:
+                            st.warning(f"⚠️ Mismatch: Sheets ACCEPTED={_s_acc} vs API Succeeded={_api_accepted}. Pipeline may need to re-run.")
+                        else:
+                            st.success(f"✅ Verified: Sheets ACCEPTED ({_s_acc}) matches API Succeeded ({_api_accepted})")
+                    except Exception as _e:
+                        st.error(f"❌ Stripe API error: {_e}")
+        elif not _stripe_api_key:
+            with st.expander("⚪ Stripe API Verification (Not Connected)"):
+                st.info("💡 Add `STRIPE_SECRET_KEY` to Streamlit secrets for optional live Stripe API verification (cross-check sheet data).")
+                st.caption("Stripe data is already scraped via session cookies (`STRIPE_COOKIES_JSON`). The API key is only for verification.")
+
+        with st.expander("🔍 Stripe Details — Accept/Reject Breakdown"):
+            if "category" in stripe_raw.columns:
+                _cat_counts = stripe_raw.groupby("category").size().reset_index(name="Count").sort_values("Count", ascending=False)
+                st.dataframe(_cat_counts, height=300, use_container_width=True, hide_index=True)
+
+            if _s_has_fp < _s_acc:
+                st.warning(
+                    f"⚠️ Only {_s_has_fp}/{_s_acc} ACCEPTED rows have 'First payment' date. "
+                    f"Rows without First payment use 'Created' date instead. "
+                    f"If this seems wrong, check if Stripe scraper is capturing the 'first_payment' column."
+                )
+
+            st.caption(f"💡 Rows with 'First payment' date: {_s_has_fp} | Rows with 'Total spend' > $0: {_s_has_spend}")
+            st.caption("💡 Pipeline must re-run after code update to re-categorize Stripe data with the new logic.")
+
+        # Show sample of recent Stripe data
+        with st.expander("📋 Recent Stripe Data (first 10 rows)"):
+            _show_cols = [c for c in ["Email", "Customer", "First payment", "Created", "Total spend", "final_status", "category"] if c in stripe_raw.columns]
+            if _show_cols:
+                _df(stripe_raw[_show_cols].head(10), height=300)
+            else:
+                st.dataframe(stripe_raw.head(10), height=300)
+    else:
+        st.error("❌ No Stripe data loaded! Either Verified_STRIPE sheet is empty or connection failed.")
+        st.caption("💡 This means the pipeline hasn't successfully scraped Stripe data. "
+                   "Check that STRIPE_COOKIES_JSON secret is set and valid in GitHub repo secrets.")
+    st.caption("The pipeline fetches fresh data from all sources. Auto-trigger runs daily when data is stale.")
+
+    # Auto-trigger status
+    _gh_token = get_secret("GITHUB_TOKEN", "")
+    _auto_enabled = st.toggle("🔄 Auto-Trigger Pipeline (when data is stale)", value=True, key="auto_pipeline_toggle")
+    if _auto_enabled and not _gh_token:
+        st.warning("⚠️ Add `GITHUB_TOKEN` (GitHub PAT) to secrets to enable auto-trigger.")
+
+    # Show data freshness
+    _today_str2 = datetime.now().strftime("%Y-%m-%d")
+    _has_today_data = False
+    if not counts_raw.empty:
+        _dc2 = next((c for c in counts_raw.columns if "date" in c.lower()), None)
+        if _dc2:
+            _has_today_data = _today_str2 in counts_raw[_dc2].astype(str).values
+    if _has_today_data:
+        st.success(f"✅ Data is fresh — today ({_today_str2}) data exists")
+    else:
+        st.warning(f"⚠️ Data is stale — no data for today ({_today_str2})")
+
+    # Manual trigger buttons
+    _trig_c1, _trig_c2 = st.columns(2)
+    with _trig_c1:
+        if st.button("🚀 Run Pipeline (Local)", type="secondary", use_container_width=True):
+            with st.spinner("Running pipeline..."):
+                try:
+                    import subprocess
+                    _root_dir = os.path.dirname(os.path.abspath(__file__))
+                    _result = subprocess.run(
+                        ["python3", "daily_pipeline.py"],
+                        capture_output=True, text=True, timeout=180,
+                        cwd=_root_dir,
+                    )
+                    if _result.returncode == 0:
+                        st.success("✅ Pipeline completed! Refresh page to see updated data.")
+                        if _result.stdout:
+                            st.code(_result.stdout[-800:])
+                        st.cache_data.clear()
+                    else:
+                        st.warning("Pipeline finished with warnings")
+                        if _result.stderr:
+                            st.code(_result.stderr[-800:])
+                except FileNotFoundError:
+                    st.info("Pipeline scripts not available on Streamlit Cloud. Use Remote trigger.")
+                except Exception as _e:
+                    st.info(f"Run manually: `python3 daily_pipeline.py` ({_e})")
+
+    with _trig_c2:
+        if _gh_token:
+            if st.button("⚡ Trigger Remote Pipeline", type="primary", use_container_width=True):
+                try:
+                    import urllib.request
+                    import json as _json
+                    _repo = "fozayelibnayaz/eagle3d-kpi-automation"
+                    _url = f"https://api.github.com/repos/{_repo}/actions/workflows/daily_pipeline.yml/dispatches"
+                    _data = _json.dumps({"ref": "main"}).encode()
+                    _req = urllib.request.Request(
+                        _url, data=_data, method="POST",
+                        headers={"Authorization": f"token {_gh_token}", "Accept": "application/vnd.github+json"}
+                    )
+                    with urllib.request.urlopen(_req, timeout=15) as _r:
+                        if _r.status in (200, 204):
+                            st.success("✅ Pipeline triggered! Data updates in ~5 min. Refresh then.")
+                except Exception as _e:
+                    st.error(f"Failed: {_e}")
+        else:
+            st.button("⚡ Trigger Remote Pipeline", disabled=True, use_container_width=True)
+            st.caption("🔑 Add `GITHUB_TOKEN` (a GitHub PAT with `repo` + `workflow` scope) to secrets to enable this button.")
+            st.markdown("[👉 Trigger Manually on GitHub →](https://github.com/fozayelibnayaz/eagle3d-kpi-automation/actions/workflows/daily_pipeline.yml)")
+
+    st.markdown("---")
+    st.markdown("#### 🔧 Add / Update Secrets (Local Only)")
+    st.caption("For Streamlit Cloud, add secrets at **share.streamlit.io → Settings → Secrets**.")
+    with st.expander("📝 Edit local secrets.toml"):
+        _secret_text = st.text_area("secrets.toml content", value="""# API Keys
+GROQ_API_KEY = "your-groq-key"
+GEMINI_API_KEY = "your-gemini-key"
+""", height=180)
+        if st.button("💾 Save secrets.toml"):
+            try:
+                os.makedirs(".streamlit", exist_ok=True)
+                with open(".streamlit/secrets.toml", "w") as _f:
+                    _f.write(_secret_text)
+                st.success("✅ Saved! Refresh page to apply.")
+            except OSError:
+                st.warning("⚠️ Cannot write here (read-only). Add secrets in share.streamlit.io → Settings → Secrets.")
+
+    st.markdown("---")
+    st.markdown("#### 🔄 Clear Cache & Refresh Data")
+    if st.button("🔄 Clear All Cache", use_container_width=True):
+        st.cache_data.clear()
+        st.success("✅ Cache cleared! Refresh page to reload all data.")
+
+# ═══════════════════════════════════════════════════════════════
+# FOOTER
+# ═══════════════════════════════════════════════════════════════
+st.divider()
+_fc1, _fc2, _fc3 = st.columns(3)
+with _fc1:
+    st.caption(
+        f"🦅 Eagle Analytics Hub v7.2 | "
+        f"{datetime.now().strftime('%Y-%m-%d %H:%M')}"
+    )
+with _fc2:
+    st.caption("Pipeline: Daily 12:00 UTC")
+with _fc3:
+    _ai_mod = MOD.get("ai_engine")
+    if _ai_mod:
+        _pr = _ai_mod._get_provider()
+        _prl = (
+            "⚡ Groq" if _pr == "groq"
+            else "💎 Gemini" if _pr == "gemini"
+            else "🧠 Rules"
+        )
+        st.caption(f"AI: {_prl}")
+

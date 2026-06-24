@@ -243,19 +243,16 @@ def alert_linkedin():
     if not sb:
         return ""
     try:
-        from datetime import date as _d, timedelta as _td
-        today = _d.today()
-        week_ago  = (today - _td(days=7)).isoformat()
-        month_ago = (today - _td(days=30)).isoformat()
-        year_ago  = (today - _td(days=365)).isoformat()
-        today_str = today.isoformat()
-        yest_str  = (today - _td(days=1)).isoformat()
+        today_dt = date.today()
+        today_str = today_dt.isoformat()
+        yest_str  = (today_dt - timedelta(days=1)).isoformat()
+        week_ago  = (today_dt - timedelta(days=7)).isoformat()
+        month_ago = (today_dt - timedelta(days=30)).isoformat()
 
-        def hl(start, end=today_str):
-            r = sb.table("linkedin_highlights_daily").select("*").gte("snapshot_date", start).lte("snapshot_date", end).order("snapshot_date", desc=True).execute().data or []
+        def hl_range(start_dt, end_dt=today_str):
+            r = sb.table("linkedin_highlights_daily").select("*").gte("snapshot_date", start_dt).lte("snapshot_date", end_dt).order("snapshot_date", desc=True).execute().data or []
             if not r:
                 return {}
-            # Sum impressions/reactions/comments (deltas) over range
             agg = {"impressions":0, "reactions":0, "comments":0, "reposts":0, "clicks":0,
                    "page_views":0, "unique_visitors":0}
             for row in r:
@@ -266,94 +263,396 @@ def alert_linkedin():
             agg["snapshot_date"]          = r[0].get("snapshot_date", "")
             return agg
 
-        latest = hl(today_str, today_str)
+        latest = hl_range(today_str, today_str)
         if not latest:
-            # Try yesterday as "latest"
-            latest = hl(yest_str, yest_str)
+            latest = hl_range(yest_str, yest_str)
         if not latest:
-            return "
-💼 <b>LINKEDIN</b> No data yet
-"
+            return "\n" + chr(128188) + " <b>LINKEDIN</b> No data yet\n"
 
-        week  = hl(week_ago)
-        month = hl(month_ago)
-        all_time = hl("2020-01-01")
+        week  = hl_range(week_ago)
+        month = hl_range(month_ago)
+        all_time = hl_range("2020-01-01")
 
         posts_count = sb.table("linkedin_posts").select("count", count="exact").execute().count or 0
         top_post = sb.table("linkedin_posts").select("title,impressions,reactions").order("impressions", desc=True).limit(1).execute().data
         top = top_post[0] if top_post else {}
 
-        msg = (
-            f"
-�� <b>LINKEDIN ALERT</b>
-"
-            f"━━━━━━━━━━━━━━━━━━━━━━
-"
-            f"📅 Latest snapshot: <code>{latest.get('snapshot_date', 'N/A')}</code>
-
-"
-            f"📊 <b>Today</b>
-"
-            f"├ 👁 Impressions: <code>{latest.get('impressions',0):,}</code>
-"
-            f"├ 👍 Reactions:   <code>{latest.get('reactions',0)}</code>
-"
-            f"├ 💬 Comments:    <code>{latest.get('comments',0)}</code>
-"
-            f"└ 🔁 Reposts:     <code>{latest.get('reposts',0)}</code>
-
-"
-            f"📅 <b>Last 7 Days</b>
-"
-            f"├ 👁 Impressions: <code>{week.get('impressions',0):,}</code>
-"
-            f"├ 👍 Reactions:   <code>{week.get('reactions',0)}</code>
-"
-            f"└ 💬 Comments:    <code>{week.get('comments',0)}</code>
-
-"
-            f"📆 <b>Last 30 Days</b>
-"
-            f"├ 👁 Impressions: <code>{month.get('impressions',0):,}</code>
-"
-            f"├ 👍 Reactions:   <code>{month.get('reactions',0)}</code>
-"
-            f"└ 💬 Comments:    <code>{month.get('comments',0)}</code>
-
-"
-            f"🏆 <b>All Time</b>
-"
-            f"├ 👁 Impressions: <code>{all_time.get('impressions',0):,}</code>
-"
-            f"├ 👍 Reactions:   <code>{all_time.get('reactions',0)}</code>
-"
-            f"└ 💬 Comments:    <code>{all_time.get('comments',0)}</code>
-
-"
-            f"👥 <b>Audience (now)</b>
-"
-            f"├ Followers:        <code>{latest.get('total_followers',0):,}</code>
-"
-            f"├ Page Views:       <code>{latest.get('page_views',0):,}</code>
-"
-            f"├ Unique Visitors:  <code>{latest.get('unique_visitors',0):,}</code>
-"
-            f"└ Newsletter:       <code>{latest.get('newsletter_subscribers',0):,}</code>
-
-"
-            f"📝 <b>Content</b>
-"
-            f"├ Posts tracked: <code>{posts_count}</code>
-"
-        )
+        msg = "\n" + chr(128188) + " <b>LINKEDIN ALERT</b>\n"
+        msg += "----------------------------------------\n"
+        msg += f"Latest snapshot: <code>{latest.get('snapshot_date', 'N/A')}</code>\n\n"
+        msg += "<b>Today</b>\n"
+        msg += f"- Impressions: <code>{latest.get('impressions',0):,}</code>\n"
+        msg += f"- Reactions:   <code>{latest.get('reactions',0)}</code>\n"
+        msg += f"- Comments:    <code>{latest.get('comments',0)}</code>\n"
+        msg += f"- Reposts:     <code>{latest.get('reposts',0)}</code>\n\n"
+        msg += "<b>Last 7 Days</b>\n"
+        msg += f"- Impressions: <code>{week.get('impressions',0):,}</code>\n"
+        msg += f"- Reactions:   <code>{week.get('reactions',0)}</code>\n"
+        msg += f"- Comments:    <code>{week.get('comments',0)}</code>\n\n"
+        msg += "<b>Last 30 Days</b>\n"
+        msg += f"- Impressions: <code>{month.get('impressions',0):,}</code>\n"
+        msg += f"- Reactions:   <code>{month.get('reactions',0)}</code>\n"
+        msg += f"- Comments:    <code>{month.get('comments',0)}</code>\n\n"
+        msg += "<b>All Time</b>\n"
+        msg += f"- Impressions: <code>{all_time.get('impressions',0):,}</code>\n"
+        msg += f"- Reactions:   <code>{all_time.get('reactions',0)}</code>\n"
+        msg += f"- Comments:    <code>{all_time.get('comments',0)}</code>\n\n"
+        msg += "<b>Audience (now)</b>\n"
+        msg += f"- Followers:        <code>{latest.get('total_followers',0):,}</code>\n"
+        msg += f"- Page Views:       <code>{latest.get('page_views',0):,}</code>\n"
+        msg += f"- Unique Visitors:  <code>{latest.get('unique_visitors',0):,}</code>\n"
+        msg += f"- Newsletter:       <code>{latest.get('newsletter_subscribers',0):,}</code>\n\n"
+        msg += "<b>Content</b>\n"
+        msg += f"- Posts tracked: <code>{posts_count}</code>\n"
         if top:
-            msg += f"└ 🏆 Top: <code>{_esc(top.get('title','')[:50])}</code> ({top.get('impressions',0):,} imp)
-"
+            msg += f"- Top: <code>{_esc(top.get('title','')[:50])}</code> ({top.get('impressions',0):,} imp)\n"
         return msg
     except Exception as e:
-        return f"
-💼 <b>LINKEDIN</b> Error: {_esc(str(e))[:200]}
-"
+        return "\n" + chr(128188) + " <b>LINKEDIN</b> Error: " + _esc(str(e))[:200] + "\n"
+
+
+
+def alert_stripe():
+    sb = _get_sb()
+    if not sb:
+        return ""
+    try:
+        today = date.today().strftime("%Y-%m-%d")
+        month_start = date.today().strftime("%Y-%m-01")
+        last_month = date.today().replace(day=1) - timedelta(days=1)
+        last_month_start = last_month.replace(day=1).strftime("%Y-%m-%d")
+
+        all_paid = sb.table("payments").select("count", count="exact").eq("final_status","ACCEPTED").execute().count or 0
+        today_paid = sb.table("payments").select("count", count="exact").eq("final_status","ACCEPTED").gte("first_payment_date", today).execute().count or 0
+        month_paid = sb.table("payments").select("count", count="exact").eq("final_status","ACCEPTED").gte("first_payment_date", month_start).execute().count or 0
+        last_month_paid = sb.table("payments").select("count", count="exact").eq("final_status","ACCEPTED").gte("first_payment_date", last_month_start).lte("first_payment_date", last_month.strftime("%Y-%m-%d")).execute().count or 0
+
+        # Revenue
+        pays = sb.table("payments").select("total_spend,first_payment_date").eq("final_status","ACCEPTED").execute().data or []
+        total_rev = sum(float(p.get("total_spend") or 0) for p in pays)
+        month_rev = sum(float(p.get("total_spend") or 0) for p in pays if str(p.get("first_payment_date","")).startswith(date.today().strftime("%Y-%m")))
+
+        msg = (
+            f"\n💳 <b>STRIPE ALERT</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"📅 Today: <code>{today_paid}</code> new paid\n"
+            f"📆 This Month: <code>{month_paid}</code> (last mo: {last_month_paid})\n"
+            f"🏆 All Time: <code>{all_paid}</code> customers\n"
+            f"💰 Month Revenue: <code>${month_rev:,.2f}</code>\n"
+            f"💎 Total Revenue: <code>${total_rev:,.2f}</code>\n"
+            f"📊 Avg Subscription: <code>${total_rev/all_paid if all_paid else 0:,.2f}</code>\n"
+        )
+        return msg
+    except Exception as e:
+        return f"\n💳 <b>STRIPE</b> Error: {_esc(str(e))[:200]}\n"
+
+
+# ═══════════════════════════════════════════════
+# ALERT 5: AI INSIGHTS - cross-platform anomalies
+# ═══════════════════════════════════════════════
+def alert_ai_insights():
+    try:
+        from ai_assistant_engine import get_full_context
+        from ai_assistant_engine import _call_groq
+        ctx = get_full_context("all")
+
+        prompt = f"""You are a business analyst. Look at this REAL data and identify the TOP 3 most important things to know about right now.
+
+DATA:
+{json.dumps(ctx, indent=2, default=str)[:4000]}
+
+Return exactly 3 short alerts:
+1. [Most positive thing]
+2. [Most concerning thing]
+3. [Most actionable opportunity]
+
+Each alert should be 1-2 sentences max, with specific numbers from the data."""
+
+        ans, err = _call_groq([{"role":"user","content":prompt}], max_tokens=600, temperature=0.2)
+        if ans:
+            return f"\n🤖 <b>AI INSIGHTS (Top 3)</b>\n━━━━━━━━━━━━━━━━━━━━━━\n{_esc(ans)[:1500]}\n"
+    except Exception as e:
+        return f"\n🤖 <b>AI INSIGHTS</b> Error: {_esc(str(e))[:200]}\n"
+    return ""
+
+
+
+
+# ═══════════════════════════════════════════════
+# ALERT 6: YOUTUBE DETAILED
+# ═══════════════════════════════════════════════
+def alert_youtube():
+    try:
+        from youtube_command_center import get_cached_or_fetch
+        d = get_cached_or_fetch(period_days=30)
+        ch = d.get("channel", {})
+        ana = d.get("analytics", {})
+        vids = d.get("videos", [])
+        if not ch:
+            return "\n📺 <b>YOUTUBE</b> No data\n"
+        top5 = sorted(vids, key=lambda v: v.get("views",0), reverse=True)[:5]
+        worst5 = sorted([v for v in vids if v.get("views",0)>0], key=lambda v: v.get("views",0))[:5]
+        total_likes = sum(v.get("likes",0) for v in vids)
+        total_comments = sum(v.get("comments",0) for v in vids)
+        engagement = ((total_likes+total_comments) / max(ch.get("total_views",1),1)) * 100
+        dead_count = sum(1 for v in vids if v.get("views_per_day",0) < 1)
+
+        msg = (
+            f"\n📺 <b>YOUTUBE ALERT</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"📋 Channel: <code>{_esc(ch.get('title',''))[:40]}</code>\n"
+            f"\n"
+            f"📊 <b>Channel Stats</b>\n"
+            f"├ 👥 Subscribers: <code>{ch.get('subscribers',0):,}</code>\n"
+            f"├ 👁 Total Views: <code>{ch.get('total_views',0):,}</code>\n"
+            f"├ 📹 Videos: <code>{ch.get('video_count',0)}</code>\n"
+            f"├ 👍 Total Likes: <code>{total_likes:,}</code>\n"
+            f"├ 💬 Comments: <code>{total_comments}</code>\n"
+            f"└ 📊 Engagement: <code>{engagement:.2f}%</code>\n"
+            f"\n"
+            f"📊 <b>Last 30 Days</b>\n"
+            f"├ 👁 Views: <code>{ana.get('views',0):,}</code>\n"
+            f"├ ⏱ Watch Hours: <code>{ana.get('watch_hours',0):,.0f}h</code>\n"
+            f"├ ➕ Subs Gained: <code>{ana.get('subscribers_gained',0)}</code>\n"
+            f"└ 💰 Revenue: <code>${d.get('revenue',{}).get('estimated',0):,.2f}</code>\n"
+            f"\n"
+            f"🚨 <b>Health</b>\n"
+            f"├ 🪦 Dead videos: <code>{dead_count}</code>\n"
+            f"└ ❌ Engagement: " + ("🔴 Critical (<1%)" if engagement < 1 else "🟡 Low" if engagement < 2 else "🟢 Healthy") + "\n"
+            f"\n"
+            f"🏆 <b>Top 3 Videos</b>\n"
+        )
+        for v in top5[:3]:
+            msg += f"• {_esc(v.get('title','')[:50])}: {v.get('views',0):,} views\n"
+        return msg
+    except Exception as e:
+        return f"\n📺 <b>YOUTUBE</b> Error: {_esc(str(e))[:200]}\n"
+
+
+# ═══════════════════════════════════════════════
+# ALERT 7: GA4 DETAILED
+# ═══════════════════════════════════════════════
+def alert_ga4():
+    try:
+        from google.analytics.data_v1beta import BetaAnalyticsDataClient
+        from google.analytics.data_v1beta.types import RunReportRequest, DateRange, Dimension, Metric
+        from google.oauth2 import service_account
+        import json as _json
+        SCOPES = ["https://www.googleapis.com/auth/analytics.readonly"]
+        creds = None
+
+        # Try 1: Streamlit secrets ga4_service_account
+        try:
+            import streamlit as st
+            sa = dict(st.secrets["ga4_service_account"])
+            if "private_key" in sa:
+                sa["private_key"] = sa["private_key"].replace("\\n","\n")
+            creds = service_account.Credentials.from_service_account_info(sa, scopes=SCOPES)
+        except Exception:
+            pass
+
+        # Try 2: google_creds.json file (GitHub Actions writes this)
+        if not creds and os.path.exists("google_creds.json"):
+            try:
+                creds = service_account.Credentials.from_service_account_file("google_creds.json", scopes=SCOPES)
+            except Exception as e:
+                print(f"google_creds.json load err: {e}")
+
+        # Try 3: GOOGLE_CREDS_JSON env var
+        if not creds:
+            gc_json = os.environ.get("GOOGLE_CREDS_JSON", "")
+            if gc_json:
+                try:
+                    sa = _json.loads(gc_json)
+                    if "private_key" in sa:
+                        sa["private_key"] = sa["private_key"].replace("\\n","\n")
+                    creds = service_account.Credentials.from_service_account_info(sa, scopes=SCOPES)
+                except Exception as e:
+                    print(f"GOOGLE_CREDS_JSON parse err: {e}")
+
+        # Try 4: Streamlit GOOGLE_CREDS
+        if not creds:
+            try:
+                import streamlit as st
+                sa = dict(st.secrets["GOOGLE_CREDS"])
+                if "private_key" in sa:
+                    sa["private_key"] = sa["private_key"].replace("\\n","\n")
+                creds = service_account.Credentials.from_service_account_info(sa, scopes=SCOPES)
+            except Exception:
+                pass
+
+        if not creds:
+            return "\n🌐 <b>GA4</b> No credentials (tried ga4_service_account, google_creds.json, GOOGLE_CREDS_JSON, GOOGLE_CREDS)\n"
+
+        pid = os.environ.get("GA4_PROPERTY_ID","374525971")
+        try:
+            import streamlit as st
+            pid = str(st.secrets.get("GA4_PROPERTY_ID", pid)).strip()
+        except Exception:
+            pass
+
+        client = BetaAnalyticsDataClient(credentials=creds)
+        today = date.today().strftime("%Y-%m-%d")
+        month_start = date.today().strftime("%Y-%m-01")
+        last_month_end = (date.today().replace(day=1) - timedelta(days=1)).strftime("%Y-%m-%d")
+        last_month_start = (date.today().replace(day=1) - timedelta(days=1)).replace(day=1).strftime("%Y-%m-%d")
+
+        def _q(start, end):
+            r = client.run_report(RunReportRequest(
+                property=f"properties/{pid}",
+                date_ranges=[DateRange(start_date=start, end_date=end)],
+                metrics=[Metric(name="sessions"), Metric(name="totalUsers"), Metric(name="screenPageViews")],
+            ))
+            if r.rows:
+                row = r.rows[0]
+                return (int(row.metric_values[0].value), int(row.metric_values[1].value), int(row.metric_values[2].value))
+            return (0,0,0)
+
+        t_s, t_u, t_p = _q(today, today)
+        m_s, m_u, m_p = _q(month_start, today)
+        l_s, l_u, l_p = _q(last_month_start, last_month_end)
+
+        # Top countries (last 30d)
+        rc = client.run_report(RunReportRequest(
+            property=f"properties/{pid}",
+            date_ranges=[DateRange(start_date=month_start, end_date=today)],
+            dimensions=[Dimension(name="country")],
+            metrics=[Metric(name="sessions")],
+            limit=5,
+        ))
+        countries = [(rw.dimension_values[0].value, int(rw.metric_values[0].value)) for rw in rc.rows]
+
+        def d(c,p):
+            if p == 0: return ""
+            pct = (c-p)/p*100
+            return f"{'+' if pct>=0 else ''}{pct:.0f}%"
+
+        msg = (
+            f"\n🌐 <b>GA4 ALERT</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"📅 <b>Today</b>\n"
+            f"├ 👥 Users: <code>{t_u:,}</code>\n"
+            f"├ 📊 Sessions: <code>{t_s:,}</code>\n"
+            f"└ 📄 Page Views: <code>{t_p:,}</code>\n"
+            f"\n"
+            f"📆 <b>This Month vs Last Month</b>\n"
+            f"├ 👥 Users: <code>{m_u:,}</code> (last {l_u:,}) {d(m_u,l_u)}\n"
+            f"├ 📊 Sessions: <code>{m_s:,}</code> (last {l_s:,}) {d(m_s,l_s)}\n"
+            f"└ 📄 Page Views: <code>{m_p:,}</code> (last {l_p:,}) {d(m_p,l_p)}\n"
+            f"\n"
+            f"�� <b>Top 5 Countries (this month)</b>\n"
+        )
+        for country, sess in countries:
+            msg += f"• {_esc(country)}: <code>{sess:,}</code>\n"
+        return msg
+    except Exception as e:
+        return f"\n🌐 <b>GA4</b> Error: {_esc(str(e))[:200]}\n"
+
+
+# ═══════════════════════════════════════════════
+# ALERT 8: CROSS-PLATFORM CORRELATION
+# ═══════════════════════════════════════════════
+def alert_cross_platform():
+    sb = _get_sb()
+    if not sb:
+        return ""
+    try:
+        # Get all platform snapshots
+        today = date.today().strftime("%Y-%m-%d")
+        month_start = date.today().strftime("%Y-%m-01")
+
+        # KPI today
+        s_t = sb.table("signups").select("count",count="exact").eq("final_status","ACCEPTED").gte("signup_date",today).execute().count or 0
+        p_t = sb.table("payments").select("count",count="exact").eq("final_status","ACCEPTED").gte("first_payment_date",today).execute().count or 0
+
+        # LinkedIn latest
+        hl = sb.table("linkedin_highlights_daily").select("*").order("snapshot_date",desc=True).limit(1).execute().data
+        li_imp = hl[0].get("impressions",0) if hl else 0
+        li_followers = hl[0].get("total_followers",0) if hl else 0
+
+        # Detect cross-platform patterns
+        msg = (
+            f"\n🔗 <b>CROSS-PLATFORM CORRELATION</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        )
+
+        # Pattern detections
+        patterns = []
+        if s_t == 0 and li_imp > 1000:
+            patterns.append("⚠️ LinkedIn has impressions but ZERO signups - landing page issue?")
+        if s_t > 5 and p_t == 0:
+            patterns.append(f"⚠️ {s_t} signups but 0 paid today - check upgrade flow")
+        if li_followers > 2500 and s_t < 3:
+            patterns.append(f"⚠️ {li_followers:,} LinkedIn followers but only {s_t} signups today - audience-product mismatch")
+        if not patterns:
+            patterns.append("✅ No critical cross-platform issues detected today")
+
+        msg += "\n".join(patterns) + "\n\n"
+
+        msg += (
+            f"📊 <b>System Health</b>\n"
+            f"├ KPI: " + ("🟢" if s_t > 0 else "🔴") + f" Today {s_t} signups\n"
+            f"├ LinkedIn: " + ("��" if li_imp > 100 else "🟡") + f" {li_imp:,} impressions\n"
+            f"└ Stripe: " + ("🟢" if p_t > 0 else "🟡") + f" {p_t} paid today\n"
+        )
+
+        return msg
+    except Exception as e:
+        return f"\n🔗 <b>CROSS-PLATFORM</b> Error: {_esc(str(e))[:200]}\n"
+
+
+# ═══════════════════════════════════════════════
+# MAIN: send all alerts
+# ═══════════════════════════════════════════════
+def send_all_alerts():
+    print("Building comprehensive alerts...")
+    today = date.today().strftime("%Y-%m-%d")
+
+    header = f"🦅 <b>EAGLE3D COMPREHENSIVE ALERT — {today}</b>\n━━━━━━━━━━━━━━━━━━━━━━\n"
+
+    parts = []
+    print("  Building KPI...")
+    parts.append(alert_kpi_detailed())
+    print("  Building GA4...")
+    parts.append(alert_ga4())
+    print("  Building YouTube...")
+    parts.append(alert_youtube())
+    print("  Building LinkedIn...")
+    parts.append(alert_linkedin())
+    print("  Building Stripe...")
+    parts.append(alert_stripe())
+    print("  Building Customer Success...")
+    parts.append(alert_customer_success())
+    print("  Building Cross-Platform...")
+    parts.append(alert_cross_platform())
+    print("  Building AI insights...")
+    parts.append(alert_ai_insights())
+
+    footer = (
+        f"\n━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🔗 <a href=\"https://eagle3d-kpi-automation.streamlit.app/\">Open Dashboard</a>\n"
+        f"<i>Sent at {datetime.utcnow().strftime('%Y-%m-%d %H:%M')} UTC</i>"
+    )
+
+    # Send each part separately with delay to avoid Telegram rate limit
+    import time as _time
+    sent = 0
+    for idx, p in enumerate(parts):
+        if p and p.strip():
+            print(f"  Sending section {idx+1}/{len(parts)} ({len(p)} chars)...")
+            if _send_telegram(p):
+                sent += 1
+                print(f"    SENT")
+            else:
+                print(f"    FAILED")
+            _time.sleep(4)  # Conservative delay - Telegram bot 1msg/sec per chat
+
+    if footer:
+        _time.sleep(2)
+        _send_telegram(footer)
+
+    print(f"Sent {sent}/{len(parts)} alert sections")
+    return sent
 
 
 if __name__ == "__main__":

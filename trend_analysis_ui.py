@@ -5,6 +5,18 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
+def _safe_df(rows):
+    """Convert rows to DataFrame with all object columns as string (Arrow-safe)."""
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return df
+    for col in df.columns:
+        if df[col].dtype == "object":
+            df[col] = df[col].astype(str)
+    return df
+
+
+
 
 def _format_metric_card(label, current, previous, delta, delta_pct, format_str="{:,.0f}"):
     """Render a metric card with current value + delta vs previous month."""
@@ -55,7 +67,7 @@ def render_trend_section(platform="kpi", current_month=None):
                     "Delta":          m.get("delta", 0),
                     "% Change":       f"{m.get('delta_pct', 0):.1f}%" if m.get("delta_pct") is not None else "—",
                 })
-            (lambda _d: (_d.assign(**{c: _d[c].astype(str) for c in _d.columns if "Growth" in c or "% Change" in c}) if not _d.empty else _d))(pd.DataFrame(rows)).pipe(lambda _d: st.dataframe(_d, use_container_width=True, hide_index=True)
+            st.dataframe(_safe_df(rows), use_container_width=True, hide_index=True)
 
     elif platform == "linkedin":
         data = get_full_trend_linkedin(current_month)
@@ -109,7 +121,7 @@ def render_trend_section(platform="kpi", current_month=None):
                     "Δ": v.get("delta", 0),
                     "% Change": f"{v.get('delta_pct', 0):+.1f}%" if v.get("delta_pct") is not None else "—",
                 })
-            (lambda _d: (_d.assign(**{c: _d[c].astype(str) for c in _d.columns if "Growth" in c or "% Change" in c}) if not _d.empty else _d))(pd.DataFrame(rows)).pipe(lambda _d: st.dataframe(_d, use_container_width=True, hide_index=True)
+            st.dataframe(_safe_df(rows), use_container_width=True, hide_index=True)
 
     elif platform == "ga4":
         data = get_full_trend_ga4(current_month)
