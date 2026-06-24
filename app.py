@@ -3461,30 +3461,6 @@ GEMINI_API_KEY = "your-gemini-key"
         st.cache_data.clear()
         st.success("✅ Cache cleared! Refresh page to reload all data.")
 
-# ═══════════════════════════════════════════════════════════════
-# FOOTER
-# ═══════════════════════════════════════════════════════════════
-st.divider()
-_fc1, _fc2, _fc3 = st.columns(3)
-with _fc1:
-    st.caption(
-        f"🦅 Eagle Analytics Hub v7.2 | "
-        f"{datetime.now().strftime('%Y-%m-%d %H:%M')}"
-    )
-with _fc2:
-    st.caption("Pipeline: Daily 12:00 UTC")
-with _fc3:
-    _ai_mod = MOD.get("ai_engine")
-    if _ai_mod:
-        _pr = _ai_mod._get_provider()
-        _prl = (
-            "⚡ Groq" if _pr == "groq"
-            else "💎 Gemini" if _pr == "gemini"
-            else "🧠 Rules"
-        )
-        st.caption(f"AI: {_prl}")
-
-
 elif page == "⚙️ Settings":
 
     # ── TELEGRAM ALERTS CONTROL CENTER ──
@@ -4028,4 +4004,29 @@ with _fc3:
             else "🧠 Rules"
         )
         st.caption(f"AI: {_prl}")
+
+
+_fc1, _fc2, _fc3 = st.columns(3)
+with _fc1:
+    st.caption(
+        f"🦅 Eagle Analytics Hub v7.2 | "
+        f"{datetime.now().strftime('%Y-%m-%d %H:%M')}"
+    )
+with _fc2:
+    st.caption("Pipeline: Daily 12:00 UTC")
+with _fc3:
+    _ai_mod = MOD.get("ai_engine")
+    if _ai_mod:
+        _pr = _ai_mod._get_provider()
+        _prl = (
+            "⚡ Groq" if _pr == "groq"
+            else "💎 Gemini" if _pr == "gemini"
+            else "🧠 Rules"
+        )
+        st.caption(f"AI: {_prl}")
+
+# ═══════════════════════════════════════════════════════════════
+# FOOTER
+# ═══════════════════════════════════════════════════════════════
+st.divider()
 
