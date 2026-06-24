@@ -177,7 +177,9 @@ def write_tab_data(tab_name, rows):
         if not v: return None
         s = str(v).strip()
         for fmt in ("%Y-%m-%d %H:%M:%S","%Y-%m-%d","%m/%d/%y, %I:%M %p","%m/%d/%Y, %I:%M %p",
-                    "%a, %d %b %Y %H:%M:%S %Z","%a, %d %b %Y %H:%M:%S GMT","%b %d, %Y"):
+                    "%a %b %d %Y","%a %b %d %Y %H:%M:%S",
+                    "%a, %d %b %Y %H:%M:%S %Z","%a, %d %b %Y %H:%M:%S GMT",
+                    "%b %d, %Y","%d %b %Y","%m/%d/%Y","%m/%d/%y","%d/%m/%Y"):
             try:
                 return _dt.strptime(s.split("+")[0], fmt).strftime("%Y-%m-%d")
             except Exception:
