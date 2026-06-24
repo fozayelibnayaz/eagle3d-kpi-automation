@@ -49,6 +49,15 @@ def main():
 
     results = {}
 
+    # ── STAGE 0: Fill any data gaps from missed pipeline runs ──
+    try:
+        from data_gap_filler import run as _fill_gaps
+        log("STAGE 0: Checking for data gaps...")
+        _gap_result = _fill_gaps()
+        log(f"Gap filler: initial={_gap_result.get('initial_gaps',0)} final={_gap_result.get('final_gaps',0)}")
+    except Exception as _ge:
+        log(f"Gap filler error (non-fatal): {_ge}")
+
     def s1():
         # Run scrape_kpi.py as subprocess - guarantees fresh interpreter without asyncio loop
         import subprocess as _sp, sys as _sys
