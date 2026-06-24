@@ -212,305 +212,33 @@ def main():
     ok5, e5 = run_stage(5, "YouTube Data Fetch", s5)
     results["stage5_youtube"] = "ok" if ok5 else f"failed: {e5}"
 
-    # ── LinkedIn Scrape + Auto-Accumulate (Stage 6) ──
+    # ── LinkedIn Scrape via Daily Pipeline (Stage 6) ──
     def s6():
-        from linkedin_connector import (
-            scrape_public_metrics, scrape_with_playwright, scrape_with_cookies,
-            scrape_analytics_playwright,
-            has_cookies, is_configured, get_status,
-            save_manual_entry, save_posts, get_manual_history,
-        )
-        from pathlib import Path as _P
-        import json as _json
-        if not is_configured():
-            log("LinkedIn: Not configured — skipping")
-            return
-
-        # ── FIRST-RUN CHECK: If no historical data, do initial backfill ──
-        _li_daily_path = _P("data_output") / "linkedin_daily.json"
-        _needs_backfill = False
-        _backfill_days = 0
-        if not _li_daily_path.exists():
-            _needs_backfill = True
-            _backfill_days = 365
-        else:
+        """Run our LinkedIn daily pipeline as subprocess - writes to Supabase + JSON cache."""
+        import subprocess as _sp, sys as _sys
+        log("Running linkedin_daily_pipeline.py as subprocess...")
+        r = _sp.run([_sys.executable, "linkedin_daily_pipeline.py"], capture_output=False)
+        if r.returncode != 0:
+            log(f"LinkedIn pipeline exited with code {r.returncode} (non-fatal)")
+        # Also keep legacy linkedin_connector daily entry for backward compat
+        try:
+            from linkedin_connector import scrape_authenticated, save_daily_entry
+            log("LinkedIn: Also running legacy daily entry save...")
             try:
-                _ld = _json.loads(_li_daily_path.read_text())
-                _entries = _ld.get("entries", []) if isinstance(_ld, dict) else _ld
-                if len(_entries) < 30:
-                    _needs_backfill = True
-                    _backfill_days = 365  # Always backfill 365 days on first run
-            except Exception:
-                _needs_backfill = True
-                _backfill_days = 365
-
-        if _needs_backfill:
-            log(f"LinkedIn: First-run detected — backfilling {_backfill_days} days of historical data...")
-            try:
-                # Try authenticated scrape first for best baseline
-                _baseline = {}
-                if has_cookies():
-                    try:
-                        log("LinkedIn: Trying authenticated scrape for baseline...")
-                        _baseline = scrape_with_cookies()
-                        if _baseline.get("error") or not _baseline.get("followers"):
-                            log("LinkedIn: Auth baseline failed, trying public...")
-                            _baseline = scrape_public_metrics()
-                        else:
-                            log(f"LinkedIn: Auth baseline OK — {_baseline.get('followers', 0)} followers, {len(_baseline.get('posts', []))} posts")
-                    except Exception as e:
-                        log(f"LinkedIn: Auth baseline error: {e}")
-                        _baseline = scrape_public_metrics()
-                else:
-                    _baseline = scrape_public_metrics()
-
-                if not _baseline.get("error"):
-                    _followers = _baseline.get("followers", 0)
-                    _company = _baseline.get("company_name", "Eagle 3D Streaming")
-                    _industry = _baseline.get("industry", "")
-                    _employees = _baseline.get("employees", "")
-                    # Get analytics data from authenticated scrape
-                    _impression_count = _baseline.get("impressionCount", 0)
-                    _unique_visitors = _baseline.get("uniqueVisitors", 0)
-                    _total_page_views = _baseline.get("totalPageViews", 0)
-                    _like_count = _baseline.get("likeCount", 0)
-                    _comment_count = _baseline.get("commentCount", 0)
-
-                    # Create historical entries for the past 365 days
-                    from datetime import timedelta as _td
-                    # Estimate daily growth rate from current followers
-                    # LinkedIn company pages grow ~1-5 followers/day on average
-                    _daily_growth = max(1, _followers // 1000) if _followers > 0 else 1
-                    for _i in range(_backfill_days, 0, -1):
-                        _d = (datetime.now() - _td(days=_i)).strftime("%Y-%m-%d")
-                        _est_followers = max(0, _followers - (_backfill_days - _i) * _daily_growth)
-                        _entry = {
-                            "date": _d,
-                            "followers": _est_followers,
-                            "company_name": _company,
-                            "employees": _employees,
-                            "industry": _industry,
-                            "impressions": max(0, _impression_count // _backfill_days) if _impression_count else 0,
-                            "unique_visitors": max(0, _unique_visitors // _backfill_days) if _unique_visitors else 0,
-                            "scraped_at": f"{_d}T12:00:00",
-                            "backfilled": True,
-                        }
-                        save_manual_entry(_entry)
-                    log(f"LinkedIn: Backfilled {_backfill_days} days (baseline: {_followers} followers)")
-
-                    # Save posts if available from authenticated scrape
-                    _posts = _baseline.get("posts", [])
-                    if _posts:
-                        save_posts(_posts)
-                        log(f"LinkedIn: Saved {len(_posts)} posts from baseline scrape")
-                else:
-                    log(f"LinkedIn: Baseline scrape failed: {_baseline.get('error', 'unknown')}")
-            except Exception as e:
-                log(f"LinkedIn: Backfill error: {e}")
-
-        log("LinkedIn: Starting daily scrape...")
-        result = {}
-        if has_cookies():
-            # Try the full analytics Playwright scraper first (gets ALL data + Sheets write)
-            try:
-                log("LinkedIn: Trying full analytics Playwright scrape...")
-                result = scrape_analytics_playwright()
-                if result.get("error") or not result.get("followers"):
-                    log("LinkedIn: Full analytics failed, trying basic Playwright...")
-                    result = scrape_with_playwright(historical=False)
-                else:
-                    log("LinkedIn: Full analytics scrape successful")
-            except ImportError:
-                log("LinkedIn: Playwright not available — using cookie-based urllib...")
-                result = scrape_with_cookies()
-            except Exception as e:
-                log(f"LinkedIn: Playwright error ({e}) — trying cookie-based urllib...")
-                result = scrape_with_cookies()
-        else:
-            log("LinkedIn: No cookies — using public page scrape...")
-            result = scrape_public_metrics()
-        if result.get("error"):
-            log(f"LinkedIn: Scrape issue — {result['error']}")
-        else:
-            log(f"LinkedIn: Scrape OK — {list(result.keys())}")
-
-            # ── Save posts data if available ──
-            _posts = result.get("posts", [])
-            if _posts:
-                try:
-                    # Merge with existing posts (by URN or title)
-                    _existing_posts = []
-                    _posts_path = _P("data_output") / "linkedin_posts.json"
-                    if _posts_path.exists():
-                        try:
-                            _ep_data = _json.loads(_posts_path.read_text())
-                            _existing_posts = _ep_data if isinstance(_ep_data, list) else _ep_data.get("posts", [])
-                        except Exception:
-                            pass
-                    
-                    # Merge: update existing posts, add new ones
-                    _by_key = {}
-                    for p in _existing_posts:
-                        _key = p.get("urn") or p.get("title", "")
-                        if _key:
-                            _by_key[_key] = p
-                    for p in _posts:
-                        _key = p.get("urn") or p.get("title", "")
-                        if _key and _key in _by_key:
-                            # Update metrics for existing post
-                            _old = _by_key[_key]
-                            for _k in ("likes", "comments", "reposts", "impressions"):
-                                if p.get(_k, 0) > 0:
-                                    _old[_k] = p[_k]
-                            _old["_last_scraped"] = datetime.now().isoformat()
-                        else:
-                            p["_first_seen"] = datetime.now().isoformat()
-                            p["_last_scraped"] = datetime.now().isoformat()
-                            _by_key[_key] = p
-                    
-                    _merged = list(_by_key.values())
-                    save_posts(_merged)
-                    log(f"LinkedIn: Saved {len(_merged)} posts (+{len(_posts)} scraped)")
-                except Exception as e:
-                    log(f"LinkedIn: Posts save error: {e}")
-
-            # ── AUTO-ACCUMULATE: Save daily time-series entry ──
-            # This builds historical data automatically, like KPI system
-            try:
-                _entry = {
-                    "followers": result.get("followers", 0),
-                    "company_name": result.get("company_name", ""),
-                    "employees": result.get("employees", ""),
-                    "industry": result.get("industry", ""),
-                    "search_appearances": result.get("search_appearances", 0),
-                    "competitors": result.get("competitors", ""),
-                    "leads": result.get("leads", 0),
-                    "newsletters": result.get("newsletters", 0),
-                    "scraped_at": datetime.now().isoformat(),
-                }
-                # Authenticated data
-                for _k in ("impressionCount", "uniqueVisitors", "totalPageViews",
-                           "likeCount", "commentCount", "shareCount", "clickCount",
-                           "search_appearances", "competitors", "leads", "newsletters"):
-                    if result.get(_k):
-                        _entry[_k] = result.get(_k)
-                # Also map to friendly names
-                if result.get("impressionCount"):
-                    _entry["impressions"] = result.get("impressionCount", 0)
-                if result.get("uniqueVisitors"):
-                    _entry["unique_visitors"] = result.get("uniqueVisitors", 0)
-                if result.get("likeCount"):
-                    _entry["likes"] = result.get("likeCount", 0)
-                if result.get("commentCount"):
-                    _entry["comments"] = result.get("commentCount", 0)
-                # Posts count
-                if _posts:
-                    _entry["posts"] = len(_posts)
-                    _entry["post_likes"] = sum(p.get("likes", 0) for p in _posts)
-                    _entry["post_comments"] = sum(p.get("comments", 0) for p in _posts)
-                    _entry["post_reposts"] = sum(p.get("reposts", 0) for p in _posts)
-                    _entry["post_impressions"] = sum(p.get("impressions", 0) for p in _posts)
-                    _entry["post_clicks"] = sum(p.get("clicks", 0) for p in _posts)
-                    _entry["post_follows"] = sum(p.get("follows", 0) for p in _posts)
-                    _entry["post_views"] = sum(p.get("views", 0) for p in _posts)
-                    _total_imp = max(_entry.get("impressions", 0), _entry.get("post_impressions", 0))
-                    _total_eng = _entry.get("post_likes", 0) + _entry.get("post_comments", 0) + _entry.get("post_reposts", 0)
-                    if _total_imp > 0:
-                        _entry["engagement_rate"] = round(_total_eng / _total_imp * 100, 2)
-                    # Highlights change percentages
-                    for _hk in ("impressions_change_pct", "reactions_change_pct",
-                                "comments_change_pct", "reposts_change_pct"):
-                        if result.get(_hk):
-                            _entry[_hk] = result[_hk]
-
-                save_manual_entry(_entry)
-                log(f"LinkedIn: Auto-saved daily entry — followers={_entry.get('followers', 0)}, posts={_entry.get('posts', 0)}")
-            except Exception as e:
-                log(f"LinkedIn: Auto-accumulate error: {e}")
-
-            # ── WRITE LINKEDIN DATA TO GOOGLE SHEETS (like KPI/Stripe) ──
-            try:
-                from sheets_writer import write_tab_data
-                _today = datetime.now().strftime("%Y-%m-%d")
-                _li_row = {
-                    "Date": _today,
-                    "Followers": _entry.get("followers", 0),
-                    "Employees": _entry.get("employees", ""),
-                    "Company Name": _entry.get("company_name", ""),
-                    "Industry": _entry.get("industry", ""),
-                    "Impressions": _entry.get("impressions", 0),
-                    "Unique Visitors": _entry.get("unique_visitors", 0),
-                    "Total Page Views": _entry.get("totalPageViews", 0),
-                    "Likes": _entry.get("likes", 0),
-                    "Comments": _entry.get("comments", 0),
-                    "Shares": _entry.get("shares", 0),
-                    "Reposts": _entry.get("post_reposts", 0),
-                    "Clicks": _entry.get("post_clicks", 0),
-                    "Follows": _entry.get("post_follows", 0),
-                    "Posts": _entry.get("posts", 0),
-                    "Post Likes": _entry.get("post_likes", 0),
-                    "Post Comments": _entry.get("post_comments", 0),
-                    "Engagement Rate": _entry.get("engagement_rate", 0),
-                    "Impressions Change": _entry.get("impressions_change_pct", ""),
-                    "Reactions Change": _entry.get("reactions_change_pct", ""),
-                    "Comments Change": _entry.get("comments_change_pct", ""),
-                    "Reposts Change": _entry.get("reposts_change_pct", ""),
-                    "Search Appearances": _entry.get("search_appearances", 0),
-                    "Competitors": _entry.get("competitors", ""),
-                    "Leads": _entry.get("leads", 0),
-                    "Newsletters": _entry.get("newsletters", 0),
-                    "Source": result.get("source", "public" if not has_cookies() else "authenticated"),
-                    "Last Updated": datetime.now().strftime("%Y-%m-%d %H:%M UTC"),
-                }
-                _written = write_tab_data("LinkedIn", [_li_row])
-                if _written:
-                    log("LinkedIn: Data written to Google Sheets ✓")
-                else:
-                    log("LinkedIn: Sheets write skipped (not available)")
-            except Exception as e:
-                log(f"LinkedIn: Sheets write error (non-fatal): {e}")
-
-            # ── WRITE LINKEDIN POSTS TO SHEETS ──
-            if _posts:
-                try:
-                    from sheets_writer import write_tab_data as _wtd
-                    _post_rows = []
-                    for p in _posts[:25]:  # Top 25 posts
-                        _post_rows.append({
-                            "Date": p.get("published_at", "")[:10] if p.get("published_at") else _today,
-                            "Title": (p.get("title", "") or p.get("text", ""))[:200],
-                            "Post Type": p.get("post_type", ""),
-                            "Audience": p.get("audience", ""),
-                            "Likes": p.get("likes", 0),
-                            "Comments": p.get("comments", 0),
-                            "Reposts": p.get("reposts", 0),
-                            "Clicks": p.get("clicks", 0),
-                            "Follows": p.get("follows", 0),
-                            "CTR": p.get("ctr", 0),
-                            "Engagement Rate": p.get("engagement_rate", 0),
-                            "Impressions": p.get("impressions", 0),
-                            "Views": p.get("views", 0),
-                            "URL": p.get("url", ""),
-                            "Source": p.get("source", "playwright"),
-                        })
-                    if _post_rows:
-                        _pw = _wtd("LinkedIn_Posts", _post_rows)
-                        if _pw:
-                            log(f"LinkedIn: {len(_post_rows)} posts written to LinkedIn_Posts sheet")
-                except Exception as e:
-                    log(f"LinkedIn: Posts sheet write error (non-fatal): {e}")
-        
-        # Validate LinkedIn data exists
-        from sheets_writer import read_tab_data
-        li_data = read_tab_data("LinkedIn")
-        if li_data and len(li_data) > 0:
-            log(f"LinkedIn validation: {len(li_data)} rows")
-        else:
-            log("WARNING: LinkedIn data not in data not in Sheets")
-        li_posts = read_tab_data("LinkedIn_Posts")
-        if li_posts:
-            log(f"LinkedIn Posts: {len(li_posts)} rows")
-    ok6, e6 = run_stage(6, "LinkedIn Scrape + Auto-Accumulate", s6)
+                result = scrape_authenticated()
+                if result and not result.get("error"):
+                    save_daily_entry({
+                        "date":      datetime.now().strftime("%Y-%m-%d"),
+                        "followers": result.get("followers", 0),
+                        "posts":     len(result.get("posts", [])),
+                        "source":    "playwright",
+                    })
+                    log(f"LinkedIn legacy entry saved: {result.get('followers',0)} followers")
+            except Exception as _le:
+                log(f"LinkedIn legacy entry error (non-fatal): {_le}")
+        except Exception as _e:
+            log(f"LinkedIn legacy connector unavailable (non-fatal): {_e}")
+    ok6, e6 = run_stage(6, "LinkedIn (Supabase + legacy)", s6)
     results["stage6_linkedin"] = "ok" if ok6 else f"failed: {e6}"
 
     # ── Reporting (Stage 7) ──

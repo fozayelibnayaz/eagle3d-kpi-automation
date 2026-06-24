@@ -107,6 +107,11 @@ jobs:
         run: |
           if [ -n "$COOKIES" ]; then
             echo "$COOKIES" > data_output/linkedin_cookies.json
+            # Also restore session state if provided
+            if [ -n "${{ secrets.LINKEDIN_SESSION_STATE }}" ]; then
+              echo "${{ secrets.LINKEDIN_SESSION_STATE }}" > data_output/linkedin_session_state.json
+              echo "LinkedIn session state restored"
+            fi
             echo "LinkedIn cookies restored"
           else
             echo "LINKEDIN_COOKIES_JSON not set - public scrape only"
