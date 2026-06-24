@@ -37,6 +37,9 @@ TAB_TO_TABLE = {
     "Verified_FREE":          ("signups",   "signup_date",        "email"),
     "Verified_FIRST_UPLOAD":  ("uploads",   "upload_date",        "email"),
     "Verified_STRIPE":        ("payments",  "first_payment_date", "email"),
+    "Raw_FREE":               ("signups",   "signup_date",        "email"),
+    "Raw_FIRST_UPLOAD":       ("uploads",   "upload_date",        "email"),
+    "Raw_STRIPE":             ("payments",  "first_payment_date", "email"),
     "Daily_Counts":           ("daily_kpis", "date",              None),
 }
 
@@ -95,7 +98,7 @@ def read_tab_data(tab_name):
         log(f"Supabase unavailable - returning empty for {tab_name}")
         return []
 
-    if tab_name == "Verified_FREE":
+    if tab_name in ("Verified_FREE", "Raw_FREE"):
         rows = _fetch_all(sb, "signups")
         # Convert to Sheet format
         return [{
@@ -109,7 +112,7 @@ def read_tab_data(tab_name):
             "__rejection_reason__": r.get("rejection_reason", ""),
         } for r in rows]
 
-    elif tab_name == "Verified_FIRST_UPLOAD":
+    elif tab_name in ("Verified_FIRST_UPLOAD", "Raw_FIRST_UPLOAD"):
         rows = _fetch_all(sb, "uploads")
         return [{
             "Email":               r.get("email", ""),
@@ -121,7 +124,7 @@ def read_tab_data(tab_name):
             "__rejection_reason__": r.get("rejection_reason", ""),
         } for r in rows]
 
-    elif tab_name == "Verified_STRIPE":
+    elif tab_name in ("Verified_STRIPE", "Raw_STRIPE"):
         rows = _fetch_all(sb, "payments")
         return [{
             "Email":               r.get("email", ""),
@@ -195,7 +198,7 @@ def write_tab_data(tab_name, rows):
         em = str(r.get("Email","") or r.get("email","") or r.get("__email_normalized__","")).strip().lower()
         return em if em and "@" in em else ""
 
-    if tab_name == "Verified_FREE":
+    if tab_name in ("Verified_FREE", "Raw_FREE"):
         upsert = []
         for r in rows:
             em = _norm_email(r)
@@ -216,7 +219,7 @@ def write_tab_data(tab_name, rows):
             })
         return _upsert(sb, "signups", upsert)
 
-    elif tab_name == "Verified_FIRST_UPLOAD":
+    elif tab_name in ("Verified_FIRST_UPLOAD", "Raw_FIRST_UPLOAD"):
         upsert = []
         for r in rows:
             em = _norm_email(r)
@@ -236,7 +239,7 @@ def write_tab_data(tab_name, rows):
             })
         return _upsert(sb, "uploads", upsert)
 
-    elif tab_name == "Verified_STRIPE":
+    elif tab_name in ("Verified_STRIPE", "Raw_STRIPE"):
         upsert = []
         for r in rows:
             em = _norm_email(r)

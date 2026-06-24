@@ -117,8 +117,18 @@ jobs:
             echo "LINKEDIN_COOKIES_JSON not set - public scrape only"
           fi
 
+      - name: Install xvfb for Playwright headless
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb
+          # Start virtual display in background
+          Xvfb :99 -screen 0 1920x1080x24 > /dev/null 2>&1 &
+          sleep 2
+
       - name: Run pipeline
         env:
+          DISPLAY: ':99'
+
           MASTER_SHEET_URL: ${{ secrets.MASTER_SHEET_URL }}
           GOOGLE_CREDS_JSON: ${{ secrets.GOOGLE_CREDS_JSON }}
           KPI_EMAIL: ${{ secrets.KPI_EMAIL }}
