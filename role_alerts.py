@@ -144,7 +144,7 @@ def founder_monthly():
 
     def rev(s, e):
         r = sb.table("payments").select("total_spend,first_payment_date").eq("final_status","ACCEPTED").gte("first_payment_date",s.isoformat()).lte("first_payment_date",e.isoformat()).execute().data or []
-        return sum(float(x.get("total_spend") or 0) for x in r)
+        return round(sum(float(x.get("total_spend") or 0) for x in r), 2)
 
     curr = {
         "signups": cnt("signups","signup_date",last_month_start,last_month_end),
@@ -160,10 +160,11 @@ def founder_monthly():
     }
 
     def d(c, p):
-        diff = c - p
+        diff = round(c - p, 2)
         pct = (diff/p*100) if p else 0
         emoji = "[++]" if pct > 50 else "[+]" if pct > 10 else "[up]" if pct > 0 else "[-]" if pct < -10 else "[=]"
-        return emoji + " " + ("+" if diff>=0 else "") + str(diff) + " (" + ("+" if pct>=0 else "") + str(round(pct)) + "%)"
+        diff_str = ("+" if diff >= 0 else "") + ("{:,.2f}".format(diff) if isinstance(c, float) else str(int(diff)))
+        return emoji + " " + diff_str + " (" + ("+" if pct >= 0 else "") + str(round(pct)) + "%)"
 
     msg = "<b>FOUNDER MONTHLY - " + last_month_end.strftime('%B %Y') + "</b>\n"
     msg += "----------------------------------------\n"
@@ -171,7 +172,7 @@ def founder_monthly():
     msg += "Signups: <b>" + str(curr['signups']) + "</b> " + d(curr['signups'],prev['signups']) + "\n"
     msg += "Uploads: <b>" + str(curr['uploads']) + "</b> " + d(curr['uploads'],prev['uploads']) + "\n"
     msg += "Paid:    <b>" + str(curr['paid']) + "</b> " + d(curr['paid'],prev['paid']) + "\n"
-    msg += "Revenue: <b>$" + "{:,.2f}".format(curr['revenue']) + "</b> " + d(curr['revenue'],prev['revenue']) + "\n\n"
+    msg += "Revenue: <b>$" + "{:,.2f}".format(curr['revenue']) + "</b> (prev $" + "{:,.2f}".format(prev['revenue']) + ", " + d(curr['revenue'], prev['revenue']) + ")\n\n"
 
     if curr["signups"] > 0:
         s2u = curr["uploads"]/curr["signups"]*100

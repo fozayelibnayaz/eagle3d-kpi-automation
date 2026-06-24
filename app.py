@@ -3152,415 +3152,1171 @@ elif page == "🔔 Alerts":
 
     # ── TELEGRAM ALERTS ──
     st.markdown("---")
+    st.markdown("### 📨 Send Alerts to Telegram (Per Subsystem)")
 
+    _tg_bot = get_secret("TELEGRAM_BOT_TOKEN", "")
+    _tg_chat = get_secret("TELEGRAM_CHAT_ID", "")
+    if not _tg_bot or not _tg_chat:
+        st.warning("⚠️ Add `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` to secrets to enable Telegram alerts.")
+    else:
+        _sub_c1, _sub_c2 = st.columns(2)
 
-    st.markdown('<div class="sec-head">🏥 Module Status</div>', unsafe_allow_html=True)
-    _mods = {
-        "KPI Bridge":         "kpi_bridge",
-        "Strategic":          "ga4_strategic",
-        "Predictions":        "prediction_engine",
-        "GA4 Connector":      "ga4_connector",
-        "Notifications":      "notifications",
-        "Reports":            "report_generator",
-        "Source Intel":       "ga4_source_intel",
-        "Intelligence":       "ml_intelligence",
-        "Source Normalizer": "source_normalizer",
-    }
-    _mc = st.columns(4)
-    _act = 0
-    for _i, (_mname, _ky) in enumerate(_mods.items()):
-        with _mc[_i % 4]:
-            _ok = _ky in MOD
-            if _ok:
-                _act += 1
-            _bd = (
-                '<span class="badge badge-ok">✅</span>'
-                if _ok
-                else '<span class="badge badge-err">❌</span>'
+        with _sub_c1:
+            st.markdown("#### 📊 KPI System Alert")
+            if st.button("📤 Send KPI Report", use_container_width=True, key="tg_kpi"):
+                with st.spinner("Sending KPI report..."):
+                    try:
+                        from reporting_engine import build_kpi_stats, build_telegram_kpi_section
+                        _kpi_data = build_kpi_stats()
+                        _msg = build_telegram_kpi_section(_kpi_data)
+                        from reporting_engine import send_telegram
+                        _ok = send_telegram(_msg)
+                        st.success("✅ KPI report sent!") if _ok else st.error("❌ Failed")
+                    except Exception as _e:
+                        st.error(f"❌ {_e}")
+
+            st.markdown("#### 🌐 GA4 Analytics Alert")
+            if st.button("📤 Send GA4 Report", use_container_width=True, key="tg_ga4"):
+                with st.spinner("Sending GA4 report..."):
+                    try:
+                        from reporting_engine import build_ga4_stats, build_telegram_ga4_section, send_telegram
+                        _ga4_data = build_ga4_stats()
+                        _msg = build_telegram_ga4_section(_ga4_data)
+                        send_telegram(_msg)
+                        st.success("✅ GA4 report sent!")
+                    except Exception as _e:
+                        st.error(f"❌ {_e}")
+
+            st.markdown("#### 📺 YouTube Alert")
+            if st.button("📤 Send YouTube Report", use_container_width=True, key="tg_yt"):
+                with st.spinner("Sending YouTube report..."):
+                    try:
+                        from reporting_engine import build_youtube_stats, build_telegram_youtube_section, send_telegram
+                        _yt_data = build_youtube_stats()
+                        _msg = build_telegram_youtube_section(_yt_data)
+                        send_telegram(_msg)
+                        st.success("✅ YouTube report sent!")
+                    except Exception as _e:
+                        st.error(f"❌ {_e}")
+
+        with _sub_c2:
+            st.markdown("#### 💼 LinkedIn Alert")
+            if st.button("📤 Send LinkedIn Report", use_container_width=True, key="tg_li"):
+                with st.spinner("Sending LinkedIn report..."):
+                    try:
+                        from reporting_engine import build_linkedin_stats, build_telegram_linkedin_section, send_telegram
+                        _li_data = build_linkedin_stats()
+                        _msg = build_telegram_linkedin_section(_li_data)
+                        send_telegram(_msg)
+                        st.success("✅ LinkedIn report sent!")
+                    except Exception as _e:
+                        st.error(f"❌ {_e}")
+
+            st.markdown("#### 💳 Stripe Alert")
+            if st.button("📤 Send Stripe Report", use_container_width=True, key="tg_stripe"):
+                with st.spinner("Sending Stripe report..."):
+                    try:
+                        from reporting_engine import build_stripe_stats, build_telegram_stripe_section, send_telegram
+                        _stripe_data = build_stripe_stats()
+                        _msg = build_telegram_stripe_section(_stripe_data)
+                        send_telegram(_msg)
+                        st.success("✅ Stripe report sent!")
+                    except Exception as _e:
+                        st.error(f"❌ {_e}")
+
+            st.markdown("#### 🦅 Full System Report")
+            if st.button("📤 Send ALL Reports", type="primary", use_container_width=True, key="tg_all"):
+                with st.spinner("Sending full system report..."):
+                    try:
+                        from reporting_engine import main as _rep_main
+                        _rep_main()
+                        st.success("✅ All subsystem reports sent to Telegram!")
+                    except Exception as _e:
+                        st.error(f"❌ {_e}")
+
+# ═══════════════════════════════════════════════════════════════
+# PAGE: 🔬 EDA LAB
+# ═══════════════════════════════════════════════════════════════
+elif page == "🔬 EDA Lab":
+    st.markdown(
+        '<div class="sec-head">🔬 Exploratory Data Analysis</div>',
+        unsafe_allow_html=True,
+    )
+    tabs = st.tabs([
+        "📊 Distributions", "📈 Correlations", "🔥 Heatmap",
+        "📅 Time Series", "🎯 Cohort",
+    ])
+
+    with tabs[0]:
+        if not kpi.empty:
+            mt = st.selectbox(
+                "Metric",
+                ["signups", "first_uploads", "paid_customers"],
+                key="edm",
             )
-            st.markdown(f"**{_mname}** {_bd}", unsafe_allow_html=True)
-    st.metric("Active", f"{_act}/{len(_mods)}")
+            if mt in kpi.columns:
+                vs = pd.to_numeric(kpi[mt], errors="coerce").dropna()
+                if len(vs) > 0:
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        fig = px.histogram(
+                            x=vs, nbins=20,
+                            color_discrete_sequence=[T["accent"]],
+                        )
+                        fig.update_layout(
+                            title=f"{mt} Distribution", **CT(),
+                            margin=dict(l=0, r=0, t=40, b=0),
+                        )
+                        _pc(fig)
+                    with c2:
+                        fig = px.box(
+                            y=vs,
+                            color_discrete_sequence=[T["accent2"]],
+                        )
+                        fig.update_layout(
+                            title=f"{mt} Box Plot", **CT(),
+                            margin=dict(l=0, r=0, t=40, b=0),
+                        )
+                        _pc(fig)
+                    st.markdown("#### Statistics")
+                    _sc = st.columns(4)
+                    _stats = {
+                        "Mean": vs.mean(), "Median": vs.median(),
+                        "Std": vs.std(), "Min": vs.min(),
+                        "Max": vs.max(), "Skew": vs.skew(),
+                        "CV%": (vs.std() / vs.mean() * 100
+                                if vs.mean() > 0 else 0),
+                    }
+                    for idx, (k, v) in enumerate(_stats.items()):
+                        with _sc[idx % 4]:
+                            st.metric(k, f"{v:.2f}" if isinstance(v, float)
+                                      else str(v))
+        else:
+            st.info("No KPI data available.")
 
-    st.markdown("#### 🤖 AI Provider")
-    _ai_mod = MOD.get("ai_engine")
-    if _ai_mod:
-        _pr = _ai_mod._get_provider()
-        _pi2 = {
-            "groq": ("⚡ Groq Cloud", "Ultra-fast"),
-            "gemini": ("💎 Gemini", "Reasoning"),
-            "rule_based": ("🧠 Rule-Based", "No key"),
-        }
-        _n2, _d2 = _pi2.get(_pr, ("?", ""))
-        st.info(f"{_n2} — {_d2}")
-        if _pr == "rule_based":
-            _has_grok = False
-            _has_gem = False
+    with tabs[1]:
+        if not kpi.empty:
+            _nc = [c for c in [
+                "signups", "first_uploads", "paid_customers"
+            ] if c in kpi.columns]
+            if len(_nc) >= 2:
+                cr = kpi[_nc].astype(float).corr()
+                fig = px.imshow(
+                    cr, text_auto=".2f",
+                    color_continuous_scale="RdBu_r",
+                    aspect="auto", zmin=-1, zmax=1,
+                )
+                fig.update_layout(
+                    title="Correlations", **CT(),
+                    margin=dict(l=0, r=0, t=40, b=0),
+                )
+                _pc(fig)
+                xc = st.selectbox("X", _nc, key="ex")
+                yc = st.selectbox("Y", [c for c in _nc if c != xc], key="ey")
+                fig = px.scatter(
+                    kpi, x=xc, y=yc, trendline="ols",
+                    color_discrete_sequence=[T["accent"]],
+                )
+                fig.update_layout(
+                    **CT(), margin=dict(l=0, r=0, t=20, b=0),
+                )
+                _pc(fig)
+
+    with tabs[2]:
+        if (not kpi.empty and "date" in kpi.columns
+                and "signups" in kpi.columns):
+            _h = kpi.copy()
+            _h["date"] = pd.to_datetime(_h["date"])
+            _h["wd"] = _h["date"].dt.day_name()
+            _h["wk"] = _h["date"].dt.isocalendar().week.astype(int)
+            _h["signups"] = pd.to_numeric(_h["signups"], errors="coerce")
+            pv = _h.pivot_table(
+                values="signups", index="wd",
+                columns="wk", aggfunc="sum",
+            )
+            dn = [
+                "Monday", "Tuesday", "Wednesday",
+                "Thursday", "Friday", "Saturday", "Sunday",
+            ]
+            pv = pv.reindex([d for d in dn if d in pv.index])
+            fig = px.imshow(
+                pv, color_continuous_scale="Viridis", aspect="auto",
+            )
+            fig.update_layout(
+                title="Heatmap", height=350, **CT(),
+                margin=dict(l=0, r=0, t=40, b=0),
+            )
+            _pc(fig)
+
+    with tabs[3]:
+        if (not kpi.empty and "date" in kpi.columns
+                and "signups" in kpi.columns):
+            _ts = kpi.copy()
+            _ts["date"] = pd.to_datetime(_ts["date"])
+            _ts = _ts.sort_values("date")
+            _ts["signups"] = pd.to_numeric(
+                _ts["signups"], errors="coerce"
+            )
+            _ts = _ts.dropna(subset=["signups"])
+            if len(_ts) >= 7:
+                _ts["MA7"] = _ts["signups"].rolling(7, min_periods=1).mean()
+                _ts["MA14"] = _ts["signups"].rolling(
+                    14, min_periods=1
+                ).mean()
+                fig = go.Figure()
+                fig.add_trace(go.Scatter(
+                    x=_ts["date"], y=_ts["signups"], name="Actual",
+                    line=dict(color=T["accent"], width=1), opacity=0.6,
+                ))
+                fig.add_trace(go.Scatter(
+                    x=_ts["date"], y=_ts["MA7"], name="7d MA",
+                    line=dict(color=T["accent2"], width=2.5),
+                ))
+                fig.add_trace(go.Scatter(
+                    x=_ts["date"], y=_ts["MA14"], name="14d MA",
+                    line=dict(color="#FF9100", width=2.5),
+                ))
+                fig.update_layout(
+                    title="Moving Averages", height=400,
+                    **CT(), margin=dict(l=0, r=0, t=40, b=0),
+                    hovermode="x unified",
+                )
+                _pc(fig)
+
+    with tabs[4]:
+        st.markdown("#### Cohort Analysis")
+        if not free_rows.empty and not upload_rows.empty:
+            ecf = next(
+                (c for c in free_rows.columns if "email" in c.lower()),
+                None,
+            )
+            dcf = next(
+                (c for c in free_rows.columns if "date" in c.lower()),
+                None,
+            )
+            ecu = next(
+                (c for c in upload_rows.columns if "email" in c.lower()),
+                None,
+            )
+            dcu = next(
+                (c for c in upload_rows.columns if "date" in c.lower()),
+                None,
+            )
+            if ecf and dcf and ecu and dcu:
+                fc = free_rows.copy()
+                uc = upload_rows.copy()
+                fc["_e"] = fc[ecf].astype(str).str.lower().str.strip()
+                fc["_d"] = fc[dcf].apply(parse_to_date)
+                uc["_e"] = uc[ecu].astype(str).str.lower().str.strip()
+                uc["_d"] = uc[dcu].apply(parse_to_date)
+                fc = fc.dropna(subset=["_e", "_d"])
+                uc = uc.dropna(subset=["_e", "_d"])
+                fc["month"] = fc["_d"].apply(lambda d: d.replace(day=1))
+                mg = fc[["_e", "_d", "month"]].merge(
+                    uc[["_e", "_d"]].rename(columns={"_d": "ud"}),
+                    on="_e", how="left",
+                )
+                mg["conv"] = mg["ud"].notna()
+                co = mg.groupby("month").agg(
+                    s=("_e", "count"), c=("conv", "sum"),
+                ).reset_index()
+                co["rate"] = (co["c"] / co["s"] * 100).round(1)
+                co["month"] = co["month"].astype(str)
+                if not co.empty:
+                    fig = px.bar(
+                        co, x="month", y=["s", "c"],
+                        barmode="group",
+                        color_discrete_sequence=[T["accent"], T["green"]],
+                    )
+                    fig.update_layout(
+                        title="Signup Cohort", height=350,
+                        **CT(), margin=dict(l=0, r=0, t=40, b=0),
+                    )
+                    _pc(fig)
+                    _df(co)
+
+# ═══════════════════════════════════════════════════════════════
+# PAGE: 🔍 BROWSE DATA
+# ═══════════════════════════════════════════════════════════════
+
+elif page == "🔍 Browse Data":
+    st.markdown(
+        '<div class="sec-head">🔍 Browse Customer Data</div>',
+        unsafe_allow_html=True,
+    )
+
+    # Global date filter for Browse Data
+    _bd_c1, _bd_c2, _bd_c3, _bd_c4 = st.columns(4)
+    with _bd_c1:
+        _bd_preset = st.selectbox("📅 Date filter:", [
+            "This Month", "Last Month", "All Time", "Today", "Yesterday", "This Week", "Last Week",
+            "Last 7 Days", "Last 14 Days", "Last 28 Days", "Last 30 Days",
+            "Last 3 Months", "Last 6 Months", "This Year", "Custom Range", "Custom Month",
+        ], index=0, key="bd_preset")
+    with _bd_c2:
+        if _bd_preset == "Custom Month":
+            _bd_month = st.selectbox("Month:", [
+                f"{y}-{m:02d}" for y in range(2026, 2023, -1) for m in range(12, 0, -1)
+            ], index=0, key="bd_month_sel")
+        else:
+            _bd_month = None
+    with _bd_c3:
+        _bd_status = st.selectbox("Status:", ["All", "ACCEPTED", "REJECTED", "REPEAT", "REPEAT_UPLOAD", "NOT_DETERMINED", "DISPOSABLE", "INTERNAL", "SMTP_REJECTED", "NO_MX", "ZERO_SPEND"], key="bd_status")
+    with _bd_c4:
+        _bd_search = st.text_input("🔍 Search", placeholder="email, name...", key="bd_search")
+
+    # Compute date range from preset
+    _bd_today = datetime.now().date()
+    _bd_date_map = {
+        "All Time": (datetime(2020, 1, 1).date(), _bd_today),
+        "Today": (_bd_today, _bd_today),
+        "Yesterday": (_bd_today - timedelta(days=1), _bd_today - timedelta(days=1)),
+        "This Week": (_bd_today - timedelta(days=_bd_today.weekday()), _bd_today),
+        "Last Week": (_bd_today - timedelta(days=_bd_today.weekday() + 7), _bd_today - timedelta(days=_bd_today.weekday() + 1)),
+        "This Month": (_bd_today.replace(day=1), _bd_today),
+        "Last Month": ((_bd_today.replace(day=1) - timedelta(days=1)).replace(day=1), _bd_today.replace(day=1) - timedelta(days=1)),
+        "Last 7 Days": (_bd_today - timedelta(days=6), _bd_today),
+        "Last 14 Days": (_bd_today - timedelta(days=13), _bd_today),
+        "Last 28 Days": (_bd_today - timedelta(days=27), _bd_today),
+        "Last 30 Days": (_bd_today - timedelta(days=29), _bd_today),
+        "Last 3 Months": (_bd_today - timedelta(days=90), _bd_today),
+        "Last 6 Months": (_bd_today - timedelta(days=180), _bd_today),
+        "This Year": (_bd_today.replace(month=1, day=1), _bd_today),
+    }
+    if _bd_preset == "Custom Range":
+        with _bd_c2:
+            _bd_cr_start = st.date_input("Start", value=_bd_today - timedelta(days=30), key="bd_cr_start")
+        with _bd_c3:
+            _bd_cr_end = st.date_input("End", value=_bd_today, key="bd_cr_end")
+        _bd_ds, _bd_de = _bd_cr_start, _bd_cr_end
+    elif _bd_preset == "Custom Month" and _bd_month:
+        _m_parts = _bd_month.split("-")
+        _m_y, _m_m = int(_m_parts[0]), int(_m_parts[1])
+        _m_start = datetime(_m_y, _m_m, 1).date()
+        if _m_m == 12:
+            _m_end = datetime(_m_y + 1, 1, 1).date() - timedelta(days=1)
+        else:
+            _m_end = datetime(_m_y, _m_m + 1, 1).date() - timedelta(days=1)
+        _bd_ds, _bd_de = _m_start, _m_end
+    else:
+        _bd_ds, _bd_de = _bd_date_map.get(_bd_preset, (datetime(2020, 1, 1).date(), _bd_today))
+
+    st.caption(f"📅 Showing: **{_bd_ds}** → **{_bd_de}**")
+
+    def _apply_browse_filters(df, label):
+        """Apply date, status, and search filters to a dataframe.
+
+        Smart date column detection:
+        1. Tries ALL date-related columns in the data
+        2. Picks the column with the highest parse rate
+        3. Always includes row_date_used (YYYY-MM-DD from process_data)
+        4. For First Uploads: also uses Account Created On as fallback
+        5. If NO column parses >0%, falls back to Account Created On
+        """
+        fl = df.copy()
+        if _bd_preset != "All Time":
+            # ── Smart date column detection ──
+            _date_candidates = []
+            _parse_rates = {}
+
+            # Scan ALL columns that could contain dates
+            for _cand in fl.columns:
+                _cl = _cand.lower().strip()
+                # Specific known date columns (highest priority) - include process_data columns
+                if _cl in ("upload date", "account created on", "first payment", "created", 
+                           "signup_date", "payment_date", "first_upload_date", "row_date_used", "__scraped_date__"):
+                    _date_candidates.append(_cand)
+                # Any column with date/created in name
+                elif any(k in _cl for k in ["created", "upload date", "date"]):
+                    if not any(x in _cl for x in ["detail", "last", "processed", "verify"]):
+                        _date_candidates.append(_cand)
+
+            # Pick the best column: highest parse rate with >0% success
+            _best_col = None
+            _best_rate = 0
+            _total_rows = len(fl)
+            if _total_rows > 0:
+                for _dc in _date_candidates:
+                    try:
+                        _parsed = fl[_dc].apply(parse_to_date)
+                        _valid = int(_parsed.notna().sum())
+                        _rate = _valid / _total_rows
+                        _parse_rates[_dc] = (_valid, _rate)
+                        if _rate > _best_rate:
+                            _best_rate = _rate
+                            _best_col = _dc
+                    except Exception:
+                        _parse_rates[_dc] = (0, 0)
+
+            # Fallback: if best rate is 0, try Account Created On as last resort
+            if _best_rate == 0 and "Account Created On" in fl.columns:
+                _parsed = fl["Account Created On"].apply(parse_to_date)
+                _best_rate = int(_parsed.notna().sum()) / _total_rows
+                if _best_rate > 0:
+                    _best_col = "Account Created On"
+                    _parse_rates["Account Created On"] = (int(_parsed.notna().sum()), _best_rate)
+
+            if _best_col and _best_rate > 0:
+                fl["_parsed_date"] = fl[_best_col].apply(parse_to_date)
+                _has_date = fl["_parsed_date"].notna()
+                _in_range = fl["_parsed_date"].between(_bd_ds, _bd_de)
+                _no_date_count = int((~_has_date).sum())
+                _out_range_count = int((_has_date & ~_in_range).sum())
+                fl = fl[_has_date & _in_range]
+                fl = fl.drop(columns=["_parsed_date"])
+                # Show which date column is used
+                st.caption(f"📅 Filtered by **{_best_col}** ({_best_rate*100:.0f}% parse rate) | Period: {_bd_ds} → {_bd_de}")
+                if _no_date_count > 0 or _out_range_count > 0:
+                    parts = []
+                    if _no_date_count > 0:
+                        parts.append(f"{_no_date_count} no date")
+                    if _out_range_count > 0:
+                        parts.append(f"{_out_range_count} outside period")
+                    st.caption(f"ℹ️ Excluded: {', '.join(parts)}")
+            elif _best_col and _best_rate == 0:
+                st.warning(f"⚠️ Found date column '{_best_col}' but 0% of dates are parseable. Showing all rows for {label}.")
+                with st.expander("🔧 Debug: Date column parse rates"):
+                    for _col, (_valid, _rate) in _parse_rates.items():
+                        st.text(f"  {_col}: {_valid}/{_total_rows} ({_rate*100:.0f}%)")
+            else:
+                st.warning(f"⚠️ No date column found in {label} data. Showing all rows.")
+                st.caption(f"Available columns: {', '.join(fl.columns[:15])}")
+        # Status filter
+        if _bd_status != "All" and "final_status" in fl.columns:
+            fl = fl[fl["final_status"].astype(str).str.upper() == _bd_status]
+        # Search
+        if _bd_search:
+            msk = pd.Series([False] * len(fl), index=fl.index)
+            for c in fl.columns:
+                msk = msk | fl[c].astype(str).str.contains(_bd_search, case=False, na=False)
+            fl = fl[msk]
+        return fl
+
+    # ── Data diagnostics (shows column names and date info) ──
+    with st.expander("🔧 Data Diagnostics", expanded=False):
+        _dcols1, _dcols2, _dcols3 = st.columns(3)
+        with _dcols1:
+            st.markdown("**📥 Sign-ups columns:**")
+            if not free_rows.empty:
+                st.text(", ".join(free_rows.columns.tolist()))
+                _date_cols = [c for c in free_rows.columns if any(k in c.lower() for k in ["date", "created", "row_date"])]
+                if _date_cols:
+                    st.text(f"Date cols: {', '.join(_date_cols)}")
+                    for _dc in _date_cols[:3]:
+                        _sample = free_rows[_dc].dropna().head(3).tolist()
+                        st.text(f"  {_dc}: {_sample}")
+            else:
+                st.text("No data")
+        with _dcols2:
+            st.markdown("**📦 First Uploads columns:**")
+            if not upload_rows.empty:
+                st.text(", ".join(upload_rows.columns.tolist()))
+                _date_cols = [c for c in upload_rows.columns if any(k in c.lower() for k in ["date", "created", "row_date"])]
+                if _date_cols:
+                    st.text(f"Date cols: {', '.join(_date_cols)}")
+                    for _dc in _date_cols[:3]:
+                        _sample = upload_rows[_dc].dropna().head(3).tolist()
+                        st.text(f"  {_dc}: {_sample}")
+            else:
+                st.text("No data")
+        with _dcols3:
+            st.markdown("**💳 Stripe columns:**")
+            if not stripe_raw.empty:
+                st.text(", ".join(stripe_raw.columns.tolist()))
+                _date_cols = [c for c in stripe_raw.columns if any(k in c.lower() for k in ["date", "created", "payment", "row_date"])]
+                if _date_cols:
+                    st.text(f"Date cols: {', '.join(_date_cols)}")
+                    for _dc in _date_cols[:3]:
+                        _sample = stripe_raw[_dc].dropna().head(3).tolist()
+                        st.text(f"  {_dc}: {_sample}")
+            else:
+                st.text("No data")
+
+    # ── INLINE OVERRIDE ENGINE ──
+    _mo_engine = MOD.get("manual_override_engine")
+
+    tabs = st.tabs(["📥 Sign-ups", "📦 First Uploads", "💳 Stripe"])
+    for _tab, (_lb, _df_data) in zip(
+        tabs,
+        [
+            ("Sign-ups", free_rows),
+            ("First Uploads", upload_rows),
+            ("Stripe", stripe_raw),
+        ],
+    ):
+        with _tab:
+            # Try Supabase server-side filtered browse first (fast)
+            _sb_browse_df, _sb_diag = _browse_supabase(
+                _lb, _bd_status, _bd_search,
+                _bd_ds if _bd_preset != "All Time" else None,
+                _bd_de if _bd_preset != "All Time" else None,
+                limit=2000,
+            )
+            if _sb_browse_df is not None and not _sb_browse_df.empty:
+                fl = _sb_browse_df
+                _acc = _sb_diag.get("accepted", 0)
+                _rej = _sb_diag.get("rejected", 0)
+                _sc1, _sc2, _sc3, _sc4 = st.columns(4)
+                _sc1.metric("✅ Accepted", _acc)
+                _sc2.metric("❌ Rejected", _rej)
+                _sc3.metric("📋 Total", len(fl))
+                _sc4.metric("🗄️ Source", "Supabase")
+                if _bd_preset != "All Time":
+                    st.caption(f"📅 Supabase filtered: {_bd_ds} → {_bd_de} | Status: {_bd_status}")
+            elif _sb_browse_df is not None and _sb_browse_df.empty:
+                st.info(f"No {_lb} records found for selected filters.")
+                st.caption(f"📅 Period: {_bd_ds} → {_bd_de} | Status: {_bd_status}")
+                if _sb_diag.get("error"):
+                    st.caption(f"Error: {_sb_diag['error']}")
+                continue
+            else:
+                # Fallback: client-side filter from loaded DataFrame
+                if _df_data.empty:
+                    st.warning(f"No {_lb} data — check Supabase connection")
+                    continue
+                fl = _apply_browse_filters(_df_data, _lb)
+                if "final_status" in fl.columns:
+                    _acc = sum(1 for _, r in fl.iterrows() if str(r.get("final_status","")).upper() in ("ACCEPTED","ALREADY_COUNTED"))
+                    _rej = len(fl) - _acc
+                    _sc1, _sc2, _sc3 = st.columns(3)
+                    _sc1.metric("✅ Accepted", _acc)
+                    _sc2.metric("❌ Rejected", _rej)
+                    _sc3.metric("📋 Total", len(fl))
+
+            # Status summary
+            if "final_status" in fl.columns:
+                _acc = sum(1 for _, r in fl.iterrows() if str(r.get("final_status", "")).upper() in ("ACCEPTED", "ALREADY_COUNTED"))
+                _rej = len(fl) - _acc
+                _sc1, _sc2, _sc3 = st.columns(3)
+                with _sc1:
+                    st.metric("✅ Accepted", f"{_acc}")
+                with _sc2:
+                    st.metric("❌ Rejected", f"{_rej}")
+                with _sc3:
+                    st.metric("📋 Total", f"{len(fl)}")
+
+            # Sort + display controls
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                _sort_cols = ["—"] + [c for c in fl.columns if c]
+                _sort_sel = st.selectbox("Sort by:", _sort_cols, key=f"sort_{_lb}")
+            with c2:
+                _sort_asc = st.radio("Direction", ["↓ Desc", "↑ Asc"], key=f"sortd_{_lb}", horizontal=True)
+            with c3:
+                mr = st.number_input("Rows", value=500, min_value=10, max_value=10000, key=f"r_{_lb}")
+
+            # Apply sorting
+            if _sort_sel != "—" and _sort_sel in fl.columns:
+                _ascending = (_sort_asc == "↑ Asc")
+                try:
+                    fl[_sort_sel] = pd.to_numeric(fl[_sort_sel], errors="ignore")
+                except Exception:
+                    pass
+                fl = fl.sort_values(by=_sort_sel, ascending=_ascending, na_position="last")
+
+            st.metric("Showing", f"{len(fl)} rows")
+
+            # ── INLINE OVERRIDE SECTION ──
+            if _mo_engine and "final_status" in fl.columns:
+                with st.expander("✏️ Override Labels", expanded=False):
+                    st.caption("Select emails to change their status. Changes apply to the override system.")
+                    _email_col = None
+                    for _ec in fl.columns:
+                        if "email" in _ec.lower():
+                            _email_col = _ec
+                            break
+                    if _email_col:
+                        _avail_emails = fl[_email_col].unique().tolist()
+                        _sel_emails = st.multiselect(
+                            f"Select emails from {_lb}:",
+                            _avail_emails[:200],
+                            key=f"ov_sel_{_lb}",
+                        )
+                        _ov_action = st.selectbox(
+                            "Change to:",
+                            ["ACCEPTED", "REJECTED", "REPEAT_UPLOAD", "DISPOSABLE", "NOT_DETERMINED"],
+                            key=f"ov_act_{_lb}",
+                        )
+                        _ov_reason = st.text_input("Reason (optional):", key=f"ov_reason_{_lb}")
+                        if _sel_emails and st.button(f"✅ Apply Override ({len(_sel_emails)} emails)", type="primary", key=f"ov_btn_{_lb}", use_container_width=True):
+                            _ov_count = 0
+                            for _se in _sel_emails:
+                                # Get the ORIGINAL status from raw data (before any overrides)
+                                _orig_df = {"Sign-ups": free_raw, "First Uploads": upload_raw, "Stripe": stripe_raw}.get(_lb, free_raw)
+                                _orig = _orig_df.loc[_orig_df[_email_col] == _se, "final_status"].values if _email_col in _orig_df.columns else []
+                                _orig_status = str(_orig[0]) if len(_orig) > 0 else "UNKNOWN"
+                                _action_map = {
+                                    "ACCEPTED": "accept", "REJECTED": "reject",
+                                    "REPEAT_UPLOAD": "repeat_upload", "DISPOSABLE": "disposable",
+                                    "NOT_DETERMINED": "not_determined",
+                                }
+                                _mo_engine.apply_override(
+                                    email=_se,
+                                    action=_action_map.get(_ov_action, "not_determined"),
+                                    target_tab="ALL",
+                                    reason=_ov_reason or f"Changed to {_ov_action} via Browse Data",
+                                    original_category=_orig_status,
+                                )
+                                _ov_count += 1
+                            st.success(f"✅ Overrode {_ov_count} emails → {_ov_action}. Counts updated everywhere!")
+                            st.session_state["_ov_toast_shown"] = False  # Reset so delta toast shows
+                            st.cache_data.clear()
+                            st.rerun()
+                    else:
+                        st.info("No email column found for override.")
+            elif not _mo_engine:
+                st.caption("⚠️ Manual override engine not loaded")
+
+            # Make App URL column clickable hyperlinks in the table
+            _display_fl = fl.head(mr).copy()
+            if "App URL" in _display_fl.columns:
+                _display_fl["App URL"] = _display_fl["App URL"].apply(
+                    lambda x: f"[🔗 Open]({x})" if str(x).startswith("http") else str(x)
+                )
+            _df(_display_fl, height=450)
+            st.download_button(
+                "⬇️ Download",
+                data=fl.to_csv(index=False).encode("utf-8"),
+                file_name=f"{_lb.lower().replace(' ', '_')}.csv",
+                mime="text/csv",
+                use_container_width=True,
+            )
+
+            # Stripe data check
+            if _lb == "Stripe" and fl.empty:
+                st.warning("⚠️ No Stripe data loaded. The Stripe scraper may be timing out. Check pipeline logs.")
+
+# ═══════════════════════════════════════════════════════════════
+# PAGE: ✏️ MANUAL OVERRIDE
+# ═══════════════════════════════════════════════════════════════
+elif page == "✏️ Manual Override":
+    st.markdown(
+        '<div class="sec-head">✏️ Manual Data Entry & Override</div>',
+        unsafe_allow_html=True,
+    )
+    _mo_tab1, _mo_tab2, _mo_tab3, _mo_tab4 = st.tabs([
+        "📝 Add Daily Entry", "📂 Bulk CSV Import", "📋 Entries Log", "🔧 Override Manager",
+    ])
+    MANUAL_DATA_FILE = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "data_output", "manual_kpi_data.json",
+    )
+
+    def _load_manual():
+        if os.path.exists(MANUAL_DATA_FILE):
             try:
-                if st.secrets.get("GROQ_API_KEY", ""):
-                    _has_grok = True
-                if st.secrets.get("GEMINI_API_KEY", ""):
-                    _has_gem = True
+                with open(MANUAL_DATA_FILE, "r") as _f:
+                    return json.load(_f)
             except Exception:
                 pass
-            if not _has_grok and not _has_gem:
-                st.warning(
-                    "💡 Add API keys in **Streamlit Cloud → Settings → Secrets**:\n\n"
-                    "```toml\n"
-                    'GROQ_API_KEY = "your-key"\n'
-                    'GEMINI_API_KEY = "your-key"\n'
-                    "```\n\n"
-                    "Get free keys: [Groq](https://console.groq.com) · "
-                    "[Gemini](https://aistudio.google.com)"
-                )
-            else:
-                st.error(f"⚠️ Keys found in secrets but detection failed! Groq={_has_grok}, Gemini={_has_gem}")
-    else:
-        st.error("AI Engine not loaded")
+        return {"daily": []}
 
-    st.markdown("#### 🔐 Secrets Status")
-    for _ky, _ds in [
-        ("MASTER_SHEET_URL", "Google Sheets URL"),
-        ("GOOGLE_CREDS", "Google Credentials"),
-        ("GROQ_API_KEY", "Groq AI"),
-        ("GEMINI_API_KEY", "Gemini AI"),
-        ("TELEGRAM_BOT_TOKEN", "Telegram Bot"),
-        ("TELEGRAM_CHAT_ID", "Telegram Chat ID"),
-        ("YOUTUBE_API_KEY", "YouTube Data API"),
-        ("YOUTUBE_CHANNEL_ID", "YouTube Channel ID"),
-        ("YOUTUBE_OAUTH_TOKEN", "YouTube OAuth Token"),
-        ("YOUTUBE_REFRESH_TOKEN", "YouTube Refresh Token"),
-        ("YOUTUBE_CLIENT_ID", "YouTube Client ID"),
-        ("YOUTUBE_CLIENT_SECRET", "YouTube Client Secret"),
-        ("LINKEDIN_COMPANY_PAGE", "LinkedIn Company Page"),
-        ("LINKEDIN_COOKIES_JSON", "LinkedIn Cookies"),
-        ("STRIPE_COOKIES_JSON", "Stripe Cookies"),
-    ]:
-        _vl = get_secret(_ky)
-        if _vl:
-            st.success(f"✅ {_ds}")
-        else:
-            st.warning(f"⚠️ {_ds}: Not set")
+    def _save_manual(data):
+        os.makedirs(os.path.dirname(MANUAL_DATA_FILE), exist_ok=True)
+        with open(MANUAL_DATA_FILE, "w") as _f:
+            json.dump(data, _f, indent=2)
 
-    st.markdown("---")
-    st.markdown("#### 📊 Data Summary")
-    _total_s = int(kpi_all["signups"].sum()) if not kpi_all.empty and "signups" in kpi_all.columns else 0
-    _total_u = int(kpi_all["first_uploads"].sum()) if not kpi_all.empty and "first_uploads" in kpi_all.columns else 0
-    _total_p = int(kpi_all["paid_customers"].sum()) if not kpi_all.empty and "paid_customers" in kpi_all.columns else 0
-    _data_src = "Google Sheets (live)" if not counts_raw.empty else "Historical JSON (offline)"
-    _di = {
-        "Data Source": _data_src,
-        "KPI Rows": f"{len(kpi_all):,}",
-        "Total Sign-ups": f"{_total_s:,}",
-        "Total Uploads": f"{_total_u:,}",
-        "Total Paid": f"{_total_p:,}",
-        "Period Rows": f"{len(kpi):,}",
-        "Sheet Sign-ups": f"{len(free_rows):,}",
-        "Sheet Uploads": f"{len(upload_rows):,}",
-    }
-    _ic = st.columns(3)
-    for _idx, (_l, _c) in enumerate(_di.items()):
-        with _ic[_idx % 3]:
-            st.metric(_l, _c)
-
-    st.markdown("---")
-    st.markdown("#### 💳 Stripe Data Diagnostics")
-    if not stripe_raw.empty:
-        _s_acc = sum(1 for _, r in stripe_raw.iterrows() if str(r.get("final_status", "")).upper() == "ACCEPTED")
-        _s_rej = sum(1 for _, r in stripe_raw.iterrows() if str(r.get("final_status", "")).upper() == "REJECTED")
-        _s_has_fp = sum(1 for _, r in stripe_raw.iterrows() if str(r.get("First payment", "")).strip() not in ("", "nan", "None", "—"))
-        _s_has_spend = sum(1 for _, r in stripe_raw.iterrows() if str(r.get("Total spend", "")).strip() not in ("", "nan", "None", "—", "$0.00", "$0"))
-        _s_cur_month = datetime.now().strftime("%Y-%m")
-        _s_fp_month = 0
-        _s_created_month = 0
-        for _, r in stripe_raw.iterrows():
-            if str(r.get("final_status", "")).upper() == "ACCEPTED":
-                _fp = str(r.get("First payment", "")).strip()
-                _cr = str(r.get("Created", "")).strip()
-                _rd = str(r.get("row_date_used", "")).strip()
-                if _fp and _fp.startswith(_s_cur_month):
-                    _s_fp_month += 1
-                if _cr and _cr.startswith(_s_cur_month):
-                    _s_created_month += 1
-                if _rd and _rd.startswith(_s_cur_month):
-                    _s_created_month += 1  # row_date_used counts too
-
-        _sc1, _sc2, _sc3, _sc4 = st.columns(4)
-        with _sc1:
-            st.metric("Total Rows", f"{len(stripe_raw):,}")
-        with _sc2:
-            st.metric("✅ ACCEPTED", f"{_s_acc:,}")
-        with _sc3:
-            st.metric("❌ REJECTED", f"{_s_rej:,}")
-        with _sc4:
-            st.metric("This Month (Accepted)", f"{_s_fp_month} (FP) / {_s_created_month} (Created)")
-
-        # Stripe API Live Verification
-        _stripe_api_key = get_secret("STRIPE_SECRET_KEY", "")
-        if _stripe_api_key and str(_stripe_api_key).startswith("sk_"):
-            with st.expander("🟢 Stripe API Live Verification", expanded=True):
-                if st.button("🔍 Verify with Stripe API", key="verify_stripe_api"):
-                    try:
-                        import stripe as _stripe_lib
-                        _stripe_lib.api_key = str(_stripe_api_key)
-                        _now = datetime.now()
-                        _ms = int(datetime(_now.year, _now.month, 1).timestamp())
-                        _all_pi = []
-                        _has_more = True
-                        _sa = None
-                        while _has_more:
-                            _params = {"created": {"gte": _ms}, "limit": 100}
-                            if _sa:
-                                _params["starting_after"] = _sa
-                            _resp = _stripe_lib.PaymentIntent.list(**_params)
-                            _all_pi.extend(_resp.data)
-                            _has_more = _resp.has_more
-                            if _has_more and _resp.data:
-                                _sa = _resp.data[-1].id
-                        _api_total = len(_all_pi)
-                        _api_accepted = sum(1 for i in _all_pi if i.status == "succeeded")
-                        _api_declined = sum(
-                            1 for i in _all_pi if i.status in ["requires_payment_method", "canceled", "payment_failed"]
-                        )
-                        _api_revenue = sum(i.amount / 100 for i in _all_pi if i.status == "succeeded")
-                        _va1, _va2, _va3, _va4 = st.columns(4)
-                        with _va1:
-                            st.metric("API Total Payments", f"{_api_total:,}")
-                        with _va2:
-                            st.metric("API Succeeded (Accepted)", f"{_api_accepted:,}")
-                        with _va3:
-                            st.metric("API Declined", f"{_api_declined:,}")
-                        with _va4:
-                            st.metric("API Revenue", f"${_api_revenue:,.2f}")
-                        if _api_accepted != _s_acc:
-                            st.warning(f"⚠️ Mismatch: Sheets ACCEPTED={_s_acc} vs API Succeeded={_api_accepted}. Pipeline may need to re-run.")
-                        else:
-                            st.success(f"✅ Verified: Sheets ACCEPTED ({_s_acc}) matches API Succeeded ({_api_accepted})")
-                    except Exception as _e:
-                        st.error(f"❌ Stripe API error: {_e}")
-        elif not _stripe_api_key:
-            with st.expander("⚪ Stripe API Verification (Not Connected)"):
-                st.info("💡 Add `STRIPE_SECRET_KEY` to Streamlit secrets for optional live Stripe API verification (cross-check sheet data).")
-                st.caption("Stripe data is already scraped via session cookies (`STRIPE_COOKIES_JSON`). The API key is only for verification.")
-
-        with st.expander("🔍 Stripe Details — Accept/Reject Breakdown"):
-            if "category" in stripe_raw.columns:
-                _cat_counts = stripe_raw.groupby("category").size().reset_index(name="Count").sort_values("Count", ascending=False)
-                st.dataframe(_cat_counts, height=300, use_container_width=True, hide_index=True)
-
-            if _s_has_fp < _s_acc:
-                st.warning(
-                    f"⚠️ Only {_s_has_fp}/{_s_acc} ACCEPTED rows have 'First payment' date. "
-                    f"Rows without First payment use 'Created' date instead. "
-                    f"If this seems wrong, check if Stripe scraper is capturing the 'first_payment' column."
-                )
-
-            st.caption(f"💡 Rows with 'First payment' date: {_s_has_fp} | Rows with 'Total spend' > $0: {_s_has_spend}")
-            st.caption("💡 Pipeline must re-run after code update to re-categorize Stripe data with the new logic.")
-
-        # Show sample of recent Stripe data
-        with st.expander("📋 Recent Stripe Data (first 10 rows)"):
-            _show_cols = [c for c in ["Email", "Customer", "First payment", "Created", "Total spend", "final_status", "category"] if c in stripe_raw.columns]
-            if _show_cols:
-                _df(stripe_raw[_show_cols].head(10), height=300)
-            else:
-                st.dataframe(stripe_raw.head(10), height=300)
-    else:
-        st.error("❌ No Stripe data loaded! Either Verified_STRIPE sheet is empty or connection failed.")
-        st.caption("💡 This means the pipeline hasn't successfully scraped Stripe data. "
-                   "Check that STRIPE_COOKIES_JSON secret is set and valid in GitHub repo secrets.")
-    st.caption("The pipeline fetches fresh data from all sources. Auto-trigger runs daily when data is stale.")
-
-    # Auto-trigger status
-    _gh_token = get_secret("GITHUB_TOKEN", "")
-    _auto_enabled = st.toggle("🔄 Auto-Trigger Pipeline (when data is stale)", value=True, key="auto_pipeline_toggle")
-    if _auto_enabled and not _gh_token:
-        st.warning("⚠️ Add `GITHUB_TOKEN` (GitHub PAT) to secrets to enable auto-trigger.")
-
-    # Show data freshness
-    _today_str2 = datetime.now().strftime("%Y-%m-%d")
-    _has_today_data = False
-    if not counts_raw.empty:
-        _dc2 = next((c for c in counts_raw.columns if "date" in c.lower()), None)
-        if _dc2:
-            _has_today_data = _today_str2 in counts_raw[_dc2].astype(str).values
-    if _has_today_data:
-        st.success(f"✅ Data is fresh — today ({_today_str2}) data exists")
-    else:
-        st.warning(f"⚠️ Data is stale — no data for today ({_today_str2})")
-
-    # Manual trigger buttons
-    _trig_c1, _trig_c2 = st.columns(2)
-    with _trig_c1:
-        if st.button("🚀 Run Pipeline (Local)", type="secondary", use_container_width=True):
-            with st.spinner("Running pipeline..."):
-                try:
-                    import subprocess
-                    _root_dir = os.path.dirname(os.path.abspath(__file__))
-                    _result = subprocess.run(
-                        ["python3", "daily_pipeline.py"],
-                        capture_output=True, text=True, timeout=180,
-                        cwd=_root_dir,
-                    )
-                    if _result.returncode == 0:
-                        st.success("✅ Pipeline completed! Refresh page to see updated data.")
-                        if _result.stdout:
-                            st.code(_result.stdout[-800:])
-                        st.cache_data.clear()
-                    else:
-                        st.warning("Pipeline finished with warnings")
-                        if _result.stderr:
-                            st.code(_result.stderr[-800:])
-                except FileNotFoundError:
-                    st.info("Pipeline scripts not available on Streamlit Cloud. Use Remote trigger.")
-                except Exception as _e:
-                    st.info(f"Run manually: `python3 daily_pipeline.py` ({_e})")
-
-    with _trig_c2:
-        if _gh_token:
-            if st.button("⚡ Trigger Remote Pipeline", type="primary", use_container_width=True):
-                try:
-                    import urllib.request
-                    import json as _json
-                    _repo = "fozayelibnayaz/eagle3d-kpi-automation"
-                    _url = f"https://api.github.com/repos/{_repo}/actions/workflows/daily_pipeline.yml/dispatches"
-                    _data = _json.dumps({"ref": "main"}).encode()
-                    _req = urllib.request.Request(
-                        _url, data=_data, method="POST",
-                        headers={"Authorization": f"token {_gh_token}", "Accept": "application/vnd.github+json"}
-                    )
-                    with urllib.request.urlopen(_req, timeout=15) as _r:
-                        if _r.status in (200, 204):
-                            st.success("✅ Pipeline triggered! Data updates in ~5 min. Refresh then.")
-                except Exception as _e:
-                    st.error(f"Failed: {_e}")
-        else:
-            st.button("⚡ Trigger Remote Pipeline", disabled=True, use_container_width=True)
-            st.caption("🔑 Add `GITHUB_TOKEN` (a GitHub PAT with `repo` + `workflow` scope) to secrets to enable this button.")
-            st.markdown("[👉 Trigger Manually on GitHub →](https://github.com/fozayelibnayaz/eagle3d-kpi-automation/actions/workflows/daily_pipeline.yml)")
-
-    st.markdown("---")
-    st.markdown("#### 🔧 Add / Update Secrets (Local Only)")
-    st.caption("For Streamlit Cloud, add secrets at **share.streamlit.io → Settings → Secrets**.")
-    with st.expander("📝 Edit local secrets.toml"):
-        _secret_text = st.text_area("secrets.toml content", value="""# API Keys
-GROQ_API_KEY = "your-groq-key"
-GEMINI_API_KEY = "your-gemini-key"
-""", height=180)
-        if st.button("💾 Save secrets.toml"):
+    with _mo_tab1:
+        st.markdown("#### 📝 Add a Daily KPI Entry")
+        _oc1, _oc2 = st.columns(2)
+        with _oc1:
+            _entry_date = st.date_input("Date", value=datetime.now().date(), key="mo_date")
+        with _oc2:
+            _entry_signups = st.number_input("Sign-ups", min_value=0, value=0, key="mo_s")
+        _oc3, _oc4 = st.columns(2)
+        with _oc3:
+            _entry_uploads = st.number_input("First Uploads", min_value=0, value=0, key="mo_u")
+        with _oc4:
+            _entry_paid = st.number_input("Paid Customers", min_value=0, value=0, key="mo_p")
+        if st.button("💾 Save Entry", type="primary", use_container_width=True):
+            _md = _load_manual()
+            _date_str = _entry_date.strftime("%Y-%m-%d")
+            _found = False
+            for _row in _md["daily"]:
+                if _row.get("date") == _date_str:
+                    _row["signups"] = _entry_signups
+                    _row["first_uploads"] = _entry_uploads
+                    _row["paid_customers"] = _entry_paid
+                    _found = True
+                    break
+            if not _found:
+                _md["daily"].append({
+                    "date": _date_str,
+                    "signups": _entry_signups,
+                    "first_uploads": _entry_uploads,
+                    "paid_customers": _entry_paid,
+                })
             try:
-                os.makedirs(".streamlit", exist_ok=True)
-                with open(".streamlit/secrets.toml", "w") as _f:
-                    _f.write(_secret_text)
-                st.success("✅ Saved! Refresh page to apply.")
+                _save_manual(_md)
+                st.success(f"✅ Saved: {_date_str} — {_entry_signups} sign-ups, {_entry_uploads} uploads, {_entry_paid} paid")
             except OSError:
-                st.warning("⚠️ Cannot write here (read-only). Add secrets in share.streamlit.io → Settings → Secrets.")
+                st.warning("⚠️ Cannot write on Streamlit Cloud (read-only). Works locally only.")
+
+    with _mo_tab2:
+        st.markdown("#### 📂 Bulk CSV Import")
+        st.caption("Upload a CSV with columns: date, signups, first_uploads, paid_customers")
+        _csv_file = st.file_uploader("Choose CSV", type=["csv"], key="mo_csv")
+        if _csv_file is not None:
+            try:
+                _csv_df = pd.read_csv(_csv_file)
+                st.dataframe(_csv_df.head(10), use_container_width=True)
+                if st.button("📥 Import All Rows", type="primary"):
+                    _md = _load_manual()
+                    _existing = {r["date"] for r in _md["daily"]}
+                    _added = 0
+                    for _, _row in _csv_df.iterrows():
+                        _d = str(_row.get("date", ""))
+                        if _d and _d not in _existing:
+                            _md["daily"].append({
+                                "date": _d,
+                                "signups": int(pd.to_numeric(_row.get("signups", 0), errors="coerce") or 0),
+                                "first_uploads": int(pd.to_numeric(_row.get("first_uploads", 0), errors="coerce") or 0),
+                                "paid_customers": int(pd.to_numeric(_row.get("paid_customers", 0), errors="coerce") or 0),
+                            })
+                            _added += 1
+                    try:
+                        _save_manual(_md)
+                        st.success(f"✅ Imported {_added} new entries")
+                    except OSError:
+                        st.warning("⚠️ Cannot write on Streamlit Cloud.")
+            except Exception as _e:
+                st.error(f"CSV error: {_e}")
+
+    with _mo_tab3:
+        st.markdown("#### 📋 Current Manual Entries")
+        _md = _load_manual()
+        if _md["daily"]:
+            _log_df = pd.DataFrame(_md["daily"])
+            _df(_log_df, height=400)
+            if st.button("🗑️ Clear All Manual Entries", type="secondary"):
+                try:
+                    _save_manual({"daily": []})
+                    st.success("Cleared!")
+                    st.rerun()
+                except OSError:
+                    st.warning("⚠️ Cannot write on Streamlit Cloud.")
+        else:
+            st.info("No manual entries yet.")
+
+    # ── OVERRIDE MANAGER TAB ──
+    with _mo_tab4:
+        st.markdown("#### 🔧 Override Manager")
+        st.caption("View, manage, and remove label overrides. Changes update counts everywhere instantly.")
+        _mo_engine4 = MOD.get("manual_override_engine")
+        if _mo_engine4:
+            _ov_summary = _mo_engine4.get_override_summary()
+            if _ov_summary["total"] > 0:
+                # Show impact summary
+                st.metric("Active Overrides", _ov_summary["total"])
+                c_a1, c_a2 = st.columns(2)
+                with c_a1:
+                    for act, cnt in _ov_summary.get("by_action", {}).items():
+                        _act_label = {
+                            "accept": "✅ Accepted", "reject": "❌ Rejected",
+                            "disposable": "🗑️ Disposable", "duplicate": "📋 Duplicate",
+                            "repeat_upload": "🔄 Repeat Upload", "not_determined": "❓ Not Determined",
+                        }.get(act, act)
+                        st.metric(_act_label, cnt)
+                with c_a2:
+                    st.metric("Impact", f"{_ov_summary['total']} emails affected")
+
+                if st.button("🗑️ Clear All Overrides", type="secondary", use_container_width=True):
+                    _mo_engine4.save_overrides({})
+                    st.session_state["_ov_toast_shown"] = False
+                    st.success("✅ All overrides cleared! Counts restored to original.")
+                    st.cache_data.clear()
+                    st.rerun()
+
+                st.markdown("---")
+                st.markdown("##### Override Details")
+                st.caption("Click ❌ to remove an override. The email will revert to its original status.")
+                _ovs = _mo_engine4.load_overrides()
+                for _ov_em, _ov_data in _ovs.items():
+                    c_r1, c_r2, c_r3, c_r4 = st.columns([3, 2, 2, 1])
+                    with c_r1:
+                        st.text(f"📧 {_ov_em}")
+                    with c_r2:
+                        _act_nice = {
+                            "accept": "→ ACCEPTED", "reject": "→ REJECTED",
+                            "disposable": "→ DISPOSABLE", "duplicate": "→ DUPLICATE",
+                            "repeat_upload": "→ REPEAT_UPLOAD", "not_determined": "→ NOT_DETERMINED",
+                        }.get(_ov_data.get("action", "?"), f"→ {_ov_data.get('action', '?')}")
+                        st.text(_act_nice)
+                    with c_r3:
+                        _orig = _ov_data.get("original_category", "Unknown")
+                        st.text(f"was: {_orig}")
+                    with c_r4:
+                        if st.button("❌", key=f"rm_ov_{_ov_em}", help=f"Remove override for {_ov_em}"):
+                            _mo_engine4.remove_override(_ov_em)
+                            st.session_state["_ov_toast_shown"] = False
+                            st.cache_data.clear()
+                            st.rerun()
+            else:
+                st.info("No active overrides. Use Browse Data → Override Labels to add them.")
+        else:
+            st.warning("⚠️ Override engine not loaded")
+
+
+# ═══════════════════════════════════════════════════════════════
+# PAGE: 📺 YOUTUBE ANALYTICS (Full Command Center)
+# ═══════════════════════════════════════════════════════════════
+elif page == "📺 YouTube":
+    try:
+        from youtube_command_center_ui import render_youtube_command_center
+        render_youtube_command_center()
+    except Exception as _e:
+        st.error(f"YouTube Command Center error: {_e}")
+        st.caption("Check youtube_command_center.py and youtube_command_center_ui.py exist")
+
+elif page == "💼 LinkedIn":
+    try:
+        from linkedin_command_center_ui import render_linkedin_command_center
+        render_linkedin_command_center()
+    except Exception as _le:
+        st.error(f"LinkedIn Command Center error: {_le}")
+        import traceback
+        st.code(traceback.format_exc()[:1000])
+
+elif page == "🎯 Customer Success":
+    try:
+        from customer_success_ui import render_customer_success
+        render_customer_success()
+    except Exception as _ce:
+        st.error(f"Customer Success error: {_ce}")
+        import traceback
+        st.code(traceback.format_exc()[:1000])
+
+elif page == "🔗 Cross-Platform":
+    st.markdown(
+        '<div class="sec-head">🔗 Cross-Platform Intelligence Hub</div>',
+        unsafe_allow_html=True,
+    )
+    st.caption("Correlate data across KPI, GA4, YouTube, LinkedIn & Stripe — measure what matters.")
+
+    try:
+        from cross_platform_engine import (
+            build_unified_timeline, compute_correlations,
+            compute_attribution, compute_cross_platform_funnel,
+            compute_growth_analysis,
+            generate_cross_insights,
+        )
+        from youtube_connector import get_channel_info, get_daily_analytics
+        from linkedin_connector import get_cached_metrics, get_manual_history
+    except Exception as e:
+        st.error(f"Cross-platform engine not loaded: {e}")
+        st.stop()
+    _ga4_ok = bool(os.environ.get("GA4_PROPERTY_ID") or True)  # GA4 is already configured
+
+    _ps1, _ps2, _ps3, _ps4 = st.columns(4)
+    with _ps1:
+        _kpi_status = "✅" if not kpi_all.empty else "⚠️"
+        st.metric("KPI Data", f"{_kpi_status} ({len(kpi_all)} days)")
+    with _ps2:
+        st.metric("GA4 Traffic", "✅" if _ga4_ok else "❌")
+    with _ps3:
+        try:
+            import youtube_connector as _yt_mod
+            _yt_status = _yt_mod.get_status() if hasattr(_yt_mod, "get_status") else {"configured": _yt_mod.is_configured()}
+        except Exception:
+            _yt_status = {"configured": False}
+        st.metric("YouTube", "✅" if _yt_status.get("configured") else "❌")
+    with _ps4:
+        try:
+            import linkedin_connector as _li_mod
+            _li_status = _li_mod.get_status() if hasattr(_li_mod, "get_status") else {"configured": _li_mod.is_configured()}
+        except Exception:
+            _li_status = {"configured": False}
+        st.metric("LinkedIn", "✅" if _li_status.get("configured") else "❌")
 
     st.markdown("---")
-    st.markdown("#### 🔄 Clear Cache & Refresh Data")
-    if st.button("🔄 Clear All Cache", use_container_width=True):
-        st.cache_data.clear()
-        st.success("✅ Cache cleared! Refresh page to reload all data.")
 
-elif page == "⚙️ Settings":
+    # Period selection
+    _cp_start = p_start.strftime("%Y-%m-%d")
+    _cp_end = p_end.strftime("%Y-%m-%d")
 
-    # ── TELEGRAM ALERTS CONTROL CENTER ──
-    st.markdown("### 📨 Telegram Alerts Control")
-    st.caption("Send alerts to the main Telegram group manually")
+    # ── Build unified timeline ──
+    _yt_daily = pd.DataFrame()
+    _li_daily = pd.DataFrame()
+    _ga4_daily = pd.DataFrame()
 
-    # State for showing result
-    if "_alert_msg" not in st.session_state:
-        st.session_state["_alert_msg"] = None
+    # Get GA4 data
+    try:
+        _ga4_mod = MOD.get("ga4_connector")
+        if _ga4_mod and hasattr(_ga4_mod, "fetch_utm_traffic"):
+            _ga4_daily = _ga4_mod.fetch_utm_traffic(_cp_start, _cp_end)
+    except Exception:
+        pass
 
-    msg = st.session_state.get("_alert_msg")
-    if msg:
-        if msg["type"] == "success":
-            st.success(msg["text"])
+    # Get YouTube data
+    if _yt_status.get("configured"):
+        try:
+            _yt_daily = get_daily_analytics(_cp_start, _cp_end)
+        except Exception:
+            _yt_daily = pd.DataFrame()
+        # Fallback 1: build YouTube daily from public video data if no OAuth analytics
+        if _yt_daily.empty:
+            try:
+                _yt_vids = get_channel_videos(max_videos=200)
+                if _yt_vids:
+                    from collections import defaultdict as _dd3
+                    _yt_dd = _dd3(lambda: {"youtube_views": 0, "youtube_likes": 0, "youtube_comments": 0})
+                    for _v in _yt_vids:
+                        _vd = _v.get("published_at", "")
+                        if _vd:
+                            _vdate = _vd[:10]
+                            if _cp_start <= _vdate <= _cp_end:
+                                _yt_dd[_vdate]["youtube_views"] += _v.get("views", 0)
+                                _yt_dd[_vdate]["youtube_likes"] += _v.get("likes", 0)
+                                _yt_dd[_vdate]["youtube_comments"] += _v.get("comments", 0)
+                    if _yt_dd:
+                        _yt_daily = pd.DataFrame([
+                            {"date": d, **_yt_dd[d]} for d in sorted(_yt_dd.keys())
+                        ])
+            except Exception:
+                pass
+        # Fallback 2: use saved youtube_daily.json from pipeline
+        if _yt_daily.empty:
+            try:
+                _yt_daily_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data_output", "youtube_daily.json")
+                if os.path.exists(_yt_daily_path):
+                    with open(_yt_daily_path, "r") as _yf:
+                        _yt_daily_data = json.load(_yf)
+                    if _yt_daily_data:
+                        _yt_rows = []
+                        for _d, _vals in _yt_daily_data.items():
+                            if _cp_start <= _d <= _cp_end:
+                                _yt_rows.append({"date": _d, **_vals})
+                        if _yt_rows:
+                            _yt_daily = pd.DataFrame(_yt_rows)
+            except Exception:
+                pass
+
+    # Get LinkedIn data
+    _li_hist = get_manual_history()
+    if not _li_hist.empty:
+        _li_daily = _li_hist
+    else:
+        # Fallback: use cached metrics as single-day entry
+        _li_cached = get_cached_metrics()
+        if _li_cached and not _li_cached.get("error"):
+            _li_daily = pd.DataFrame([{
+                "date": datetime.now().strftime("%Y-%m-%d"),
+                "followers": _li_cached.get("followers", 0),
+                "company_name": _li_cached.get("company_name", ""),
+            }])
         else:
-            st.error(msg["text"])
-        st.session_state["_alert_msg"] = None
+            _li_daily = pd.DataFrame()
 
-    # ── Callback functions for buttons ──
-    def _alert_callback(name, func_path):
-        try:
-            # func_path = ("module", "function")
-            mod_name, fn_name = func_path
-            mod = __import__(mod_name)
-            fn = getattr(mod, fn_name)
-            from comprehensive_alerts import _send_telegram
-            content_msg = fn()
-            if not content_msg or not str(content_msg).strip():
-                st.session_state["_alert_msg"] = {"type":"error", "text":f"❌ {name}: empty content"}
-                return
-            ok = _send_telegram(content_msg)
-            if ok:
-                st.session_state["_alert_msg"] = {"type":"success", "text":f"✅ {name} sent to Telegram"}
-            else:
-                st.session_state["_alert_msg"] = {"type":"error", "text":f"❌ {name}: Telegram send failed (check logs)"}
-        except Exception as e:
-            import traceback as _tb
-            st.session_state["_alert_msg"] = {"type":"error", "text":f"❌ {name}: {e}\n{_tb.format_exc()[:500]}"}
+    # Build unified
+    _unified = build_unified_timeline(
+        kpi_df=kpi_all,
+        ga4_df=_ga4_daily,
+        youtube_daily=_yt_daily,
+        linkedin_daily=_li_daily,
+        start_date=_cp_start,
+        end_date=_cp_end,
+    )
 
-    def _send_all_callback():
-        try:
-            from all_alerts import run_all
-            n = run_all()
-            st.session_state["_alert_msg"] = {"type":"success", "text":f"✅ Sent {n}/12 alerts to Telegram"}
-        except Exception as e:
-            import traceback as _tb
-            st.session_state["_alert_msg"] = {"type":"error", "text":f"❌ Send all error: {e}\n{_tb.format_exc()[:500]}"}
+    _cp_tabs = st.tabs([
+        "🔄 Unified Timeline", "🔗 Correlations", "🎯 Attribution",
+        "📊 Funnel", "📈 Growth", "💡 Insights",
+    ])
 
-    def _legacy_callback():
-        try:
-            from reporting_engine import main as _rm
-            _rm()
-            st.session_state["_alert_msg"] = {"type":"success", "text":"✅ Legacy full report sent"}
-        except Exception as e:
-            st.session_state["_alert_msg"] = {"type":"error", "text":f"❌ Legacy: {e}"}
-
-    # ── 3 MAIN BUTTONS ──
-    _ta_c1, _ta_c2 = st.columns(2)
-    with _ta_c1:
-        st.button("📤 Send ALL 12 Alerts", type="primary", use_container_width=True,
-                  key="tg_send_all_12", on_click=_send_all_callback)
-    with _ta_c2:
-        st.button("📊 Send Legacy Full Report", use_container_width=True,
-                  key="tg_legacy", on_click=_legacy_callback)
-
-    st.markdown("**Individual Alert Tests:**")
-
-    # ── 12 INDIVIDUAL BUTTONS ──
-    buttons = [
-        ("📊 KPI",              ("comprehensive_alerts", "alert_kpi_detailed")),
-        ("🌐 GA4",              ("comprehensive_alerts", "alert_ga4")),
-        ("📺 YouTube",          ("comprehensive_alerts", "alert_youtube")),
-        ("💼 LinkedIn",         ("comprehensive_alerts", "alert_linkedin")),
-        ("💳 Stripe",           ("comprehensive_alerts", "alert_stripe")),
-        ("🎯 Customer Success", ("comprehensive_alerts", "alert_customer_success")),
-        ("🔗 Cross-Platform",   ("comprehensive_alerts", "alert_cross_platform")),
-        ("🤖 AI Insights",      ("comprehensive_alerts", "alert_ai_insights")),
-        ("☀️ Daily Standup",    ("role_alerts",          "daily_standup")),
-        ("📊 Marketer Weekly",  ("role_alerts",          "marketer_weekly")),
-        ("🚨 CS Lead Weekly",   ("role_alerts",          "cs_lead_weekly")),
-        ("📈 Founder Monthly",  ("role_alerts",          "founder_monthly")),
-    ]
-
-    # Render in 4-column grid (3 rows)
-    for row_i in range(0, len(buttons), 4):
-        cols = st.columns(4)
-        for col_i, (label, func_path) in enumerate(buttons[row_i:row_i+4]):
-            with cols[col_i]:
-                # Capture variables for closure
-                _captured_name = label
-                _captured_path = func_path
-                st.button(
-                    label,
-                    use_container_width=True,
-                    key=f"ind_btn_{row_i+col_i}",
-                    on_click=lambda n=_captured_name, p=_captured_path: _alert_callback(n, p),
+    with _cp_tabs[0]:  # Unified Timeline
+        st.markdown("#### 🔄 Unified Cross-Platform Timeline")
+        if not _unified.empty:
+            _avail_cols = []
+            for c in _unified.columns:
+                if c != "date":
+                    try:
+                        if pd.api.types.is_numeric_dtype(_unified[c]) and _unified[c].sum() > 0:
+                            _avail_cols.append(c)
+                    except Exception:
+                        pass
+            if _avail_cols:
+                # Let user pick metrics to chart
+                _sel_metrics = st.multiselect(
+                    "Select metrics to chart",
+                    _avail_cols,
+                    default=_avail_cols[:5] if len(_avail_cols) >= 5 else _avail_cols,
                 )
+                if _sel_metrics:
+                    fig = go.Figure()
+                    colors = [T["accent"], T["accent2"], T["green"], T["yellow"], T["red"], "#FF6B6B", "#4ECDC4"]
+                    for i, m in enumerate(_sel_metrics):
+                        fig.add_trace(go.Scatter(
+                            x=_unified["date"], y=_unified[m],
+                            name=m.replace("_", " ").title(),
+                            line=dict(color=colors[i % len(colors)], width=2),
+                        ))
+                    fig.update_layout(
+                        height=500, **CT(),
+                        legend=dict(orientation="h", yanchor="bottom", y=1.02),
+                        margin=dict(l=50, r=20, t=50, b=30),
+                    )
+                    _pc(fig)
 
-    st.divider()
+                _df(_unified.tail(30))
+            else:
+                st.info("No data with non-zero values found in the selected period.")
+        else:
+            st.warning("⚠️ No data available from any platform for the selected period.")
 
+    with _cp_tabs[1]:  # Correlations
+        st.markdown("#### 🔗 Cross-Platform Correlations")
+        if not _unified.empty and len(_unified) >= 3:
+            _corr = compute_correlations(_unified)
+            if _corr.get("error"):
+                st.info(_corr["error"])
+            else:
+                _strong = _corr.get("strong_correlations", [])
+                if _strong:
+                    st.markdown("##### Strongest Correlations")
+                    for c in _strong[:10]:
+                        _dir = "📈" if c["direction"] == "positive" else "📉"
+                        _str = "🔥" if c["strength"] == "strong" else "🔸"
+                        st.markdown(
+                            f"{_str} {_dir} <code>{c['metric_a']}</code> ↔ <code>{c['metric_b']}</code> "
+                            f"— r = <b>{c['correlation']}</b> ({c['strength']})",
+                            unsafe_allow_html=True,
+                        )
+
+                    # Correlation heatmap
+                    _mat = _corr.get("matrix", {})
+                    if _mat:
+                        _mat_df = pd.DataFrame(_mat)
+                        fig = go.Figure(data=go.Heatmap(
+                            z=_mat_df.values,
+                            x=_mat_df.columns,
+                            y=_mat_df.index,
+                            colorscale="RdBu",
+                            zmin=-1, zmax=1,
+                        ))
+                        fig.update_layout(
+                            height=max(400, len(_mat_df) * 30),
+                            **CT(),
+                            margin=dict(l=150, r=20, t=30, b=100),
+                            xaxis=dict(tickangle=45),
+                        )
+                        _pc(fig)
+                else:
+                    st.info("No significant correlations found (r > 0.3). Need more data or different metrics.")
+
+                st.caption(f"Analyzed {_corr.get('metric_count', 0)} metrics over {_corr.get('day_count', 0)} days")
+        else:
+            st.info("Need at least 3 days of data from multiple platforms for correlation analysis.")
+
+    with _cp_tabs[2]:  # Attribution
+        st.markdown("#### 🎯 Channel Attribution")
+        st.caption("Which platform metrics best predict your KPI conversions?")
+        if not _unified.empty and len(_unified) >= 7:
+            _attr = compute_attribution(_unified)
+            if isinstance(_attr, dict) and not _attr.get("error"):
+                for _kpi_name, _predictors in _attr.items():
+                    if _predictors:
+                        st.markdown(f"##### {_kpi_name.replace('_', ' ').title()}")
+                        for p in _predictors[:5]:
+                            _lag = f" (leads by {p['lag_days']}d)" if p["lag_days"] > 0 else " (same-day)"
+                            st.markdown(
+                                f"- 🎯 <code>{p['metric']}</code> ({p['platform']}) — "
+                                f"r={p['correlation']}{_lag}",
+                                unsafe_allow_html=True,
+                            )
+            else:
+                st.info(_attr.get("error", "Not enough data for attribution analysis."))
+        else:
+            st.info("Need at least 7 days of data for attribution analysis.")
+
+    with _cp_tabs[3]:  # Funnel
+        st.markdown("#### 📊 Cross-Platform Funnel")
+        _yt_info = get_channel_info() if _yt_status["configured"] else {}
+        _li_metrics = get_cached_metrics()
+
+        _yt_views = int(_unified.filter(like="yt_views").sum().sum()) if not _unified.empty else 0
+        _li_impressions = int(_unified.filter(like="li_impressions").sum().sum()) if not _unified.empty else 0
+        _ga4_sessions = int(_unified.filter(like="ga4_sessions").sum().sum()) if not _unified.empty else 0
+
+        _funnel = compute_cross_platform_funnel(
+            kpi_df=kpi_all if not kpi_all.empty else pd.DataFrame({"signups": [0], "first_uploads": [0], "paid_customers": [0]}),
+            ga4_sessions=_ga4_sessions,
+            yt_views=_yt_views,
+            li_impressions=_li_impressions,
+            period_label=f"{_cp_start} to {_cp_end}",
+        )
+
+        # Draw funnel
+        _stages = _funnel.get("stages", [])
+        if _stages:
+            fig = go.Figure(go.Funnel(
+                y=[s["stage"] for s in _stages],
+                x=[max(s["value"], 1) for s in _stages],
+                textinfo="value+percent initial+percent previous",
+                marker={"color": [T["accent"], T["accent2"], T["green"], T["yellow"], T["red"]]},
+            ))
+            fig.update_layout(height=450, **CT())
+            _pc(fig)
+
+            # Conversion rates
+            _conv = _funnel.get("conversion_rates", {})
+            if _conv:
+                st.markdown("##### Conversion Rates")
+                for k, v in _conv.items():
+                    if v > 0:
+                        st.markdown(f"- <code>{k.replace('_', ' ').title()}</code>: <b>{v}%</b>", unsafe_allow_html=True)
+
+    with _cp_tabs[4]:  # Growth
+        st.markdown("#### 📈 Cross-Platform Growth")
+        if not _unified.empty and len(_unified) >= 6:
+            _growth = compute_growth_analysis(_unified)
+            if _growth.get("error"):
+                st.info(_growth["error"])
+            else:
+                _g_metrics = _growth.get("metrics", {})
+                _g_rows = []
+                for m, d in _g_metrics.items():
+                    _g_rows.append({
+                        "Metric": m.replace("_", " ").title(),
+                        "Current": d["current_period"],
+                        "Previous": d["previous_period"],
+                        "Change": d["change"],
+                        "% Change": f"{d['pct_change']}%",
+                        "Trend": {"growing": "📈", "declining": "📉", "stable": "➡️"}[d["trend"]],
+                    })
+                if _g_rows:
+                    _df(pd.DataFrame(_g_rows))
+        else:
+            st.info("Need more data for growth analysis.")
+
+    with _cp_tabs[5]:  # Insights
+        st.markdown("#### 💡 Cross-Platform Insights")
+        _corr_data = {}
+        _attr_data = {}
+        _growth_data = {}
+        _funnel_data = {}
+
+        if not _unified.empty and len(_unified) >= 3:
+            _corr_data = compute_correlations(_unified)
+        if not _unified.empty and len(_unified) >= 7:
+            _attr_data = compute_attribution(_unified)
+        if not _unified.empty and len(_unified) >= 6:
+            _growth_data = compute_growth_analysis(_unified)
+        _funnel_data = compute_cross_platform_funnel(
+            kpi_df=kpi_all if not kpi_all.empty else pd.DataFrame({"signups": [0]}),
+            ga4_sessions=0, yt_views=0, li_impressions=0,
+        )
+
+        _insights = generate_cross_insights(_corr_data, _attr_data, _growth_data, _funnel_data)
+        for insight in _insights:
+            st.markdown(f"<div style='padding:8px 12px;margin:4px 0;background:{T['card']};border-radius:8px;border-left:3px solid {T['accent']};'>{insight}</div>", unsafe_allow_html=True)
+
+        if not _insights:
+            st.info("Connect more platforms (YouTube, LinkedIn) for richer cross-platform insights.")
+
+
+# ═══════════════════════════════════════════════════════════════
+# PAGE: ⚙️ SETTINGS (with Run Pipeline + Secrets Editor + Cache Clear)
+# ═══════════════════════════════════════════════════════════════
+elif page == "⚙️ Settings":
 
     # ── ACCESS CONTROL MANAGEMENT ──
     with st.expander("👥 User Access Management", expanded=True):
@@ -4004,29 +4760,3 @@ with _fc3:
             else "🧠 Rules"
         )
         st.caption(f"AI: {_prl}")
-
-
-_fc1, _fc2, _fc3 = st.columns(3)
-with _fc1:
-    st.caption(
-        f"🦅 Eagle Analytics Hub v7.2 | "
-        f"{datetime.now().strftime('%Y-%m-%d %H:%M')}"
-    )
-with _fc2:
-    st.caption("Pipeline: Daily 12:00 UTC")
-with _fc3:
-    _ai_mod = MOD.get("ai_engine")
-    if _ai_mod:
-        _pr = _ai_mod._get_provider()
-        _prl = (
-            "⚡ Groq" if _pr == "groq"
-            else "💎 Gemini" if _pr == "gemini"
-            else "🧠 Rules"
-        )
-        st.caption(f"AI: {_prl}")
-
-# ═══════════════════════════════════════════════════════════════
-# FOOTER
-# ═══════════════════════════════════════════════════════════════
-st.divider()
-
