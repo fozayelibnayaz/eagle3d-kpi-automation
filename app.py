@@ -2340,7 +2340,7 @@ if page == "📊 Dashboard":
                 f"{(s2p - ps2p):+.1f}pp",
             ],
         }
-        _df(pd.DataFrame(comp_data), height=250)
+        st.dataframe(pd.DataFrame(comp_data), height=250)
 
     if not leads_df.empty:
         st.markdown(
@@ -2349,7 +2349,7 @@ if page == "📊 Dashboard":
         )
         c1, c2 = st.columns([2, 1])
         with c1:
-            _df(leads_df, height=300)
+            st.dataframe(leads_df, height=300)
         with c2:
             if "Signups" in leads_df.columns:
                 fig = px.pie(
@@ -2444,7 +2444,7 @@ if page == "📊 Dashboard":
             combined_df["Conv %"] = (combined_df["GA4 Conversions"] / combined_df["GA4 Sessions"].replace(0, 1) * 100).round(1)
             # Reorder columns
             show_cols = [c for c in ["Source", "GA4 Sessions", "GA4 Conversions", "Conv %", "CRM Signups", "Total Interactions", "Type"] if c in combined_df.columns]
-            _df(combined_df[show_cols].head(30), height=400)
+            st.dataframe(combined_df[show_cols].head(30), height=400)
 
             # Pie chart of combined
             fig = px.pie(combined_df.head(10), values="Total Interactions", names="Source", hole=0.5,
@@ -2519,14 +2519,14 @@ if page == "📊 Dashboard":
                 _tt_fastest["email"] = _tt_fastest["email"].str[:25]
                 _tt_fastest_disp = _tt_fastest[["email", "gap_days"]].copy()
                 _tt_fastest_disp.columns = ["Email", "Days"]
-                _df(_tt_fastest_disp, height=300)
+                st.dataframe(_tt_fastest_disp, height=300)
         with _tt_fc2:
             st.markdown("**🐌 Slowest Conversions (top 20)**")
             if not _tt_slowest.empty:
                 _tt_slowest["email"] = _tt_slowest["email"].str[:25]
                 _tt_slowest_disp = _tt_slowest[["email", "gap_days"]].copy()
                 _tt_slowest_disp.columns = ["Email", "Days"]
-                _df(_tt_slowest_disp, height=300)
+                st.dataframe(_tt_slowest_disp, height=300)
 
     _has_any = any(r[3] for r in [_ttc_s2u, _ttc_s2p, _ttc_u2p])
     if _has_any:
@@ -2643,7 +2643,7 @@ elif page == "📈 Google Analytics":
                 margin=dict(l=0, r=0, t=20, b=0),
             )
             _pc(fig)
-            _df(agg)
+            st.dataframe(agg)
         else:
             st.info("No GA4 traffic data available. Configure GA4 connector in Settings.")
 
@@ -3433,7 +3433,7 @@ elif page == "🔬 EDA Lab":
                         **CT(), margin=dict(l=0, r=0, t=40, b=0),
                     )
                     _pc(fig)
-                    _df(co)
+                    st.dataframe(co)
 
 # ═══════════════════════════════════════════════════════════════
 # PAGE: 🔍 BROWSE DATA
@@ -3773,7 +3773,7 @@ elif page == "🔍 Browse Data":
                 _display_fl["App URL"] = _display_fl["App URL"].apply(
                     lambda x: f"[🔗 Open]({x})" if str(x).startswith("http") else str(x)
                 )
-            _df(_display_fl, height=450)
+            st.dataframe(_display_fl, height=450)
             st.download_button(
                 "⬇️ Download",
                 data=fl.to_csv(index=False).encode("utf-8"),
@@ -3887,7 +3887,7 @@ elif page == "✏️ Manual Override":
         _md = _load_manual()
         if _md["daily"]:
             _log_df = pd.DataFrame(_md["daily"])
-            _df(_log_df, height=400)
+            st.dataframe(_log_df, height=400)
             if st.button("🗑️ Clear All Manual Entries", type="secondary"):
                 try:
                     _save_manual({"daily": []})
@@ -4156,7 +4156,7 @@ elif page == "🔗 Cross-Platform":
                     )
                     _pc(fig)
 
-                _df(_unified.tail(30))
+                st.dataframe(_unified.tail(30))
             else:
                 st.info("No data with non-zero values found in the selected period.")
         else:
@@ -4283,7 +4283,7 @@ elif page == "🔗 Cross-Platform":
                         "Trend": {"growing": "📈", "declining": "📉", "stable": "➡️"}[d["trend"]],
                     })
                 if _g_rows:
-                    _df(pd.DataFrame(_g_rows))
+                    st.dataframe(pd.DataFrame(_g_rows))
         else:
             st.info("Need more data for growth analysis.")
 
@@ -4317,6 +4317,59 @@ elif page == "🔗 Cross-Platform":
 # PAGE: ⚙️ SETTINGS (with Run Pipeline + Secrets Editor + Cache Clear)
 # ═══════════════════════════════════════════════════════════════
 elif page == "⚙️ Settings":
+
+    # ── TELEGRAM ALERTS CONTROL CENTER ──
+    st.markdown("### 📨 Telegram Alerts Control")
+    st.caption("Send all alerts to the main Telegram group")
+
+    if "_alert_msg" not in st.session_state:
+        st.session_state["_alert_msg"] = None
+    _amsg = st.session_state.get("_alert_msg")
+    if _amsg:
+        st.success(_amsg["text"]) if _amsg["type"]=="success" else st.error(_amsg["text"])
+        st.session_state["_alert_msg"] = None
+
+    def _acb(name, mn, fn):
+        try:
+            m = __import__(mn); f = getattr(m, fn)
+            from comprehensive_alerts import _send_telegram
+            c = f()
+            ok = _send_telegram(c) if c and str(c).strip() else False
+            st.session_state["_alert_msg"] = {"type":"success" if ok else "error", "text":("✅ " if ok else "❌ ") + name}
+        except Exception as e:
+            st.session_state["_alert_msg"] = {"type":"error", "text":"❌ " + name + ": " + str(e)}
+
+    def _sall():
+        try:
+            from all_alerts import run_all; n = run_all()
+            st.session_state["_alert_msg"] = {"type":"success", "text":"✅ Sent " + str(n) + "/12 alerts"}
+        except Exception as e:
+            st.session_state["_alert_msg"] = {"type":"error", "text":"❌ " + str(e)}
+
+    c1, c2 = st.columns(2)
+    c1.button("📤 Send ALL 12 Alerts", type="primary", use_container_width=True, key="tg_all12", on_click=_sall)
+    c2.button("📊 Legacy Report", use_container_width=True, key="tg_leg", on_click=lambda: _acb("Legacy","reporting_engine","main"))
+
+    st.markdown("**Individual:**")
+    for ri, (l,m,f) in enumerate([
+        ("📊 KPI","comprehensive_alerts","alert_kpi_detailed"),
+        ("🌐 GA4","comprehensive_alerts","alert_ga4"),
+        ("📺 YouTube","comprehensive_alerts","alert_youtube"),
+        ("💼 LinkedIn","comprehensive_alerts","alert_linkedin"),
+        ("💳 Stripe","comprehensive_alerts","alert_stripe"),
+        ("🎯 CS","comprehensive_alerts","alert_customer_success"),
+        ("🔗 Cross","comprehensive_alerts","alert_cross_platform"),
+        ("🤖 AI","comprehensive_alerts","alert_ai_insights"),
+        ("☀️ Standup","role_alerts","daily_standup"),
+        ("📊 Marketer","role_alerts","marketer_weekly"),
+        ("🚨 CS Lead","role_alerts","cs_lead_weekly"),
+        ("📈 Founder","role_alerts","founder_monthly"),
+    ]):
+        if ri % 4 == 0:
+            cols = st.columns(4)
+        cols[ri%4].button(l, use_container_width=True, key=f"tg_{ri}", on_click=lambda n=l,mn=m,fn=f: _acb(n,mn,fn))
+    st.divider()
+
 
     # ── ACCESS CONTROL MANAGEMENT ──
     with st.expander("👥 User Access Management", expanded=True):
@@ -4638,7 +4691,7 @@ elif page == "⚙️ Settings":
         with st.expander("📋 Recent Stripe Data (first 10 rows)"):
             _show_cols = [c for c in ["Email", "Customer", "First payment", "Created", "Total spend", "final_status", "category"] if c in stripe_raw.columns]
             if _show_cols:
-                _df(stripe_raw[_show_cols].head(10), height=300)
+                st.dataframe(stripe_raw[_show_cols].head(10), height=300)
             else:
                 st.dataframe(stripe_raw.head(10), height=300)
     else:
