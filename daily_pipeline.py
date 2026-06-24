@@ -635,14 +635,17 @@ except Exception as _li_e:
 
 
 
-# ── STAGE: Comprehensive Multi-System Alerts ──
+
+
+
+# ── FINAL STAGE: Send ALL 12 alerts to main Telegram group ──
 try:
-    from comprehensive_alerts import send_all_alerts
-    print("\n[Daily] Sending comprehensive alerts to Telegram...")
-    sent = send_all_alerts()
-    print(f"[Daily] Sent {sent} alert sections")
+    from all_alerts import run_all as _send_all_alerts
+    print("\n[Daily] Sending all 12 alerts to Telegram group...")
+    _sent = _send_all_alerts()
+    print(f"[Daily] Sent {_sent}/12 alerts")
 except Exception as _ae:
-    print(f"[Daily] Comprehensive alerts error: {_ae}")
+    print(f"[Daily] All alerts error: {_ae}")
 
 if __name__ == "__main__":
     sys.exit(main())
