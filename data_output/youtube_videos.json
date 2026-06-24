@@ -1687,11 +1687,11 @@
       "thumbnail": "https://i.ytimg.com/vi/OC6NqaghPFA/hqdefault.jpg",
       "duration_seconds": 1858,
       "duration_label": "30:58",
-      "views": 1228,
+      "views": 1229,
       "likes": 46,
       "comments": 1,
-      "engagement_rate": 3.827,
-      "like_rate": 3.746,
+      "engagement_rate": 3.824,
+      "like_rate": 3.743,
       "tags": [
         "Build and Deploy Your First BIM Project with Unreal Engine and Pixel Streaming",
         "bim project with unreal engine",
@@ -2381,10 +2381,10 @@
       "thumbnail": "https://i.ytimg.com/vi/NF9ICtvff88/hqdefault.jpg",
       "duration_seconds": 141,
       "duration_label": "2:21",
-      "views": 2113,
+      "views": 2114,
       "likes": 23,
       "comments": 4,
-      "engagement_rate": 1.278,
+      "engagement_rate": 1.277,
       "like_rate": 1.088,
       "tags": [
         "intel",
@@ -3121,10 +3121,10 @@
       "thumbnail": "https://i.ytimg.com/vi/mi_4zQ0fjCw/hqdefault.jpg",
       "duration_seconds": 696,
       "duration_label": "11:36",
-      "views": 2301,
+      "views": 2302,
       "likes": 40,
       "comments": 9,
-      "engagement_rate": 2.13,
+      "engagement_rate": 2.129,
       "like_rate": 1.738,
       "tags": [],
       "category_id": "28",
@@ -4049,11 +4049,11 @@
       "thumbnail": "https://i.ytimg.com/vi/5emquzcJIUQ/hqdefault.jpg",
       "duration_seconds": 827,
       "duration_label": "13:47",
-      "views": 6777,
+      "views": 6781,
       "likes": 110,
       "comments": 8,
-      "engagement_rate": 1.741,
-      "like_rate": 1.623,
+      "engagement_rate": 1.74,
+      "like_rate": 1.622,
       "tags": [],
       "category_id": "28",
       "demo": false
@@ -4998,5 +4998,5 @@
       "demo": false
     }
   ],
-  "_cached_at": "2026-06-24T03:01:04.026924"
+  "_cached_at": "2026-06-24T05:45:38.641074"
 }
