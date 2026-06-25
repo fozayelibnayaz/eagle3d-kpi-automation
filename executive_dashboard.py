@@ -251,8 +251,8 @@ def get_core_metrics(period="this_month"):
         "lead_sources_all": dict(lead_sources.most_common(20)),
         "lead_sources_period": dict(period_lead_sources.most_common(15)),
         "monthly_trend": monthly_trend,
-        "content_volume": content_volume,
-        "channel_growth": channel_growth,
+        "content_volume": {},
+        "channel_growth": {},
         "generated_at": datetime.utcnow().isoformat(),
     }
 
