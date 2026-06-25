@@ -115,85 +115,6 @@ def get_core_metrics(period="this_month"):
     ps, pe = prev_start.isoformat(), prev_end.isoformat()
     today = date.today()
 
-    # Common period for All-Time (locked to first upload)
-    upload_start = "2025-12-01"
-    try:
-        ur = sb.table("uploads").select("upload_date").eq("final_status", "ACCEPTED").not_.is_("upload_date", "null").order("upload_date").limit(1).execute()
-        if ur.data and ur.data[0].get("upload_date"):
-            upload_start = str(ur.data[0]["upload_date"])[:10]
-    except Exception:
-        pass
-
-    def cnt(table, col, start_d, end_d, status="ACCEPTED"):
-        try:
-            return sb.table(table).select("count", count="exact").eq("final_status", status).gte(col, start_d).lte(col, end_d).execute().count or 0
-        except Exception:
-            return 0
-
-    def rev(start_d, end_d):
-        try:
-            r = sb.table("payments").select("total_spend").eq("final_status", "ACCEPTED").gte("first_payment_date", start_d).lte("first_payment_date", end_d).execute().data or []
-            return round(sum(float(x.get("total_spend") or 0) for x in r), 2)
-        except Exception:
-            return 0.0
-
-    def delta(curr, prev_val):
-        if prev_val == 0:
-            return curr, None
-        d = curr - prev_val
-        pct = round(d / prev_val * 100, 1)
-        return d, pct
-
-    # ── REVENUE ──
-    curr_rev = rev(s, e)
-    prev_rev = rev(ps, pe)
-    rev_delta, rev_pct = delta(curr_rev, prev_rev)
-
-    yoy_start = date(start.year - 1, start.month, start.day).isoformat()
-    yoy_end = date(end.year - 1, end.month, min(end.day, 28)).isoformat()
-    yoy_rev = rev(yoy_start, yoy_end)
-    _, yoy_rev_pct = delta(curr_rev, yoy_rev)
-
-    # ── SIGNUPS ──
-    curr_signups = cnt("signups", "signup_date", s, e)
-    prev_signups = cnt("signups", "signup_date", ps, pe)
-    signup_delta, signup_pct = delta(curr_signups, prev_signups)
-    yoy_signups = cnt("signups", "signup_date", yoy_start, yoy_end)
-    _, yoy_signup_pct = delta(curr_signups, yoy_signups)
-
-    # ── UPLOADS ──
-    curr_uploads = cnt("uploads", "upload_date", s, e)
-    prev_uploads = cnt("uploads", "upload_date", ps, pe)
-    upload_delta, upload_pct = delta(curr_uploads, prev_uploads)
-
-    # ── PAID ──
-    curr_paid = cnt("payments", "first_payment_date", s, e)
-    prev_paid = cnt("payments", "first_payment_date", ps, pe)
-    paid_delta, paid_pct = delta(curr_paid, prev_paid)
-
-    # ── CONVERSION ──
-    s2u = round(curr_uploads / curr_signups * 100, 1) if curr_signups > 0 else 0
-    s2p = round(curr_paid / curr_signups * 100, 1) if curr_signups > 0 else 0
-
-    # ── TOTALS ──
-    total_rev = rev("2020-01-01", date.today().isoformat())
-    total_paid = cnt("payments", "first_payment_date", "2020-01-01", date.today().isoformat())
-    avg_sub = round(total_rev / total_paid, 2) if total_paid > 0 else 0
-
-    # ── DATA QUALITY ──
-    total_signups_raw = sb.table("signups").select("count", count="exact").execute().count or 0
-    total_accepted = sb.table("signups").select("count", count="exact").eq("final_status", "ACCEPTED").execute().count or 0
-    total_rejected = total_signups_raw - total_accepted
-    spam_rate = round(total_rejected / total_signups_raw * 100, 1) if total_signups_raw > 0 else 0
-    rej_data = sb.table("signups").select("category").eq("final_status", "REJECTED").execute().data or []
-    rej_reasons = Counter(r.get("category", "") for r in rej_data)
-    internal_count = sb.table("signups").select("count", count="exact").ilike("email_normalized", "%eagle3d%").execute().count or 0
-
-    # ── LEAD SOURCES ──
-    leads = _fetch_all(sb, "signups", "lead_source", {"final_status": "ACCEPTED"})
-    lead_sources = Counter(r.get("lead_source", "") or "(unspecified)" for r in leads)
-    period_leads = sb.table("signups").select("lead_source").eq("final_status", "ACCEPTED").gte("signup_date", s).lte("signup_date", e).execute().data or []
-    period_lead_sources = Counter(r.get("lead_source", "") or "(unspecified)" for r in period_leads)
 
     # ── MONTHLY TREND ──
     monthly_trend = []
@@ -213,169 +134,65 @@ def get_core_metrics(period="this_month"):
         })
     monthly_trend.reverse()
 
-    # ── CONTENT RELEASE VOLUME ──
-    # Blog/website pages from GA4 (new pages appearing = content published)
-    # Social posts from LinkedIn + YouTube
-    content_volume = {"blog": {}, "linkedin": {}, "youtube": {}, "total_this_month": 0, "total_last_month": 0}
+    # ── DATA QUALITY ──
+    total_signups_raw = sb.table("signups").select("count", count="exact").execute().count or 0
+    total_accepted = sb.table("signups").select("count", count="exact").eq("final_status", "ACCEPTED").execute().count or 0
+    total_rejected = total_signups_raw - total_accepted
+    spam_rate = round(total_rejected / total_signups_raw * 100, 1) if total_signups_raw > 0 else 0
+    rej_data = sb.table("signups").select("category").eq("final_status", "REJECTED").execute().data or []
+    rej_reasons = Counter(r.get("category", "") for r in rej_data)
+    internal_count = sb.table("signups").select("count", count="exact").ilike("email_normalized", "%eagle3d%").execute().count or 0
 
-    # LinkedIn posts per month
-    try:
-        li_posts = _fetch_all(sb, "linkedin_posts", "urn,title,published_at,impressions,reactions,comments")
-        from collections import defaultdict as _dd2
-        li_by_month = _dd2(list)
-        for p in li_posts:
-            pub = str(p.get("published_at") or "")[:7]
-            if pub:
-                li_by_month[pub].append(p)
-            else:
-                li_by_month["undated"].append(p)
-        content_volume["linkedin"] = {
-            "total_posts": len(li_posts),
-            "this_month":  len(li_by_month.get(start.strftime("%Y-%m"), [])),
-            "last_month":  len(li_by_month.get(prev_start.strftime("%Y-%m"), [])),
-            "by_month":    {m: len(v) for m, v in sorted(li_by_month.items()) if m != "undated"},
-            "top_posts":   sorted(li_posts, key=lambda x: x.get("impressions", 0), reverse=True)[:5],
-        }
-    except Exception:
-        pass
+    # ── LEAD SOURCES ──
+    leads = _fetch_all(sb, "signups", "lead_source", {"final_status": "ACCEPTED"})
+    lead_sources = Counter(r.get("lead_source", "") or "(unspecified)" for r in leads)
+    period_leads = sb.table("signups").select("lead_source").eq("final_status", "ACCEPTED").gte("signup_date", s).lte("signup_date", e).execute().data or []
+    period_lead_sources = Counter(r.get("lead_source", "") or "(unspecified)" for r in period_leads)
 
-    # YouTube videos per month
-    try:
-        import json as _json
-        yt_cache = Path("data_output/youtube_command_center.json")
-        if yt_cache.exists():
-            yt_data = _json.loads(yt_cache.read_text())
-            yt_vids = yt_data.get("videos", [])
-        else:
-            yt_vids = []
-
-        yt_by_month = _dd2(list)
-        for v in yt_vids:
-            pub = str(v.get("published_at") or "")[:7]
-            if pub:
-                yt_by_month[pub].append(v)
-        content_volume["youtube"] = {
-            "total_videos": len(yt_vids),
-            "this_month":   len(yt_by_month.get(start.strftime("%Y-%m"), [])),
-            "last_month":   len(yt_by_month.get(prev_start.strftime("%Y-%m"), [])),
-            "by_month":     {m: len(v) for m, v in sorted(yt_by_month.items())},
-            "top_videos":   sorted(yt_vids, key=lambda x: x.get("views", 0), reverse=True)[:5],
-        }
-    except Exception:
-        pass
-
-    content_volume["total_this_month"] = (
-        content_volume.get("linkedin", {}).get("this_month", 0) +
-        content_volume.get("youtube", {}).get("this_month", 0)
-    )
-    content_volume["total_last_month"] = (
-        content_volume.get("linkedin", {}).get("last_month", 0) +
-        content_volume.get("youtube", {}).get("last_month", 0)
-    )
-
-    # ── CHANNEL GROWTH OVER TIME ──
-    channel_growth = {}
-
-    # LinkedIn followers over time
-    try:
-        li_fol = sb.table("linkedin_followers_daily").select("snapshot_date,total,delta_total").order("snapshot_date").execute().data or []
-        if li_fol:
-            channel_growth["linkedin_followers"] = {
-                "current":     li_fol[-1].get("total", 0),
-                "30d_ago":     li_fol[-31].get("total", 0) if len(li_fol) > 30 else li_fol[0].get("total", 0),
-                "90d_ago":     li_fol[-91].get("total", 0) if len(li_fol) > 90 else li_fol[0].get("total", 0),
-                "growth_30d":  li_fol[-1].get("total", 0) - (li_fol[-31].get("total", 0) if len(li_fol) > 30 else li_fol[0].get("total", 0)),
-                "growth_90d":  li_fol[-1].get("total", 0) - (li_fol[-91].get("total", 0) if len(li_fol) > 90 else li_fol[0].get("total", 0)),
-                "history":     [{"date": r.get("snapshot_date"), "total": r.get("total", 0)} for r in li_fol],
-            }
-    except Exception:
-        pass
-
-    # YouTube subscribers (from cache)
-    try:
-        if yt_cache.exists():
-            ch = yt_data.get("channel", {})
-            channel_growth["youtube_subs"] = {
-                "current": ch.get("subscribers", 0),
-                "total_views": ch.get("total_views", 0),
-                "video_count": ch.get("video_count", 0),
-            }
-    except Exception:
-        pass
-
-    # Website traffic trend (GA4 monthly)
-    try:
-        from google.analytics.data_v1beta import BetaAnalyticsDataClient
-        from google.analytics.data_v1beta.types import RunReportRequest, DateRange, Dimension, Metric
-        from google.oauth2 import service_account as _sa
-        import json as _j2
-        _ga4_creds = None
-        try:
-            import streamlit as _st2
-            _sa_dict = dict(_st2.secrets["ga4_service_account"])
-            if "private_key" in _sa_dict:
-                _sa_dict["private_key"] = _sa_dict["private_key"].replace("\\n", "\n")
-            _ga4_creds = _sa.Credentials.from_service_account_info(_sa_dict, scopes=["https://www.googleapis.com/auth/analytics.readonly"])
-        except Exception:
-            pass
-        if not _ga4_creds and os.path.exists("google_creds.json"):
-            _ga4_creds = _sa.Credentials.from_service_account_file("google_creds.json", scopes=["https://www.googleapis.com/auth/analytics.readonly"])
-        if not _ga4_creds:
-            _gc_env = os.environ.get("GOOGLE_CREDS_JSON", "")
-            if _gc_env:
-                _sa_dict = _j2.loads(_gc_env)
-                if "private_key" in _sa_dict:
-                    _sa_dict["private_key"] = _sa_dict["private_key"].replace("\\n", "\n")
-                _ga4_creds = _sa.Credentials.from_service_account_info(_sa_dict, scopes=["https://www.googleapis.com/auth/analytics.readonly"])
-
-        if _ga4_creds:
-            _ga4_pid = os.environ.get("GA4_PROPERTY_ID", "374525971")
-            try:
-                import streamlit as _st3
-                _ga4_pid = str(_st3.secrets.get("GA4_PROPERTY_ID", _ga4_pid))
-            except Exception:
-                pass
-            _ga4_client = BetaAnalyticsDataClient(credentials=_ga4_creds)
-
-            # Monthly sessions for last 12 months
-            ga4_monthly = []
-            for i in range(12):
-                m_date = date(today.year, today.month, 1) - timedelta(days=30 * i)
-                m_s = date(m_date.year, m_date.month, 1).isoformat()
-                if m_date.month == 12:
-                    m_e = date(m_date.year, 12, 31).isoformat()
-                else:
-                    m_e = (date(m_date.year, m_date.month + 1, 1) - timedelta(days=1)).isoformat()
-                try:
-                    r = _ga4_client.run_report(RunReportRequest(
-                        property=f"properties/{_ga4_pid}",
-                        date_ranges=[DateRange(start_date=m_s, end_date=m_e)],
-                        metrics=[Metric(name="sessions"), Metric(name="totalUsers")],
-                    ))
-                    if r.rows:
-                        ga4_monthly.append({
-                            "month":    m_date.strftime("%Y-%m"),
-                            "sessions": int(r.rows[0].metric_values[0].value),
-                            "users":    int(r.rows[0].metric_values[1].value),
-                        })
-                except Exception:
-                    pass
-            ga4_monthly.reverse()
-            channel_growth["website_traffic"] = ga4_monthly
-    except Exception:
-        pass
-
-
-    # Common period for All-Time (locked to first upload)
-    upload_start = "2025-12-01"
-    try:
-        ur = sb.table("uploads").select("upload_date").eq("final_status", "ACCEPTED").not_.is_("upload_date", "null").order("upload_date").limit(1).execute()
-        if ur.data and ur.data[0].get("upload_date"):
-            upload_start = str(ur.data[0]["upload_date"])[:10]
-    except Exception:
-        pass
-
-
+    return {
+        "period": label,
+        "period_start": s,
+        "period_end": e,
+        "prev_period": prev_start.strftime("%B %Y"),
+        "common_start": upload_start,
+        "revenue": curr_rev,
+        "prev_revenue": prev_rev,
+        "revenue_delta": rev_delta,
+        "revenue_pct": rev_pct,
+        "yoy_revenue": yoy_rev,
+        "yoy_revenue_pct": yoy_rev_pct,
+        "total_revenue": total_rev,
+        "avg_subscription": avg_sub,
+        "signups": curr_signups,
+        "prev_signups": prev_signups,
+        "signup_delta": signup_delta,
+        "signup_pct": signup_pct,
+        "yoy_signups": yoy_signups,
+        "yoy_signup_pct": yoy_signup_pct,
+        "uploads": curr_uploads,
+        "prev_uploads": prev_uploads,
+        "upload_delta": upload_delta,
+        "upload_pct": upload_pct,
+        "paid": curr_paid,
+        "prev_paid": prev_paid,
+        "paid_delta": paid_delta,
+        "paid_pct": paid_pct,
+        "total_paid": total_paid,
+        "s2u_rate": s2u,
+        "s2p_rate": s2p,
+        "total_raw": total_signups_raw,
+        "total_accepted": total_accepted,
+        "total_rejected": total_rejected,
+        "spam_rate": spam_rate,
+        "internal_count": internal_count,
+        "rejection_reasons": dict(rej_reasons.most_common(10)),
+        "lead_sources_all": dict(lead_sources.most_common(20)),
+        "lead_sources_period": dict(period_lead_sources.most_common(15)),
+        "monthly_trend": monthly_trend,
+        "content_volume": content_volume,
+        "channel_growth": channel_growth,
+        "generated_at": datetime.utcnow().isoformat(),
+    }
 
 
 def get_signup_definition():
