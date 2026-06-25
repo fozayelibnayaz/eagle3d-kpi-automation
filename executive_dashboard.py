@@ -115,6 +115,68 @@ def get_core_metrics(period="this_month"):
     ps, pe = prev_start.isoformat(), prev_end.isoformat()
     today = date.today()
 
+    upload_start = "2025-12-01"
+    try:
+        ur = sb.table("uploads").select("upload_date").eq("final_status","ACCEPTED").not_.is_("upload_date","null").order("upload_date").limit(1).execute()
+        if ur.data and ur.data[0].get("upload_date"):
+            upload_start = str(ur.data[0]["upload_date"])[:10]
+    except Exception:
+        pass
+
+    def cnt(table, col, start_d, end_d, status="ACCEPTED"):
+        try:
+            return sb.table(table).select("count",count="exact").eq("final_status",status).gte(col,start_d).lte(col,end_d).execute().count or 0
+        except Exception:
+            return 0
+
+    def rev(start_d, end_d):
+        try:
+            r = sb.table("payments").select("total_spend").eq("final_status","ACCEPTED").gte("first_payment_date",start_d).lte("first_payment_date",end_d).execute().data or []
+            return round(sum(float(x.get("total_spend") or 0) for x in r), 2)
+        except Exception:
+            return 0.0
+
+    def delta(curr, prev_val):
+        if prev_val == 0:
+            return curr, None
+        d = curr - prev_val
+        pct = round(d / prev_val * 100, 1)
+        return d, pct
+
+    # Revenue
+    curr_rev = rev(s, e)
+    prev_rev = rev(ps, pe)
+    rev_delta, rev_pct = delta(curr_rev, prev_rev)
+    yoy_start = date(start.year-1, start.month, start.day).isoformat()
+    yoy_end = date(end.year-1, end.month, min(end.day,28)).isoformat()
+    yoy_rev = rev(yoy_start, yoy_end)
+    _, yoy_rev_pct = delta(curr_rev, yoy_rev)
+
+    # Signups
+    curr_signups = cnt("signups","signup_date",s,e)
+    prev_signups = cnt("signups","signup_date",ps,pe)
+    signup_delta, signup_pct = delta(curr_signups, prev_signups)
+    yoy_signups = cnt("signups","signup_date",yoy_start,yoy_end)
+    _, yoy_signup_pct = delta(curr_signups, yoy_signups)
+
+    # Uploads
+    curr_uploads = cnt("uploads","upload_date",s,e)
+    prev_uploads = cnt("uploads","upload_date",ps,pe)
+    upload_delta, upload_pct = delta(curr_uploads, prev_uploads)
+
+    # Paid
+    curr_paid = cnt("payments","first_payment_date",s,e)
+    prev_paid = cnt("payments","first_payment_date",ps,pe)
+    paid_delta, paid_pct = delta(curr_paid, prev_paid)
+
+    # Conversion
+    s2u = round(curr_uploads/curr_signups*100,1) if curr_signups > 0 else 0
+    s2p = round(curr_paid/curr_signups*100,1) if curr_signups > 0 else 0
+
+    # Totals
+    total_rev = rev("2020-01-01", today.isoformat())
+    total_paid = cnt("payments","first_payment_date","2020-01-01",today.isoformat())
+    avg_sub = round(total_rev/total_paid,2) if total_paid > 0 else 0
 
     # ── MONTHLY TREND ──
     monthly_trend = []
