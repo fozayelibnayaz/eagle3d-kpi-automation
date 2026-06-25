@@ -104,6 +104,109 @@ def get_core_metrics(period="this_month"):
     if not sb:
         return {"error": "Supabase not configured"}
 
+    start, end, prev_start, prev_end, label = _period_range(period)
+    s, e = start.isoformat(), end.isoformat()
+    ps, pe = prev_start.isoformat(), prev_end.isoformat()
+    today = date.today()
+
+    # Common period for All-Time (locked to first upload)
+    upload_start = "2025-12-01"
+    try:
+        ur = sb.table("uploads").select("upload_date").eq("final_status", "ACCEPTED").not_.is_("upload_date", "null").order("upload_date").limit(1).execute()
+        if ur.data and ur.data[0].get("upload_date"):
+            upload_start = str(ur.data[0]["upload_date"])[:10]
+    except Exception:
+        pass
+
+    def cnt(table, col, start_d, end_d, status="ACCEPTED"):
+        try:
+            return sb.table(table).select("count", count="exact").eq("final_status", status).gte(col, start_d).lte(col, end_d).execute().count or 0
+        except Exception:
+            return 0
+
+    def rev(start_d, end_d):
+        try:
+            r = sb.table("payments").select("total_spend").eq("final_status", "ACCEPTED").gte("first_payment_date", start_d).lte("first_payment_date", end_d).execute().data or []
+            return round(sum(float(x.get("total_spend") or 0) for x in r), 2)
+        except Exception:
+            return 0.0
+
+    def delta(curr, prev_val):
+        if prev_val == 0:
+            return curr, None
+        d = curr - prev_val
+        pct = round(d / prev_val * 100, 1)
+        return d, pct
+
+    # ── REVENUE ──
+    curr_rev = rev(s, e)
+    prev_rev = rev(ps, pe)
+    rev_delta, rev_pct = delta(curr_rev, prev_rev)
+
+    yoy_start = date(start.year - 1, start.month, start.day).isoformat()
+    yoy_end = date(end.year - 1, end.month, min(end.day, 28)).isoformat()
+    yoy_rev = rev(yoy_start, yoy_end)
+    _, yoy_rev_pct = delta(curr_rev, yoy_rev)
+
+    # ── SIGNUPS ──
+    curr_signups = cnt("signups", "signup_date", s, e)
+    prev_signups = cnt("signups", "signup_date", ps, pe)
+    signup_delta, signup_pct = delta(curr_signups, prev_signups)
+    yoy_signups = cnt("signups", "signup_date", yoy_start, yoy_end)
+    _, yoy_signup_pct = delta(curr_signups, yoy_signups)
+
+    # ── UPLOADS ──
+    curr_uploads = cnt("uploads", "upload_date", s, e)
+    prev_uploads = cnt("uploads", "upload_date", ps, pe)
+    upload_delta, upload_pct = delta(curr_uploads, prev_uploads)
+
+    # ── PAID ──
+    curr_paid = cnt("payments", "first_payment_date", s, e)
+    prev_paid = cnt("payments", "first_payment_date", ps, pe)
+    paid_delta, paid_pct = delta(curr_paid, prev_paid)
+
+    # ── CONVERSION ──
+    s2u = round(curr_uploads / curr_signups * 100, 1) if curr_signups > 0 else 0
+    s2p = round(curr_paid / curr_signups * 100, 1) if curr_signups > 0 else 0
+
+    # ── TOTALS ──
+    total_rev = rev("2020-01-01", date.today().isoformat())
+    total_paid = cnt("payments", "first_payment_date", "2020-01-01", date.today().isoformat())
+    avg_sub = round(total_rev / total_paid, 2) if total_paid > 0 else 0
+
+    # ── DATA QUALITY ──
+    total_signups_raw = sb.table("signups").select("count", count="exact").execute().count or 0
+    total_accepted = sb.table("signups").select("count", count="exact").eq("final_status", "ACCEPTED").execute().count or 0
+    total_rejected = total_signups_raw - total_accepted
+    spam_rate = round(total_rejected / total_signups_raw * 100, 1) if total_signups_raw > 0 else 0
+    rej_data = sb.table("signups").select("category").eq("final_status", "REJECTED").execute().data or []
+    rej_reasons = Counter(r.get("category", "") for r in rej_data)
+    internal_count = sb.table("signups").select("count", count="exact").ilike("email_normalized", "%eagle3d%").execute().count or 0
+
+    # ── LEAD SOURCES ──
+    leads = _fetch_all(sb, "signups", "lead_source", {"final_status": "ACCEPTED"})
+    lead_sources = Counter(r.get("lead_source", "") or "(unspecified)" for r in leads)
+    period_leads = sb.table("signups").select("lead_source").eq("final_status", "ACCEPTED").gte("signup_date", s).lte("signup_date", e).execute().data or []
+    period_lead_sources = Counter(r.get("lead_source", "") or "(unspecified)" for r in period_leads)
+
+    # ── MONTHLY TREND ──
+    monthly_trend = []
+    for i in range(12):
+        m_date = date(today.year, today.month, 1) - timedelta(days=30 * i)
+        ms = date(m_date.year, m_date.month, 1).isoformat()
+        if m_date.month == 12:
+            me = date(m_date.year, 12, 31).isoformat()
+        else:
+            me = (date(m_date.year, m_date.month + 1, 1) - timedelta(days=1)).isoformat()
+        monthly_trend.append({
+            "month": m_date.strftime("%Y-%m"),
+            "signups": cnt("signups", "signup_date", ms, me),
+            "uploads": cnt("uploads", "upload_date", ms, me),
+            "paid": cnt("payments", "first_payment_date", ms, me),
+            "revenue": rev(ms, me),
+        })
+    monthly_trend.reverse()
+
     # ── CONTENT RELEASE VOLUME ──
     # Blog/website pages from GA4 (new pages appearing = content published)
     # Social posts from LinkedIn + YouTube
