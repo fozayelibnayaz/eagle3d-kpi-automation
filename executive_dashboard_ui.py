@@ -28,6 +28,39 @@ def render_executive_dashboard():
         "last_year":    "Last Year",
     }.get(x, x), index=0, key="exec_period")
 
+    # DEBUG: Test Supabase connection directly
+    _debug_sb = None
+    try:
+        from sheets_writer import _get_sb as _debug_get_sb
+        _debug_sb = _debug_get_sb()
+        if _debug_sb:
+            _test = _debug_sb.table("signups").select("count", count="exact").limit(1).execute()
+            st.success(f"Supabase OK via sheets_writer: {_test.count} signups")
+        else:
+            st.warning("sheets_writer._get_sb returned None")
+    except Exception as _de:
+        st.warning(f"sheets_writer debug: {_de}")
+
+    try:
+        from executive_dashboard import _get_sb as _ed_get_sb
+        _ed_sb = _ed_get_sb()
+        if _ed_sb:
+            st.success("executive_dashboard._get_sb: OK")
+        else:
+            st.error("executive_dashboard._get_sb: returned None")
+            # Show why
+            import os
+            st.write(f"SUPABASE_URL env: {'SET' if os.environ.get('SUPABASE_URL') else 'NOT SET'}")
+            st.write(f"SUPABASE_SERVICE_KEY env: {'SET' if os.environ.get('SUPABASE_SERVICE_KEY') else 'NOT SET'}")
+            try:
+                import streamlit as _st_dbg
+                st.write(f"st.secrets has SUPABASE_URL: {'SUPABASE_URL' in _st_dbg.secrets}")
+                st.write(f"st.secrets keys: {list(_st_dbg.secrets.keys())[:10]}")
+            except Exception as _se:
+                st.write(f"st.secrets error: {_se}")
+    except Exception as _de2:
+        st.error(f"executive_dashboard debug: {_de2}")
+
     with st.spinner("Loading core metrics..."):
         metrics = get_core_metrics(period)
 
