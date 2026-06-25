@@ -207,24 +207,32 @@ def _compute_content_volume(sb, start, end, prev_start):
             except Exception:
                 this_month_pages = []
 
-            # Get ALL pages LAST MONTH for comparison
+            # Get ALL pages from LAST 365 DAYS before this month
+            # A truly new page = never seen in the past year
             try:
+                history_start = (start - timedelta(days=365)).isoformat()
+                history_end = (start - timedelta(days=1)).isoformat()
                 r2 = _client.run_report(RunReportRequest(
                     property=f"properties/{_pid}",
-                    date_ranges=[DateRange(start_date=prev_start.isoformat(), end_date=(start - timedelta(days=1)).isoformat())],
-                    dimensions=[Dimension(name="pagePath"), Dimension(name="pageTitle")],
+                    date_ranges=[DateRange(start_date=history_start, end_date=history_end)],
+                    dimensions=[Dimension(name="pagePath")],
                     metrics=[Metric(name="screenPageViews")],
-                    order_bys=[OrderBy(metric=OrderBy.MetricOrderBy(metric_name="screenPageViews"), desc=True)],
                     limit=10000,
                 ))
-                last_month_paths = set()
+                historical_paths = set()
                 for row in r2.rows:
-                    last_month_paths.add(row.dimension_values[0].value)
+                    historical_paths.add(row.dimension_values[0].value)
             except Exception:
-                last_month_paths = set()
+                historical_paths = set()
 
-            # NEW pages = appeared this month but NOT last month
-            new_pages = [p for p in this_month_pages if p["path"] not in last_month_paths]
+            # TRULY NEW pages = appeared this month AND never seen in last 365 days
+            new_pages = [p for p in this_month_pages if p["path"] not in historical_paths]
+
+            # Filter out common non-content pages (login, signup, control panel, etc)
+            ignore_patterns = ["/signup", "/login", "/analytics", "/utilities", "/developer",
+                             "/team", "/reset", "/verify", "/callback", "/api/", "/admin",
+                             "/control-panel", "/404", "/account", "/?"]
+            new_pages = [p for p in new_pages if not any(ig in p["path"].lower() for ig in ignore_patterns)]
 
             # Blog pages = paths containing /blog/ or common blog patterns
             blog_pages = [p for p in this_month_pages if any(k in p["path"].lower() for k in ["/blog", "/article", "/post", "/news", "/learn", "/resource", "/guide", "/tutorial", "/case-study"])]
