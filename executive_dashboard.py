@@ -11,13 +11,17 @@ from collections import Counter, defaultdict
 
 
 def _get_sb():
-    """Use the SAME client as supabase_data_loader (proven working on Streamlit Cloud)."""
+    """Get Supabase via sheets_writer shim (100% proven on Streamlit Cloud)."""
+    try:
+        from sheets_writer import _get_sb as _sw_get_sb
+        return _sw_get_sb()
+    except Exception:
+        pass
     try:
         from supabase_data_loader import _get_supabase
         return _get_supabase()
     except Exception:
         pass
-    # Fallback
     import os
     url = os.environ.get("SUPABASE_URL", "")
     key = os.environ.get("SUPABASE_SERVICE_KEY", "")
@@ -25,17 +29,16 @@ def _get_sb():
         try:
             import streamlit as st
             try: url = str(st.secrets["SUPABASE_URL"]).strip()
-            except Exception: pass
+            except: pass
             try: key = str(st.secrets["SUPABASE_SERVICE_KEY"]).strip()
-            except Exception: pass
-        except Exception:
-            pass
+            except: pass
+        except: pass
     if not url or not key:
         return None
     try:
         from supabase import create_client
         return create_client(url, key)
-    except Exception:
+    except:
         return None
 
 
