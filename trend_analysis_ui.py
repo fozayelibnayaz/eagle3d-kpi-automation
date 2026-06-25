@@ -67,7 +67,7 @@ def render_trend_section(platform="kpi", current_month=None):
                     "Delta":          m.get("delta", 0),
                     "% Change":       f"{m.get('delta_pct', 0):.1f}%" if m.get("delta_pct") is not None else "—",
                 })
-            st.dataframe(_safe_df(rows), use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame(rows).astype(str), use_container_width=True, hide_index=True)
 
     elif platform == "linkedin":
         data = get_full_trend_linkedin(current_month)
@@ -121,7 +121,7 @@ def render_trend_section(platform="kpi", current_month=None):
                     "Δ": v.get("delta", 0),
                     "% Change": f"{v.get('delta_pct', 0):+.1f}%" if v.get("delta_pct") is not None else "—",
                 })
-            st.dataframe(_safe_df(rows), use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame(rows).astype(str), use_container_width=True, hide_index=True)
 
     elif platform == "ga4":
         data = get_full_trend_ga4(current_month)
