@@ -16,14 +16,24 @@ def _get_sb():
     if not url or not key:
         try:
             import streamlit as st
-            url = str(st.secrets.get("SUPABASE_URL", "")).strip()
-            key = str(st.secrets.get("SUPABASE_SERVICE_KEY", "")).strip()
+            if hasattr(st, "secrets"):
+                try:
+                    url = str(st.secrets["SUPABASE_URL"]).strip()
+                except Exception:
+                    pass
+                try:
+                    key = str(st.secrets["SUPABASE_SERVICE_KEY"]).strip()
+                except Exception:
+                    pass
         except Exception:
             pass
     if not url or not key:
         return None
-    from supabase import create_client
-    return create_client(url, key)
+    try:
+        from supabase import create_client
+        return create_client(url, key)
+    except Exception:
+        return None
 
 
 def _fetch_all(sb, table, cols, filters=None):
