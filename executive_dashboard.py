@@ -207,32 +207,60 @@ def _compute_content_volume(sb, start, end, prev_start):
             except Exception:
                 this_month_pages = []
 
-            # Get ALL pages from LAST 365 DAYS before this month
-            # A truly new page = never seen in the past year
+            # Get ALL pages ever seen (full GA4 history)
+            # Use maximum date range GA4 allows
             try:
-                history_start = (start - timedelta(days=365)).isoformat()
-                history_end = (start - timedelta(days=1)).isoformat()
                 r2 = _client.run_report(RunReportRequest(
                     property=f"properties/{_pid}",
-                    date_ranges=[DateRange(start_date=history_start, end_date=history_end)],
+                    date_ranges=[DateRange(start_date="2020-01-01", end_date=(start - timedelta(days=1)).isoformat())],
                     dimensions=[Dimension(name="pagePath")],
                     metrics=[Metric(name="screenPageViews")],
                     limit=10000,
                 ))
-                historical_paths = set()
+                all_historical_paths = set()
                 for row in r2.rows:
-                    historical_paths.add(row.dimension_values[0].value)
+                    all_historical_paths.add(row.dimension_values[0].value)
             except Exception:
-                historical_paths = set()
+                all_historical_paths = set()
 
-            # TRULY NEW pages = appeared this month AND never seen in last 365 days
-            new_pages = [p for p in this_month_pages if p["path"] not in historical_paths]
+            # Also save/load from Supabase for persistent tracking
+            try:
+                existing = sb.table("analytics_cache").select("data").eq("source", "ga4_known_pages").execute().data
+                if existing and existing[0].get("data"):
+                    saved_paths = set(existing[0]["data"].get("paths", []))
+                    all_historical_paths = all_historical_paths | saved_paths
+            except Exception:
+                pass
 
-            # Filter out common non-content pages (login, signup, control panel, etc)
+            # Save current known pages to Supabase for next time
+            try:
+                all_known = all_historical_paths | set(p["path"] for p in this_month_pages)
+                sb.table("analytics_cache").upsert({
+                    "source": "ga4_known_pages",
+                    "metric_date": end.isoformat(),
+                    "period_type": "all_time",
+                    "data": {"paths": list(all_known), "count": len(all_known), "updated": datetime.utcnow().isoformat()},
+                    "fetched_at": datetime.utcnow().isoformat(),
+                    "is_valid": True,
+                }, on_conflict="source,metric_date").execute()
+            except Exception:
+                pass
+
+            # TRULY NEW = this month pages NOT in any historical record
+            new_pages = [p for p in this_month_pages if p["path"] not in all_historical_paths]
+
+            # Filter out non-content pages
             ignore_patterns = ["/signup", "/login", "/analytics", "/utilities", "/developer",
                              "/team", "/reset", "/verify", "/callback", "/api/", "/admin",
-                             "/control-panel", "/404", "/account", "/?"]
+                             "/control-panel", "/404", "/account", "/?", "/start-streaming",
+                             "/pricing", "/demo", "/about", "/contact", "/privacy", "/terms",
+                             "/career", "/job-description", "/data-visualization"]
             new_pages = [p for p in new_pages if not any(ig in p["path"].lower() for ig in ignore_patterns)]
+
+            # Also filter pages with generic titles (Control Panel, Eagle 3D Streaming)
+            new_pages = [p for p in new_pages if
+                        "Control Panel" not in p.get("title","") and
+                        p.get("title","") != "Eagle 3D Streaming | Unreal Engine 5 Pixel Streaming Platform"]
 
             # Blog pages = paths containing /blog/ or common blog patterns
             blog_pages = [p for p in this_month_pages if any(k in p["path"].lower() for k in ["/blog", "/article", "/post", "/news", "/learn", "/resource", "/guide", "/tutorial", "/case-study"])]
