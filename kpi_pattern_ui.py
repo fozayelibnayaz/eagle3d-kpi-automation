@@ -105,7 +105,7 @@ def render_kpi_pattern_analysis(metric_type="signups"):
                 yoy_rows.append({
                     "Year":       year,
                     "Count":      d.get("count", 0),
-                    "Growth %":   d.get("growth_pct") if d.get("growth_pct") is not None else "—",
+                    "Growth %":   str(round(d["growth_pct"], 1)) + "%" if d.get("growth_pct") is not None else "—",
                 })
             df_yoy = pd.DataFrame(yoy_rows)
             col_y1, col_y2 = st.columns([2, 1])

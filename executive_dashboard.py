@@ -11,30 +11,25 @@ from collections import Counter, defaultdict
 
 
 def _get_sb():
-    """Get Supabase client - same pattern as supabase_data_loader (proven working)."""
-    import os as _os
-    url = _os.environ.get("SUPABASE_URL", "").strip()
-    key = _os.environ.get("SUPABASE_SERVICE_KEY", "").strip()
-
-    # Inject from Streamlit secrets into env (same as app.py does at startup)
+    """Use the SAME client as supabase_data_loader (proven working on Streamlit Cloud)."""
+    try:
+        from supabase_data_loader import _get_supabase
+        return _get_supabase()
+    except Exception:
+        pass
+    # Fallback
+    import os
+    url = os.environ.get("SUPABASE_URL", "")
+    key = os.environ.get("SUPABASE_SERVICE_KEY", "")
     if not url or not key:
         try:
-            import streamlit as _st
-            if not url:
-                try:
-                    url = str(_st.secrets["SUPABASE_URL"]).strip()
-                    _os.environ["SUPABASE_URL"] = url
-                except Exception:
-                    pass
-            if not key:
-                try:
-                    key = str(_st.secrets["SUPABASE_SERVICE_KEY"]).strip()
-                    _os.environ["SUPABASE_SERVICE_KEY"] = key
-                except Exception:
-                    pass
+            import streamlit as st
+            try: url = str(st.secrets["SUPABASE_URL"]).strip()
+            except Exception: pass
+            try: key = str(st.secrets["SUPABASE_SERVICE_KEY"]).strip()
+            except Exception: pass
         except Exception:
             pass
-
     if not url or not key:
         return None
     try:
