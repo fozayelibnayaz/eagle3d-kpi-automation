@@ -104,6 +104,159 @@ def _period_range(period_name):
         return start, end, prev_start, prev_end, "Current"
 
 
+
+def _compute_content_volume(sb, start, end, prev_start):
+    """Content published per month: LinkedIn posts + YouTube videos."""
+    from collections import defaultdict
+    result = {"linkedin": {}, "youtube": {}, "total_this_month": 0, "total_last_month": 0}
+
+    try:
+        # LinkedIn posts from Supabase
+        li_posts = sb.table("linkedin_posts").select("urn,title,published_at,impressions,reactions,comments").execute().data or []
+        li_by_month = defaultdict(list)
+        for p in li_posts:
+            pub = str(p.get("published_at") or "")[:7]
+            if pub:
+                li_by_month[pub].append(p)
+            else:
+                li_by_month["undated"].append(p)
+
+        this_m = start.strftime("%Y-%m")
+        last_m = prev_start.strftime("%Y-%m")
+        result["linkedin"] = {
+            "total_posts": len(li_posts),
+            "this_month":  len(li_by_month.get(this_m, [])),
+            "last_month":  len(li_by_month.get(last_m, [])),
+            "by_month":    {m: len(v) for m, v in sorted(li_by_month.items()) if m != "undated"},
+            "top_posts":   sorted(li_posts, key=lambda x: x.get("impressions", 0), reverse=True)[:5],
+        }
+    except Exception:
+        pass
+
+    try:
+        # YouTube videos from cache
+        import json
+        yt_path = Path("data_output/youtube_command_center.json")
+        if yt_path.exists():
+            yt_data = json.loads(yt_path.read_text())
+            yt_vids = yt_data.get("videos", [])
+        else:
+            yt_vids = []
+
+        yt_by_month = defaultdict(list)
+        for v in yt_vids:
+            pub = str(v.get("published_at") or "")[:7]
+            if pub:
+                yt_by_month[pub].append(v)
+
+        this_m = start.strftime("%Y-%m")
+        last_m = prev_start.strftime("%Y-%m")
+        result["youtube"] = {
+            "total_videos": len(yt_vids),
+            "this_month":   len(yt_by_month.get(this_m, [])),
+            "last_month":   len(yt_by_month.get(last_m, [])),
+            "by_month":     {m: len(v) for m, v in sorted(yt_by_month.items())},
+            "top_videos":   sorted(yt_vids, key=lambda x: x.get("views", 0), reverse=True)[:5],
+        }
+    except Exception:
+        pass
+
+    result["total_this_month"] = result.get("linkedin", {}).get("this_month", 0) + result.get("youtube", {}).get("this_month", 0)
+    result["total_last_month"] = result.get("linkedin", {}).get("last_month", 0) + result.get("youtube", {}).get("last_month", 0)
+    return result
+
+
+def _compute_channel_growth(sb):
+    """Channel growth: LinkedIn followers, YouTube subs, website traffic."""
+    result = {}
+
+    try:
+        # LinkedIn followers daily history
+        li_fol = sb.table("linkedin_followers_daily").select("snapshot_date,total,delta_total").order("snapshot_date").execute().data or []
+        if li_fol:
+            current = li_fol[-1].get("total", 0)
+            ago_30 = li_fol[-31].get("total", current) if len(li_fol) > 30 else li_fol[0].get("total", current)
+            ago_90 = li_fol[-91].get("total", current) if len(li_fol) > 90 else li_fol[0].get("total", current)
+            result["linkedin_followers"] = {
+                "current":    current,
+                "30d_ago":    ago_30,
+                "90d_ago":    ago_90,
+                "growth_30d": current - ago_30,
+                "growth_90d": current - ago_90,
+                "history":    [{"date": r.get("snapshot_date"), "total": r.get("total", 0)} for r in li_fol],
+            }
+    except Exception:
+        pass
+
+    try:
+        # YouTube subs from cache
+        import json
+        yt_path = Path("data_output/youtube_command_center.json")
+        if yt_path.exists():
+            yt_data = json.loads(yt_path.read_text())
+            ch = yt_data.get("channel", {})
+            result["youtube_subs"] = {
+                "current":     ch.get("subscribers", 0),
+                "total_views": ch.get("total_views", 0),
+                "video_count": ch.get("video_count", 0),
+            }
+    except Exception:
+        pass
+
+    try:
+        # Website traffic from GA4 (monthly for last 12 months)
+        import os
+        from google.analytics.data_v1beta import BetaAnalyticsDataClient
+        from google.analytics.data_v1beta.types import RunReportRequest, DateRange, Metric
+        from google.oauth2 import service_account as _sa
+        _creds = None
+        try:
+            import streamlit as _st
+            _sa_dict = dict(_st.secrets["ga4_service_account"])
+            if "private_key" in _sa_dict:
+                _sa_dict["private_key"] = _sa_dict["private_key"].replace("\n", "\n")
+            _creds = _sa.Credentials.from_service_account_info(_sa_dict, scopes=["https://www.googleapis.com/auth/analytics.readonly"])
+        except Exception:
+            pass
+        if not _creds and os.path.exists("google_creds.json"):
+            _creds = _sa.Credentials.from_service_account_file("google_creds.json", scopes=["https://www.googleapis.com/auth/analytics.readonly"])
+
+        if _creds:
+            _pid = os.environ.get("GA4_PROPERTY_ID", "374525971")
+            try:
+                import streamlit as _st2
+                _pid = str(_st2.secrets.get("GA4_PROPERTY_ID", _pid))
+            except Exception:
+                pass
+            _client = BetaAnalyticsDataClient(credentials=_creds)
+            today = date.today()
+            ga4_monthly = []
+            for i in range(12):
+                m_date = date(today.year, today.month, 1) - timedelta(days=30 * i)
+                ms = date(m_date.year, m_date.month, 1).isoformat()
+                me = (date(m_date.year, m_date.month + 1, 1) - timedelta(days=1)).isoformat() if m_date.month < 12 else date(m_date.year, 12, 31).isoformat()
+                try:
+                    r = _client.run_report(RunReportRequest(
+                        property=f"properties/{_pid}",
+                        date_ranges=[DateRange(start_date=ms, end_date=me)],
+                        metrics=[Metric(name="sessions"), Metric(name="totalUsers")],
+                    ))
+                    if r.rows:
+                        ga4_monthly.append({
+                            "month":    m_date.strftime("%Y-%m"),
+                            "sessions": int(r.rows[0].metric_values[0].value),
+                            "users":    int(r.rows[0].metric_values[1].value),
+                        })
+                except Exception:
+                    pass
+            ga4_monthly.reverse()
+            result["website_traffic"] = ga4_monthly
+    except Exception:
+        pass
+
+    return result
+
+
 def get_core_metrics(period="this_month"):
     """Get ALL core business metrics for the executive dashboard."""
     sb = _get_sb()
@@ -251,8 +404,8 @@ def get_core_metrics(period="this_month"):
         "lead_sources_all": dict(lead_sources.most_common(20)),
         "lead_sources_period": dict(period_lead_sources.most_common(15)),
         "monthly_trend": monthly_trend,
-        "content_volume": {},
-        "channel_growth": {},
+        "content_volume": _compute_content_volume(sb, start, end, prev_start),
+        "channel_growth": _compute_channel_growth(sb),
         "generated_at": datetime.utcnow().isoformat(),
     }
 
