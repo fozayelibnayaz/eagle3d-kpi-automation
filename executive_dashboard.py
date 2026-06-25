@@ -188,7 +188,7 @@ def _compute_content_volume(sb, start, end, prev_start):
                     dimensions=[Dimension(name="pagePath"), Dimension(name="pageTitle")],
                     metrics=[Metric(name="screenPageViews"), Metric(name="totalUsers"), Metric(name="sessions")],
                     order_bys=[OrderBy(metric=OrderBy.MetricOrderBy(metric_name="screenPageViews"), desc=True)],
-                    limit=100,
+                    limit=10000,
                 ))
                 this_month_pages = []
                 for row in r.rows:
@@ -215,7 +215,7 @@ def _compute_content_volume(sb, start, end, prev_start):
                     dimensions=[Dimension(name="pagePath"), Dimension(name="pageTitle")],
                     metrics=[Metric(name="screenPageViews")],
                     order_bys=[OrderBy(metric=OrderBy.MetricOrderBy(metric_name="screenPageViews"), desc=True)],
-                    limit=100,
+                    limit=10000,
                 ))
                 last_month_paths = set()
                 for row in r2.rows:

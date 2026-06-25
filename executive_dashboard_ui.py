@@ -251,26 +251,39 @@ def render_executive_dashboard():
 
     # Top performing content
     # Website pages performance
-    if blog.get("top_pages"):
-        st.markdown("**🌐 Top Website Pages This Month (by views)**")
-        page_df = pd.DataFrame(blog["top_pages"][:15])
-        if not page_df.empty:
-            st.dataframe(page_df[["title","path","views","users","sessions"]].astype(str),
-                        use_container_width=True, hide_index=True)
-
+    # ── NEW PAGES THIS MONTH (created/indexed this month, not seen last month) ──
     if blog.get("new_pages"):
-        with st.expander(f"🆕 New Pages This Month ({blog.get('new_pages_this_month',0)} pages)", expanded=False):
-            new_df = pd.DataFrame(blog["new_pages"][:20])
-            if not new_df.empty:
-                st.dataframe(new_df[["title","path","views","users"]].astype(str),
-                            use_container_width=True, hide_index=True)
+        st.markdown(f"### 🆕 New Pages Created This Month ({blog.get('new_pages_this_month',0)} pages)")
+        st.caption("Pages that appeared for the first time this month (not seen in previous month)")
+        new_df = pd.DataFrame(blog["new_pages"])
+        if not new_df.empty:
+            cols = [c for c in ["title","path","views","users","sessions"] if c in new_df.columns]
+            st.dataframe(new_df[cols].astype(str), use_container_width=True, hide_index=True)
+    else:
+        st.info("No new pages detected this month")
 
+    # ── ALL PAGES WITH PERFORMANCE (this month) ──
+    if blog.get("top_pages"):
+        st.markdown(f"### 🌐 All Pages Performance This Month ({blog.get('total_pages_this_month',0)} pages)")
+        st.caption("Every page that received at least 1 view this month, sorted by views")
+        page_df = pd.DataFrame(blog["top_pages"])
+        if not page_df.empty:
+            # Search filter
+            page_search = st.text_input("�� Search pages by title or path", key="page_search")
+            if page_search:
+                mask = page_df["title"].str.contains(page_search, case=False, na=False) | page_df["path"].str.contains(page_search, case=False, na=False)
+                page_df = page_df[mask]
+            cols = [c for c in ["title","path","views","users","sessions"] if c in page_df.columns]
+            st.dataframe(page_df[cols].astype(str), use_container_width=True, hide_index=True)
+            st.caption(f"Showing {len(page_df)} pages")
+
+    # ── BLOG/ARTICLE PAGES ──
     if blog.get("blog_pages"):
-        with st.expander(f"📝 Blog/Article Pages ({blog.get('blog_pages_this_month',0)} pages)", expanded=False):
-            blog_df = pd.DataFrame(blog["blog_pages"][:20])
+        with st.expander(f"📝 Blog & Article Pages ({blog.get('blog_pages_this_month',0)} pages)", expanded=False):
+            blog_df = pd.DataFrame(blog["blog_pages"])
             if not blog_df.empty:
-                st.dataframe(blog_df[["title","path","views","users"]].astype(str),
-                            use_container_width=True, hide_index=True)
+                cols = [c for c in ["title","path","views","users","sessions"] if c in blog_df.columns]
+                st.dataframe(blog_df[cols].astype(str), use_container_width=True, hide_index=True)
 
     tc1, tc2 = st.columns(2)
     with tc1:
