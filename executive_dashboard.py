@@ -94,6 +94,161 @@ def get_core_metrics(period="this_month"):
     if not sb:
         return {"error": "Supabase not configured"}
 
+    # ── CONTENT RELEASE VOLUME ──
+    # Blog/website pages from GA4 (new pages appearing = content published)
+    # Social posts from LinkedIn + YouTube
+    content_volume = {"blog": {}, "linkedin": {}, "youtube": {}, "total_this_month": 0, "total_last_month": 0}
+
+    # LinkedIn posts per month
+    try:
+        li_posts = _fetch_all(sb, "linkedin_posts", "urn,title,published_at,impressions,reactions,comments")
+        from collections import defaultdict as _dd2
+        li_by_month = _dd2(list)
+        for p in li_posts:
+            pub = str(p.get("published_at") or "")[:7]
+            if pub:
+                li_by_month[pub].append(p)
+            else:
+                li_by_month["undated"].append(p)
+        content_volume["linkedin"] = {
+            "total_posts": len(li_posts),
+            "this_month":  len(li_by_month.get(start.strftime("%Y-%m"), [])),
+            "last_month":  len(li_by_month.get(prev_start.strftime("%Y-%m"), [])),
+            "by_month":    {m: len(v) for m, v in sorted(li_by_month.items()) if m != "undated"},
+            "top_posts":   sorted(li_posts, key=lambda x: x.get("impressions", 0), reverse=True)[:5],
+        }
+    except Exception:
+        pass
+
+    # YouTube videos per month
+    try:
+        import json as _json
+        yt_cache = Path("data_output/youtube_command_center.json")
+        if yt_cache.exists():
+            yt_data = _json.loads(yt_cache.read_text())
+            yt_vids = yt_data.get("videos", [])
+        else:
+            yt_vids = []
+
+        yt_by_month = _dd2(list)
+        for v in yt_vids:
+            pub = str(v.get("published_at") or "")[:7]
+            if pub:
+                yt_by_month[pub].append(v)
+        content_volume["youtube"] = {
+            "total_videos": len(yt_vids),
+            "this_month":   len(yt_by_month.get(start.strftime("%Y-%m"), [])),
+            "last_month":   len(yt_by_month.get(prev_start.strftime("%Y-%m"), [])),
+            "by_month":     {m: len(v) for m, v in sorted(yt_by_month.items())},
+            "top_videos":   sorted(yt_vids, key=lambda x: x.get("views", 0), reverse=True)[:5],
+        }
+    except Exception:
+        pass
+
+    content_volume["total_this_month"] = (
+        content_volume.get("linkedin", {}).get("this_month", 0) +
+        content_volume.get("youtube", {}).get("this_month", 0)
+    )
+    content_volume["total_last_month"] = (
+        content_volume.get("linkedin", {}).get("last_month", 0) +
+        content_volume.get("youtube", {}).get("last_month", 0)
+    )
+
+    # ── CHANNEL GROWTH OVER TIME ──
+    channel_growth = {}
+
+    # LinkedIn followers over time
+    try:
+        li_fol = sb.table("linkedin_followers_daily").select("snapshot_date,total,delta_total").order("snapshot_date").execute().data or []
+        if li_fol:
+            channel_growth["linkedin_followers"] = {
+                "current":     li_fol[-1].get("total", 0),
+                "30d_ago":     li_fol[-31].get("total", 0) if len(li_fol) > 30 else li_fol[0].get("total", 0),
+                "90d_ago":     li_fol[-91].get("total", 0) if len(li_fol) > 90 else li_fol[0].get("total", 0),
+                "growth_30d":  li_fol[-1].get("total", 0) - (li_fol[-31].get("total", 0) if len(li_fol) > 30 else li_fol[0].get("total", 0)),
+                "growth_90d":  li_fol[-1].get("total", 0) - (li_fol[-91].get("total", 0) if len(li_fol) > 90 else li_fol[0].get("total", 0)),
+                "history":     [{"date": r.get("snapshot_date"), "total": r.get("total", 0)} for r in li_fol],
+            }
+    except Exception:
+        pass
+
+    # YouTube subscribers (from cache)
+    try:
+        if yt_cache.exists():
+            ch = yt_data.get("channel", {})
+            channel_growth["youtube_subs"] = {
+                "current": ch.get("subscribers", 0),
+                "total_views": ch.get("total_views", 0),
+                "video_count": ch.get("video_count", 0),
+            }
+    except Exception:
+        pass
+
+    # Website traffic trend (GA4 monthly)
+    try:
+        from google.analytics.data_v1beta import BetaAnalyticsDataClient
+        from google.analytics.data_v1beta.types import RunReportRequest, DateRange, Dimension, Metric
+        from google.oauth2 import service_account as _sa
+        import json as _j2
+        _ga4_creds = None
+        try:
+            import streamlit as _st2
+            _sa_dict = dict(_st2.secrets["ga4_service_account"])
+            if "private_key" in _sa_dict:
+                _sa_dict["private_key"] = _sa_dict["private_key"].replace("\\n", "\n")
+            _ga4_creds = _sa.Credentials.from_service_account_info(_sa_dict, scopes=["https://www.googleapis.com/auth/analytics.readonly"])
+        except Exception:
+            pass
+        if not _ga4_creds and os.path.exists("google_creds.json"):
+            _ga4_creds = _sa.Credentials.from_service_account_file("google_creds.json", scopes=["https://www.googleapis.com/auth/analytics.readonly"])
+        if not _ga4_creds:
+            _gc_env = os.environ.get("GOOGLE_CREDS_JSON", "")
+            if _gc_env:
+                _sa_dict = _j2.loads(_gc_env)
+                if "private_key" in _sa_dict:
+                    _sa_dict["private_key"] = _sa_dict["private_key"].replace("\\n", "\n")
+                _ga4_creds = _sa.Credentials.from_service_account_info(_sa_dict, scopes=["https://www.googleapis.com/auth/analytics.readonly"])
+
+        if _ga4_creds:
+            _ga4_pid = os.environ.get("GA4_PROPERTY_ID", "374525971")
+            try:
+                import streamlit as _st3
+                _ga4_pid = str(_st3.secrets.get("GA4_PROPERTY_ID", _ga4_pid))
+            except Exception:
+                pass
+            _ga4_client = BetaAnalyticsDataClient(credentials=_ga4_creds)
+
+            # Monthly sessions for last 12 months
+            ga4_monthly = []
+            for i in range(12):
+                m_date = date(today.year, today.month, 1) - timedelta(days=30 * i)
+                m_s = date(m_date.year, m_date.month, 1).isoformat()
+                if m_date.month == 12:
+                    m_e = date(m_date.year, 12, 31).isoformat()
+                else:
+                    m_e = (date(m_date.year, m_date.month + 1, 1) - timedelta(days=1)).isoformat()
+                try:
+                    r = _ga4_client.run_report(RunReportRequest(
+                        property=f"properties/{_ga4_pid}",
+                        date_ranges=[DateRange(start_date=m_s, end_date=m_e)],
+                        metrics=[Metric(name="sessions"), Metric(name="totalUsers")],
+                    ))
+                    if r.rows:
+                        ga4_monthly.append({
+                            "month":    m_date.strftime("%Y-%m"),
+                            "sessions": int(r.rows[0].metric_values[0].value),
+                            "users":    int(r.rows[0].metric_values[1].value),
+                        })
+                except Exception:
+                    pass
+            ga4_monthly.reverse()
+            channel_growth["website_traffic"] = ga4_monthly
+    except Exception:
+        pass
+
+
+    return {"error": "Supabase not configured"}
+
     start, end, prev_start, prev_end, label = _period_range(period)
     s, e = start.isoformat(), end.isoformat()
     ps, pe = prev_start.isoformat(), prev_end.isoformat()
@@ -263,6 +418,12 @@ def get_core_metrics(period="this_month"):
 
         # Monthly trend
         "monthly_trend":   monthly_trend,
+
+        # Content Volume
+        "content_volume":  content_volume,
+
+        # Channel Growth
+        "channel_growth":  channel_growth,
 
         "generated_at":    datetime.utcnow().isoformat(),
     }

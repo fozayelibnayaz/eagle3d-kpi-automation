@@ -171,4 +171,138 @@ def render_executive_dashboard():
                 st.write(f"❌ {r}")
 
     st.caption(f"Internal emails ({metrics['internal_count']} @eagle3d) are excluded from all counts.")
+    
+    st.divider()
+
+    # ── CONTENT RELEASE VOLUME ──
+    st.subheader("📝 Content Release Volume")
+    st.caption("How much content published per month across all channels")
+
+    cv = metrics.get("content_volume", {})
+    cv1, cv2, cv3 = st.columns(3)
+    cv1.metric("📝 Content This Month",
+               cv.get("total_this_month", 0),
+               help="LinkedIn posts + YouTube videos published this month")
+    cv2.metric("💼 LinkedIn Posts",
+               cv.get("linkedin", {}).get("this_month", 0),
+               help=f"vs last month: {cv.get('linkedin', {}).get('last_month', 0)}")
+    cv3.metric("📺 YouTube Videos",
+               cv.get("youtube", {}).get("this_month", 0),
+               help=f"vs last month: {cv.get('youtube', {}).get('last_month', 0)}")
+
+    # Content volume trend chart
+    li_by_month = cv.get("linkedin", {}).get("by_month", {})
+    yt_by_month = cv.get("youtube", {}).get("by_month", {})
+    if li_by_month or yt_by_month:
+        all_months = sorted(set(list(li_by_month.keys()) + list(yt_by_month.keys())))[-12:]
+        content_df = pd.DataFrame([{
+            "Month": m,
+            "LinkedIn Posts": li_by_month.get(m, 0),
+            "YouTube Videos": yt_by_month.get(m, 0),
+            "Total": li_by_month.get(m, 0) + yt_by_month.get(m, 0),
+        } for m in all_months])
+
+        if not content_df.empty:
+            fig = go.Figure()
+            fig.add_trace(go.Bar(x=content_df["Month"], y=content_df["LinkedIn Posts"],
+                                name="LinkedIn Posts", marker_color="#0077b5"))
+            fig.add_trace(go.Bar(x=content_df["Month"], y=content_df["YouTube Videos"],
+                                name="YouTube Videos", marker_color="#ff0000"))
+            fig.update_layout(barmode="stack", title="Monthly Content Output",
+                            yaxis_title="Pieces Published", height=350)
+            st.plotly_chart(fig, use_container_width=True)
+
+    # Top performing content
+    tc1, tc2 = st.columns(2)
+    with tc1:
+        st.markdown("**🏆 Top LinkedIn Posts (by impressions)**")
+        top_li = cv.get("linkedin", {}).get("top_posts", [])
+        if top_li:
+            for p in top_li[:5]:
+                st.write(f"- {p.get('title','')[:60]}... ({p.get('impressions',0):,} imp)")
+        else:
+            st.caption("No LinkedIn post data")
+    with tc2:
+        st.markdown("**🏆 Top YouTube Videos (by views)**")
+        top_yt = cv.get("youtube", {}).get("top_videos", [])
+        if top_yt:
+            for v in top_yt[:5]:
+                st.write(f"- {v.get('title','')[:60]}... ({v.get('views',0):,} views)")
+        else:
+            st.caption("No YouTube video data")
+
+    st.divider()
+
+    # ── CHANNEL GROWTH OVER TIME ──
+    st.subheader("📈 Channel Growth / Decrease Over Time")
+    st.caption("Track growth across LinkedIn followers, YouTube subscribers, and website traffic")
+
+    cg = metrics.get("channel_growth", {})
+
+    # LinkedIn Followers
+    li_g = cg.get("linkedin_followers", {})
+    yt_g = cg.get("youtube_subs", {})
+    web_g = cg.get("website_traffic", [])
+
+    g1, g2, g3 = st.columns(3)
+    with g1:
+        st.markdown("**💼 LinkedIn Followers**")
+        if li_g:
+            st.metric("Current", f"{li_g.get('current',0):,}",
+                      f"+{li_g.get('growth_30d',0)} (30d)")
+            st.caption(f"90d growth: +{li_g.get('growth_90d',0)}")
+        else:
+            st.caption("No LinkedIn follower data")
+    with g2:
+        st.markdown("**📺 YouTube**")
+        if yt_g:
+            st.metric("Subscribers", f"{yt_g.get('current',0):,}")
+            st.caption(f"Views: {yt_g.get('total_views',0):,} | Videos: {yt_g.get('video_count',0)}")
+        else:
+            st.caption("No YouTube data")
+    with g3:
+        st.markdown("**🌐 Website Traffic**")
+        if web_g and len(web_g) >= 2:
+            latest = web_g[-1]
+            prev_m = web_g[-2]
+            st.metric("Sessions (latest month)",
+                      f"{latest.get('sessions',0):,}",
+                      f"{latest.get('sessions',0) - prev_m.get('sessions',0):+,} vs prev month")
+            st.caption(f"Users: {latest.get('users',0):,}")
+        elif web_g:
+            st.metric("Sessions", f"{web_g[-1].get('sessions',0):,}")
+        else:
+            st.caption("No GA4 traffic data")
+
+    # Growth timeline charts
+    growth_tabs = st.tabs(["�� LinkedIn Followers", "🌐 Website Traffic"])
+    with growth_tabs[0]:
+        li_hist = li_g.get("history", [])
+        if li_hist and len(li_hist) > 1:
+            df = pd.DataFrame(li_hist)
+            fig = px.line(df, x="date", y="total", title="LinkedIn Follower Growth",
+                         markers=True)
+            fig.update_layout(height=300)
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Need more daily data points. Run pipeline daily to build history.")
+
+    with growth_tabs[1]:
+        if web_g and len(web_g) > 1:
+            df = pd.DataFrame(web_g)
+            fig = go.Figure()
+            fig.add_trace(go.Bar(x=df["month"], y=df["sessions"], name="Sessions", marker_color="#3b82f6"))
+            fig.add_trace(go.Scatter(x=df["month"], y=df["users"], name="Users",
+                                   mode="lines+markers", marker_color="#22c55e", yaxis="y2"))
+            fig.update_layout(
+                title="Website Traffic (Monthly)",
+                yaxis=dict(title="Sessions"),
+                yaxis2=dict(title="Users", overlaying="y", side="right"),
+                height=350,
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("GA4 data not available or insufficient history")
+
+
     st.caption(f"Data generated: {metrics['generated_at'][:19]} UTC")
