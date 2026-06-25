@@ -212,14 +212,18 @@ def render_executive_dashboard():
     st.caption("How much content published per month across all channels")
 
     cv = metrics.get("content_volume", {})
-    cv1, cv2, cv3 = st.columns(3)
-    cv1.metric("📝 Content This Month",
+    blog = cv.get("blog_pages", {})
+    cv1, cv2, cv3, cv4 = st.columns(4)
+    cv1.metric("📝 Total Content This Month",
                cv.get("total_this_month", 0),
-               help="LinkedIn posts + YouTube videos published this month")
-    cv2.metric("💼 LinkedIn Posts",
+               help="LinkedIn posts + YouTube videos + new website pages")
+    cv2.metric("🌐 New Website Pages",
+               blog.get("new_pages_this_month", 0),
+               help="Pages that appeared this month but not last month")
+    cv3.metric("💼 LinkedIn Posts",
                cv.get("linkedin", {}).get("this_month", 0),
                help=f"vs last month: {cv.get('linkedin', {}).get('last_month', 0)}")
-    cv3.metric("📺 YouTube Videos",
+    cv4.metric("�� YouTube Videos",
                cv.get("youtube", {}).get("this_month", 0),
                help=f"vs last month: {cv.get('youtube', {}).get('last_month', 0)}")
 
@@ -246,13 +250,37 @@ def render_executive_dashboard():
             st.plotly_chart(fig, use_container_width=True)
 
     # Top performing content
+    # Website pages performance
+    if blog.get("top_pages"):
+        st.markdown("**🌐 Top Website Pages This Month (by views)**")
+        page_df = pd.DataFrame(blog["top_pages"][:15])
+        if not page_df.empty:
+            st.dataframe(page_df[["title","path","views","users","sessions"]].astype(str),
+                        use_container_width=True, hide_index=True)
+
+    if blog.get("new_pages"):
+        with st.expander(f"🆕 New Pages This Month ({blog.get('new_pages_this_month',0)} pages)", expanded=False):
+            new_df = pd.DataFrame(blog["new_pages"][:20])
+            if not new_df.empty:
+                st.dataframe(new_df[["title","path","views","users"]].astype(str),
+                            use_container_width=True, hide_index=True)
+
+    if blog.get("blog_pages"):
+        with st.expander(f"📝 Blog/Article Pages ({blog.get('blog_pages_this_month',0)} pages)", expanded=False):
+            blog_df = pd.DataFrame(blog["blog_pages"][:20])
+            if not blog_df.empty:
+                st.dataframe(blog_df[["title","path","views","users"]].astype(str),
+                            use_container_width=True, hide_index=True)
+
     tc1, tc2 = st.columns(2)
     with tc1:
         st.markdown("**🏆 Top LinkedIn Posts (by impressions)**")
         top_li = cv.get("linkedin", {}).get("top_posts", [])
         if top_li:
             for p in top_li[:5]:
-                st.write(f"- {p.get('title','')[:60]}... ({p.get('impressions',0):,} imp)")
+                title = str(p.get("title",""))[:60]
+                imp = p.get("impressions", 0)
+                st.write(f"- {title}... ({imp:,} imp)")
         else:
             st.caption("No LinkedIn post data")
     with tc2:
@@ -260,7 +288,9 @@ def render_executive_dashboard():
         top_yt = cv.get("youtube", {}).get("top_videos", [])
         if top_yt:
             for v in top_yt[:5]:
-                st.write(f"- {v.get('title','')[:60]}... ({v.get('views',0):,} views)")
+                title = str(v.get("title",""))[:60]
+                views = v.get("views", 0)
+                st.write(f"- {title}... ({views:,} views)")
         else:
             st.caption("No YouTube video data")
 

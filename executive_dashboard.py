@@ -106,51 +106,44 @@ def _period_range(period_name):
 
 
 def _compute_content_volume(sb, start, end, prev_start):
-    """Content published per month: LinkedIn posts + YouTube videos."""
+    """Content published: LinkedIn posts + YouTube videos + GA4 new pages (blogs)."""
     from collections import defaultdict
-    result = {"linkedin": {}, "youtube": {}, "total_this_month": 0, "total_last_month": 0}
+    import os
+    result = {"linkedin": {}, "youtube": {}, "blog_pages": {}, "total_this_month": 0, "total_last_month": 0}
 
+    this_m = start.strftime("%Y-%m")
+    last_m = prev_start.strftime("%Y-%m")
+
+    # ── LinkedIn posts ──
     try:
-        # LinkedIn posts from Supabase
         li_posts = sb.table("linkedin_posts").select("urn,title,published_at,impressions,reactions,comments").execute().data or []
         li_by_month = defaultdict(list)
         for p in li_posts:
             pub = str(p.get("published_at") or "")[:7]
             if pub:
                 li_by_month[pub].append(p)
-            else:
-                li_by_month["undated"].append(p)
-
-        this_m = start.strftime("%Y-%m")
-        last_m = prev_start.strftime("%Y-%m")
         result["linkedin"] = {
             "total_posts": len(li_posts),
             "this_month":  len(li_by_month.get(this_m, [])),
             "last_month":  len(li_by_month.get(last_m, [])),
-            "by_month":    {m: len(v) for m, v in sorted(li_by_month.items()) if m != "undated"},
+            "by_month":    {m: len(v) for m, v in sorted(li_by_month.items())},
             "top_posts":   sorted(li_posts, key=lambda x: x.get("impressions", 0), reverse=True)[:5],
         }
     except Exception:
         pass
 
+    # ── YouTube videos ──
     try:
-        # YouTube videos from cache
         import json
         yt_path = Path("data_output/youtube_command_center.json")
+        yt_vids = []
         if yt_path.exists():
-            yt_data = json.loads(yt_path.read_text())
-            yt_vids = yt_data.get("videos", [])
-        else:
-            yt_vids = []
-
+            yt_vids = json.loads(yt_path.read_text()).get("videos", [])
         yt_by_month = defaultdict(list)
         for v in yt_vids:
             pub = str(v.get("published_at") or "")[:7]
             if pub:
                 yt_by_month[pub].append(v)
-
-        this_m = start.strftime("%Y-%m")
-        last_m = prev_start.strftime("%Y-%m")
         result["youtube"] = {
             "total_videos": len(yt_vids),
             "this_month":   len(yt_by_month.get(this_m, [])),
@@ -161,8 +154,101 @@ def _compute_content_volume(sb, start, end, prev_start):
     except Exception:
         pass
 
-    result["total_this_month"] = result.get("linkedin", {}).get("this_month", 0) + result.get("youtube", {}).get("this_month", 0)
-    result["total_last_month"] = result.get("linkedin", {}).get("last_month", 0) + result.get("youtube", {}).get("last_month", 0)
+    # ── Blog/Website Pages from GA4 (new pages with their performance) ──
+    try:
+        from google.analytics.data_v1beta import BetaAnalyticsDataClient
+        from google.analytics.data_v1beta.types import RunReportRequest, DateRange, Dimension, Metric, OrderBy
+        from google.oauth2 import service_account as _sa
+        _creds = None
+        try:
+            import streamlit as _st
+            _sa_dict = dict(_st.secrets["ga4_service_account"])
+            if "private_key" in _sa_dict:
+                _sa_dict["private_key"] = _sa_dict["private_key"].replace("\\n", "\n")
+            _creds = _sa.Credentials.from_service_account_info(_sa_dict, scopes=["https://www.googleapis.com/auth/analytics.readonly"])
+        except Exception:
+            pass
+        if not _creds and os.path.exists("google_creds.json"):
+            _creds = _sa.Credentials.from_service_account_file("google_creds.json", scopes=["https://www.googleapis.com/auth/analytics.readonly"])
+
+        if _creds:
+            _pid = os.environ.get("GA4_PROPERTY_ID", "374525971")
+            try:
+                import streamlit as _st2
+                _pid = str(_st2.secrets.get("GA4_PROPERTY_ID", _pid))
+            except Exception:
+                pass
+            _client = BetaAnalyticsDataClient(credentials=_creds)
+
+            # Get ALL pages with their performance THIS MONTH
+            try:
+                r = _client.run_report(RunReportRequest(
+                    property=f"properties/{_pid}",
+                    date_ranges=[DateRange(start_date=start.isoformat(), end_date=end.isoformat())],
+                    dimensions=[Dimension(name="pagePath"), Dimension(name="pageTitle")],
+                    metrics=[Metric(name="screenPageViews"), Metric(name="totalUsers"), Metric(name="sessions")],
+                    order_bys=[OrderBy(metric=OrderBy.MetricOrderBy(metric_name="screenPageViews"), desc=True)],
+                    limit=100,
+                ))
+                this_month_pages = []
+                for row in r.rows:
+                    path = row.dimension_values[0].value
+                    title = row.dimension_values[1].value
+                    views = int(row.metric_values[0].value)
+                    users = int(row.metric_values[1].value)
+                    sessions = int(row.metric_values[2].value)
+                    this_month_pages.append({
+                        "path": path,
+                        "title": title[:100],
+                        "views": views,
+                        "users": users,
+                        "sessions": sessions,
+                    })
+            except Exception:
+                this_month_pages = []
+
+            # Get ALL pages LAST MONTH for comparison
+            try:
+                r2 = _client.run_report(RunReportRequest(
+                    property=f"properties/{_pid}",
+                    date_ranges=[DateRange(start_date=prev_start.isoformat(), end_date=(start - timedelta(days=1)).isoformat())],
+                    dimensions=[Dimension(name="pagePath"), Dimension(name="pageTitle")],
+                    metrics=[Metric(name="screenPageViews")],
+                    order_bys=[OrderBy(metric=OrderBy.MetricOrderBy(metric_name="screenPageViews"), desc=True)],
+                    limit=100,
+                ))
+                last_month_paths = set()
+                for row in r2.rows:
+                    last_month_paths.add(row.dimension_values[0].value)
+            except Exception:
+                last_month_paths = set()
+
+            # NEW pages = appeared this month but NOT last month
+            new_pages = [p for p in this_month_pages if p["path"] not in last_month_paths]
+
+            # Blog pages = paths containing /blog/ or common blog patterns
+            blog_pages = [p for p in this_month_pages if any(k in p["path"].lower() for k in ["/blog", "/article", "/post", "/news", "/learn", "/resource", "/guide", "/tutorial", "/case-study"])]
+
+            result["blog_pages"] = {
+                "total_pages_this_month": len(this_month_pages),
+                "new_pages_this_month":   len(new_pages),
+                "blog_pages_this_month":  len(blog_pages),
+                "top_pages":              this_month_pages[:20],
+                "new_pages":              new_pages[:20],
+                "blog_pages":             blog_pages[:20],
+            }
+    except Exception:
+        pass
+
+    result["total_this_month"] = (
+        result.get("linkedin", {}).get("this_month", 0) +
+        result.get("youtube", {}).get("this_month", 0) +
+        result.get("blog_pages", {}).get("new_pages_this_month", 0)
+    )
+    result["total_last_month"] = (
+        result.get("linkedin", {}).get("last_month", 0) +
+        result.get("youtube", {}).get("last_month", 0)
+    )
     return result
 
 
