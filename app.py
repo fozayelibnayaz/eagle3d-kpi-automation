@@ -2027,6 +2027,17 @@ if page == "📊 Dashboard":
         unsafe_allow_html=False,
     )
 
+    # ── EXECUTIVE DASHBOARD: Core Business Metrics ──
+    with st.expander("📊 Core Business Metrics (Revenue / Signups / Uploads / Growth)", expanded=True):
+        try:
+            from executive_dashboard_ui import render_executive_dashboard
+            render_executive_dashboard()
+        except Exception as _ed_err:
+            st.error(f"Executive Dashboard error: {_ed_err}")
+            import traceback
+            st.code(traceback.format_exc()[:1000])
+
+
     # Data diagnostics
     _total_all = int(kpi_all["signups"].sum()) if not kpi_all.empty and "signups" in kpi_all.columns else 0
     _total_u_all = int(kpi_all["first_uploads"].sum()) if not kpi_all.empty and "first_uploads" in kpi_all.columns else 0
