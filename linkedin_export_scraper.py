@@ -153,12 +153,13 @@ def export_and_parse():
             log(f"Export download failed: {e}")
             log("Falling back to DOM scraping...")
 
-        # DOM scraping fallback - get ALL visible posts from page
+        # DOM scraping with PAGINATION - click Next to get ALL pages
         posts = []
-        try:
-            # Get all post rows from the table
-            rows = page.query_selector_all("tr, [role='row']")
-            log(f"Found {len(rows)} table rows")
+        page_num = 1
+        while True:
+            try:
+                rows = page.query_selector_all("tr, [role='row']")
+                log(f"Page {page_num}: Found {len(rows)} table rows")
 
             for row in rows:
                 try:
