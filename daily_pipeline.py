@@ -394,13 +394,13 @@ def main():
         log(f"Anomaly detection error: {_ade}")
 
     # ── FINAL STAGE: Send ALL 12 alerts to main Telegram group ──
-        try:
-            from all_alerts import run_all as _send_all_alerts
-            log("Sending all 12 alerts to Telegram group...")
-            _sent = _send_all_alerts()
-            log(f"Sent {_sent}/12 alerts")
-        except Exception as _ae:
-            log(f"All alerts error: {_ae}")
+    try:
+        from all_alerts import run_all as _send_all_alerts
+        log("Sending all 12 alerts to Telegram group...")
+        _sent = _send_all_alerts()
+        log(f"Sent {_sent}/12 alerts")
+    except Exception as _ae:
+        log(f"All alerts error: {_ae}")
 
 if __name__ == "__main__":
     sys.exit(main())
