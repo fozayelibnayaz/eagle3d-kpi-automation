@@ -239,99 +239,65 @@ def alert_customer_success():
 # ALERT 3: LINKEDIN DETAILED
 # ═══════════════════════════════════════════════
 def alert_linkedin():
-    """Show daily/period DELTAS instead of cumulative totals."""
+    """LinkedIn alert - shows actual metrics from latest snapshot + post totals."""
     sb = _get_sb()
     if not sb:
         return ""
     try:
-        today_dt = date.today()
-        today_str = today_dt.isoformat()
-        yest_str  = (today_dt - timedelta(days=1)).isoformat()
-        week_ago  = (today_dt - timedelta(days=7)).isoformat()
-        month_ago = (today_dt - timedelta(days=30)).isoformat()
+        # Get latest highlight snapshot
+        latest_data = sb.table("linkedin_highlights_daily").select("*").order("snapshot_date", desc=True).limit(1).execute().data
+        latest = latest_data[0] if latest_data else {}
 
-        def snap_on(date_str):
-            """Get exact snapshot on a specific date."""
-            r = sb.table("linkedin_highlights_daily").select("*").eq("snapshot_date", date_str).limit(1).execute().data or []
-            return r[0] if r else {}
+        # Get ALL posts with their metrics
+        posts = sb.table("linkedin_posts").select("title,published_at,impressions,reactions,comments,clicks,ctr,engagement_rate").order("published_at", desc=True).execute().data or []
 
-        def latest_snap():
-            r = sb.table("linkedin_highlights_daily").select("*").order("snapshot_date", desc=True).limit(1).execute().data or []
-            return r[0] if r else {}
+        # Calculate totals from posts
+        total_imp = sum(p.get("impressions", 0) or 0 for p in posts)
+        total_react = sum(p.get("reactions", 0) or 0 for p in posts)
+        total_comm = sum(p.get("comments", 0) or 0 for p in posts)
+        total_clicks = sum(p.get("clicks", 0) or 0 for p in posts)
 
-        latest = latest_snap()
-        if not latest:
-            return "\n" + chr(128188) + " <b>LINKEDIN</b> No data yet\n"
-
-        latest_date = latest.get("snapshot_date", "")
-
-        # Get snapshots at boundaries for delta calc
-        yest_snap = snap_on(yest_str)
-        week_ago_snap = snap_on(week_ago)
-        month_ago_snap = snap_on(month_ago)
-
-        # DELTA calculations (today vs previous)
-        def delta(curr_val, prev_val):
-            return curr_val - prev_val if prev_val else curr_val
-
-        today_imp_delta = delta(latest.get("impressions",0), yest_snap.get("impressions",0)) if yest_snap else 0
-        today_rxn_delta = delta(latest.get("reactions",0),   yest_snap.get("reactions",0))   if yest_snap else 0
-        today_com_delta = delta(latest.get("comments",0),    yest_snap.get("comments",0))    if yest_snap else 0
-        today_rep_delta = delta(latest.get("reposts",0),     yest_snap.get("reposts",0))     if yest_snap else 0
-
-        week_imp_delta = delta(latest.get("impressions",0), week_ago_snap.get("impressions",0)) if week_ago_snap else 0
-        week_rxn_delta = delta(latest.get("reactions",0),   week_ago_snap.get("reactions",0))   if week_ago_snap else 0
-        week_com_delta = delta(latest.get("comments",0),    week_ago_snap.get("comments",0))    if week_ago_snap else 0
-
-        month_imp_delta = delta(latest.get("impressions",0), month_ago_snap.get("impressions",0)) if month_ago_snap else 0
-        month_rxn_delta = delta(latest.get("reactions",0),   month_ago_snap.get("reactions",0))   if month_ago_snap else 0
-        month_com_delta = delta(latest.get("comments",0),    month_ago_snap.get("comments",0))    if month_ago_snap else 0
-
-        # Follower deltas
-        today_fol_delta = delta(latest.get("total_followers",0), yest_snap.get("total_followers",0)) if yest_snap else 0
-        week_fol_delta  = delta(latest.get("total_followers",0), week_ago_snap.get("total_followers",0)) if week_ago_snap else 0
-        month_fol_delta = delta(latest.get("total_followers",0), month_ago_snap.get("total_followers",0)) if month_ago_snap else 0
-
-        posts_count = sb.table("linkedin_posts").select("count", count="exact").execute().count or 0
-        top_post = sb.table("linkedin_posts").select("title,impressions,reactions").order("impressions", desc=True).limit(1).execute().data
-        top = top_post[0] if top_post else {}
-
-        def fmt_d(v):
-            return ("+" + str(v)) if v > 0 else str(v)
+        # This month posts
+        from datetime import date as _d
+        this_month = _d.today().strftime("%Y-%m")
+        last_month = (_d.today().replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
+        month_posts = [p for p in posts if str(p.get("published_at","") or "")[:7] == this_month]
+        last_month_posts = [p for p in posts if str(p.get("published_at","") or "")[:7] == last_month]
 
         msg = "\n" + chr(128188) + " <b>LINKEDIN ALERT</b>\n"
         msg += "----------------------------------------\n"
-        msg += "Latest snapshot: <code>" + str(latest_date) + "</code>\n\n"
+        msg += "Snapshot: <code>" + str(latest.get("snapshot_date","N/A")) + "</code>\n\n"
 
-        msg += "<b>Today (delta vs yesterday)</b>\n"
-        msg += "- Impressions: " + fmt_d(today_imp_delta) + "\n"
-        msg += "- Reactions:   " + fmt_d(today_rxn_delta) + "\n"
-        msg += "- Comments:    " + fmt_d(today_com_delta) + "\n"
-        msg += "- Reposts:     " + fmt_d(today_rep_delta) + "\n"
-        msg += "- Followers:   " + fmt_d(today_fol_delta) + "\n\n"
+        msg += "<b>Content Performance (all " + str(len(posts)) + " posts)</b>\n"
+        msg += "- Total Impressions: <code>" + "{:,}".format(total_imp) + "</code>\n"
+        msg += "- Total Reactions: <code>" + str(total_react) + "</code>\n"
+        msg += "- Total Comments: <code>" + str(total_comm) + "</code>\n"
+        msg += "- Total Clicks: <code>" + str(total_clicks) + "</code>\n\n"
 
-        msg += "<b>Last 7 Days (delta)</b>\n"
-        msg += "- Impressions: " + fmt_d(week_imp_delta) + "\n"
-        msg += "- Reactions:   " + fmt_d(week_rxn_delta) + "\n"
-        msg += "- Comments:    " + fmt_d(week_com_delta) + "\n"
-        msg += "- Followers:   " + fmt_d(week_fol_delta) + "\n\n"
+        msg += "<b>This Month (" + this_month + ")</b>\n"
+        msg += "- Posts Published: <code>" + str(len(month_posts)) + "</code>\n"
+        month_imp = sum(p.get("impressions",0) or 0 for p in month_posts)
+        msg += "- Month Impressions: <code>" + "{:,}".format(month_imp) + "</code>\n\n"
 
-        msg += "<b>Last 30 Days (delta)</b>\n"
-        msg += "- Impressions: " + fmt_d(month_imp_delta) + "\n"
-        msg += "- Reactions:   " + fmt_d(month_rxn_delta) + "\n"
-        msg += "- Comments:    " + fmt_d(month_com_delta) + "\n"
-        msg += "- Followers:   " + fmt_d(month_fol_delta) + "\n\n"
+        msg += "<b>Last Month (" + last_month + ")</b>\n"
+        msg += "- Posts Published: <code>" + str(len(last_month_posts)) + "</code>\n"
+        last_imp = sum(p.get("impressions",0) or 0 for p in last_month_posts)
+        msg += "- Month Impressions: <code>" + "{:,}".format(last_imp) + "</code>\n\n"
 
-        msg += "<b>Current Totals (snapshot)</b>\n"
-        msg += "- Total Impressions: <code>" + "{:,}".format(latest.get("impressions",0)) + "</code>\n"
-        msg += "- Total Reactions:   <code>" + str(latest.get("reactions",0)) + "</code>\n"
-        msg += "- Total Followers:   <code>" + "{:,}".format(latest.get("total_followers",0)) + "</code>\n"
-        msg += "- Newsletter Subs:   <code>" + "{:,}".format(latest.get("newsletter_subscribers",0)) + "</code>\n\n"
+        msg += "<b>Audience</b>\n"
+        msg += "- Followers: <code>" + "{:,}".format(latest.get("total_followers",0)) + "</code>\n"
+        msg += "- Page Views: <code>" + "{:,}".format(latest.get("page_views",0)) + "</code>\n"
+        msg += "- Unique Visitors: <code>" + "{:,}".format(latest.get("unique_visitors",0)) + "</code>\n"
+        msg += "- Newsletter: <code>" + "{:,}".format(latest.get("newsletter_subscribers",0)) + "</code>\n\n"
 
-        msg += "<b>Content</b>\n"
-        msg += "- Posts tracked: <code>" + str(posts_count) + "</code>\n"
-        if top:
-            msg += "- Top: <code>" + _esc(top.get('title','')[:50]) + "</code> (" + "{:,}".format(top.get('impressions',0)) + " imp)\n"
+        if posts:
+            msg += "<b>Top 3 Posts (by impressions)</b>\n"
+            top = sorted(posts, key=lambda x: x.get("impressions",0) or 0, reverse=True)[:3]
+            for p in top:
+                title = str(p.get("title",""))[:50]
+                imp = p.get("impressions",0) or 0
+                msg += "- " + _esc(title) + "... (" + "{:,}".format(imp) + " imp)\n"
+
         return msg
     except Exception as e:
         return "\n" + chr(128188) + " <b>LINKEDIN</b> Error: " + _esc(str(e))[:200] + "\n"
@@ -408,90 +374,76 @@ Each alert should be 1-2 sentences max, with specific numbers from the data."""
 # ALERT 6: YOUTUBE DETAILED
 # ═══════════════════════════════════════════════
 def alert_youtube():
-    """YouTube alert with daily/period deltas."""
+    """YouTube alert - uses channel data + video list (works without Analytics OAuth)."""
     try:
-        from youtube_command_center import get_cached_or_fetch
-        d_today = get_cached_or_fetch(period_days=1)
-        d_yest  = get_cached_or_fetch(period_days=2)
-        d_week  = get_cached_or_fetch(period_days=7)
-        d_2week = get_cached_or_fetch(period_days=14)
-        d_month = get_cached_or_fetch(period_days=30)
-        d_2month = get_cached_or_fetch(period_days=60)
+        yt_data = None
+        # Try cached data first
+        try:
+            from youtube_command_center import get_cached_or_fetch
+            yt_data = get_cached_or_fetch(period_days=30)
+        except Exception:
+            pass
+        if not yt_data:
+            try:
+                import json
+                from pathlib import Path as _P
+                cache = _P("data_output/youtube_command_center.json")
+                if cache.exists():
+                    yt_data = json.loads(cache.read_text())
+            except Exception:
+                pass
 
-        ch = d_month.get("channel", {}) or {}
-        vids = d_month.get("videos", []) or []
-        if not ch:
+        if not yt_data or not yt_data.get("channel"):
             return "\n" + chr(128250) + " <b>YOUTUBE</b> No data\n"
 
-        def ana(d):
-            a = d.get("analytics", {}) or {}
-            return {
-                "views":              a.get("views", 0),
-                "watch_hours":        a.get("watch_hours", 0),
-                "subscribers_gained": a.get("subscribers_gained", 0),
-                "likes":              a.get("likes", 0),
-                "comments":           a.get("comments", 0),
-            }
-
-        t = ana(d_today)
-        y = ana(d_yest)
-        w = ana(d_week)
-        w2 = ana(d_2week)
-        m = ana(d_month)
-        m2 = ana(d_2month)
-
-        # Deltas - prev period = total - current period
-        y_views = max(0, y["views"] - t["views"])
-        prev_w_views = max(0, w2["views"] - w["views"])
-        prev_m_views = max(0, m2["views"] - m["views"])
-        prev_w_watch = max(0, w2["watch_hours"] - w["watch_hours"])
-        prev_m_watch = max(0, m2["watch_hours"] - m["watch_hours"])
-        prev_w_subs = max(0, w2["subscribers_gained"] - w["subscribers_gained"])
-        prev_m_subs = max(0, m2["subscribers_gained"] - m["subscribers_gained"])
-
-        def fmt_d(v, p):
-            if p == 0:
-                return ("+" + str(round(v))) if v > 0 else str(round(v))
-            d = v - p
-            pct = (d/p*100) if p else 0
-            sign = "+" if d >= 0 else ""
-            return sign + str(round(d)) + " (" + sign + str(round(pct)) + "%)"
+        ch = yt_data.get("channel", {})
+        ana = yt_data.get("analytics", {})
+        vids = yt_data.get("videos", [])
+        rev = yt_data.get("revenue", {})
 
         total_likes = sum(v.get("likes",0) for v in vids)
         total_comments = sum(v.get("comments",0) for v in vids)
         engagement = ((total_likes+total_comments) / max(ch.get("total_views",1),1)) * 100
         dead_count = sum(1 for v in vids if v.get("views_per_day",0) < 1)
-        top3 = sorted(vids, key=lambda v: v.get("views",0), reverse=True)[:3]
+
+        # Recent videos (last 30 days)
+        from datetime import date as _d, timedelta as _td
+        cutoff_30 = (_d.today() - _td(days=30)).isoformat()
+        recent = [v for v in vids if str(v.get("published_at",""))[:10] >= cutoff_30]
 
         msg = "\n" + chr(128250) + " <b>YOUTUBE ALERT</b>\n"
         msg += "----------------------------------------\n"
-        msg += "Channel: <code>" + _esc(ch.get('title',''))[:40] + "</code>\n\n"
+        msg += "Channel: <code>" + _esc(ch.get("title",""))[:40] + "</code>\n\n"
 
-        msg += "<b>Today (vs yesterday)</b>\n"
-        msg += "- Views: <code>" + str(t['views']) + "</code> " + fmt_d(t['views'], y_views) + "\n"
-        msg += "- Watch: <code>" + str(round(t['watch_hours'],1)) + "h</code>\n"
-        msg += "- Subs Gained: <code>" + str(t['subscribers_gained']) + "</code>\n\n"
-
-        msg += "<b>Last 7 Days (vs previous 7d)</b>\n"
-        msg += "- Views: <code>" + str(w['views']) + "</code> " + fmt_d(w['views'], prev_w_views) + "\n"
-        msg += "- Watch: <code>" + str(round(w['watch_hours'],1)) + "h</code> " + fmt_d(w['watch_hours'], prev_w_watch) + "\n"
-        msg += "- Subs Gained: <code>" + str(w['subscribers_gained']) + "</code> " + fmt_d(w['subscribers_gained'], prev_w_subs) + "\n\n"
-
-        msg += "<b>Last 30 Days (vs previous 30d)</b>\n"
-        msg += "- Views: <code>" + str(m['views']) + "</code> " + fmt_d(m['views'], prev_m_views) + "\n"
-        msg += "- Watch: <code>" + str(round(m['watch_hours'],1)) + "h</code> " + fmt_d(m['watch_hours'], prev_m_watch) + "\n"
-        msg += "- Subs Gained: <code>" + str(m['subscribers_gained']) + "</code> " + fmt_d(m['subscribers_gained'], prev_m_subs) + "\n\n"
-
-        msg += "<b>Channel Totals (current)</b>\n"
-        msg += "- Subs:   <code>" + "{:,}".format(ch.get('subscribers',0)) + "</code>\n"
-        msg += "- Views:  <code>" + "{:,}".format(ch.get('total_views',0)) + "</code>\n"
-        msg += "- Videos: <code>" + str(ch.get('video_count',0)) + "</code>\n"
+        msg += "<b>Channel Stats</b>\n"
+        msg += "- Subscribers: <code>" + "{:,}".format(ch.get("subscribers",0)) + "</code>\n"
+        msg += "- Total Views: <code>" + "{:,}".format(ch.get("total_views",0)) + "</code>\n"
+        msg += "- Videos: <code>" + str(ch.get("video_count",0)) + "</code>\n"
         msg += "- Engagement: <code>" + str(round(engagement,2)) + "%</code>\n"
-        msg += "- Dead videos: <code>" + str(dead_count) + "</code>\n\n"
+        msg += "- Dead Videos: <code>" + str(dead_count) + "</code>\n\n"
 
-        msg += "<b>Top 3 All-Time</b>\n"
-        for v in top3:
-            msg += "- <code>" + _esc(v.get('title','')[:50]) + "</code>: " + "{:,}".format(v.get('views',0)) + "v\n"
+        if ana:
+            msg += "<b>Last 30 Days (Analytics)</b>\n"
+            msg += "- Views: <code>" + "{:,}".format(ana.get("views",0)) + "</code>\n"
+            msg += "- Watch Hours: <code>" + str(round(ana.get("watch_hours",0),1)) + "h</code>\n"
+            msg += "- Subs Gained: <code>" + str(ana.get("subscribers_gained",0)) + "</code>\n"
+            msg += "- Likes: <code>" + str(ana.get("likes",0)) + "</code>\n"
+            msg += "- Comments: <code>" + str(ana.get("comments",0)) + "</code>\n\n"
+        else:
+            msg += "<b>Last 30 Days</b>\n"
+            msg += "- Recent uploads: <code>" + str(len(recent)) + "</code> videos\n\n"
+
+        if rev and rev.get("estimated",0) > 0:
+            msg += "<b>Revenue</b>\n"
+            msg += "- Estimated: <code>$" + "{:,.2f}".format(rev.get("estimated",0)) + "</code>\n\n"
+
+        # Top 3 videos
+        if vids:
+            top3 = sorted(vids, key=lambda v: v.get("views",0), reverse=True)[:3]
+            msg += "<b>Top 3 Videos</b>\n"
+            for v in top3:
+                msg += "- " + _esc(str(v.get("title",""))[:50]) + " (" + "{:,}".format(v.get("views",0)) + "v)\n"
+
         return msg
     except Exception as e:
         return "\n" + chr(128250) + " <b>YOUTUBE</b> Error: " + _esc(str(e))[:200] + "\n"
