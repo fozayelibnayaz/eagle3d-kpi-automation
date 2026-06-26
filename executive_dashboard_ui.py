@@ -169,6 +169,61 @@ def render_executive_dashboard():
             fig.update_layout(height=350)
             st.plotly_chart(fig, use_container_width=True)
 
+
+    # ── TRAFFIC SOURCE ATTRIBUTION ──
+    st.subheader("🎯 Traffic Source Attribution")
+    st.caption("Where do signups come from? Two methods: self-reported + GA4 proportional")
+    try:
+        from traffic_attribution import get_lead_source_attribution, get_ga4_proportional_attribution
+        attr_t1, attr_t2 = st.tabs(["📊 Self-Reported (Cleaned)", "🌐 GA4 Proportional"])
+        with attr_t1:
+            lead = get_lead_source_attribution(metrics.get("period_start"), metrics.get("period_end"))
+            if not lead.get("error"):
+                lc1,lc2,lc3 = st.columns(3)
+                lc1.metric("Total Signups", lead.get("total_signups",0))
+                lc2.metric("Source Specified", lead.get("specified",0))
+                lc3.metric("Unspecified", lead.get("unspecified",0))
+                sources = lead.get("sources",[])
+                if sources:
+                    src_df = pd.DataFrame(sources)
+                    filtered = src_df[src_df["source"]!="(Not Specified)"]
+                    c1,c2 = st.columns([2,1])
+                    with c1:
+                        if not filtered.empty:
+                            fig = px.pie(filtered, values="signups", names="source", hole=0.4, title="Signup Sources")
+                            st.plotly_chart(fig, use_container_width=True)
+                    with c2:
+                        st.dataframe(src_df[["source","signups","percentage"]].astype(str), use_container_width=True, hide_index=True)
+            else:
+                st.warning(lead["error"])
+        with attr_t2:
+            ga4 = get_ga4_proportional_attribution(metrics.get("period_start"), metrics.get("period_end"))
+            if not ga4.get("error"):
+                gc1,gc2,gc3,gc4 = st.columns(4)
+                gc1.metric("Sessions", f"{ga4.get('total_sessions',0):,}")
+                gc2.metric("Signups", ga4.get("total_signups",0))
+                gc3.metric("Uploads", ga4.get("total_uploads",0))
+                gc4.metric("Paid", ga4.get("total_paid",0))
+                ga4_src = ga4.get("sources",[])
+                if ga4_src:
+                    ga4_df = pd.DataFrame(ga4_src)
+                    c1,c2 = st.columns([2,1])
+                    with c1:
+                        fig = px.bar(ga4_df.head(15), x="source", y="sessions", title="GA4 Traffic Sources", color="session_share", color_continuous_scale="Blues")
+                        fig.update_layout(xaxis_tickangle=-45, height=400)
+                        st.plotly_chart(fig, use_container_width=True)
+                    with c2:
+                        d = ga4_df[["source","sessions","session_share","est_signups","est_paid"]].head(15)
+                        d.columns = ["Source","Sessions","Share %","Est Sign","Est Paid"]
+                        st.dataframe(d.astype(str), use_container_width=True, hide_index=True)
+                st.info("Estimates are proportional based on GA4 traffic share. Not per-user exact.")
+            else:
+                st.warning(f"GA4: {ga4.get('error','')}")
+    except Exception as _ta:
+        st.warning(f"Attribution: {_ta}")
+
+    st.divider()
+
     st.divider()
 
     # ── DATA QUALITY SECTION ──
