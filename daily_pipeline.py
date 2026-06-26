@@ -393,7 +393,16 @@ def main():
 
 
 
-        # ── FINAL STAGE: Send ALL 12 alerts to main Telegram group ──
+        # ── ANOMALY DETECTION: Send instant alerts for spikes/drops/flatlines ──
+    try:
+        from anomaly_detector import detect_and_alert
+        log("Running anomaly detection...")
+        _anomalies = detect_and_alert()
+        log(f"Anomaly alerts: {len(_anomalies)} sent")
+    except Exception as _ade:
+        log(f"Anomaly detection error: {_ade}")
+
+    # ── FINAL STAGE: Send ALL 12 alerts to main Telegram group ──
         try:
             from all_alerts import run_all as _send_all_alerts
             log("Sending all 12 alerts to Telegram group...")
