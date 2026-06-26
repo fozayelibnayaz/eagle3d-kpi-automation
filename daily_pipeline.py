@@ -286,17 +286,8 @@ def main():
                 log(f"GA4 cache saved: {_cache.get('total_sessions', 0)} sessions")
         except Exception as e:
             log(f"GA4 cache error (non-fatal): {e}")
-        from reporting_engine import main as run
-        run()
-        
-        # Validate report was generated
-        from pathlib import Path as _P
-        report_files = list(_P("data_output").glob("report_*.txt"))
-        if report_files:
-            latest = max(report_files, key=lambda f: f.stat().st_mtime)
-            log(f"Report validation: {latest.name} generated")
-        else:
-            log("WARNING: No report file generated")
+        # Legacy reporting_engine.main() DISABLED - all_alerts.py sends 12 new alerts
+        log("Stage 7: GA4 cache saved. Alerts handled by all_alerts.py at end of pipeline.")
     ok7, e7 = run_stage(7, "Reporting + Notifications (Layer 6)", s7)
     results["stage7_report"] = "ok" if ok7 else f"failed: {e7}"
 
