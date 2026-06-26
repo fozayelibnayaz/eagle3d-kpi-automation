@@ -287,13 +287,21 @@ def render_executive_dashboard():
 
     tc1, tc2 = st.columns(2)
     with tc1:
-        st.markdown("**🏆 Top LinkedIn Posts (by impressions)**")
-        top_li = cv.get("linkedin", {}).get("top_posts", [])
-        if top_li:
-            for p in top_li[:5]:
-                title = str(p.get("title",""))[:60]
-                imp = p.get("impressions", 0)
-                st.write(f"- {title}... ({imp:,} imp)")
+        st.markdown("**💼 LinkedIn Posts (all tracked)**")
+        all_li = cv.get("linkedin", {}).get("all_posts", cv.get("linkedin", {}).get("top_posts", []))
+        if all_li:
+            li_df = pd.DataFrame([{
+                "Published": str(p.get("published_at",""))[:10] if p.get("published_at") else "Unknown",
+                "Title": str(p.get("title",""))[:80],
+                "Impressions": p.get("impressions", 0) or 0,
+                "Clicks": p.get("clicks", 0) or 0,
+                "CTR %": p.get("ctr", 0) or 0,
+                "Reactions": p.get("reactions", 0) or 0,
+                "Engagement %": p.get("engagement_rate", 0) or 0,
+            } for p in all_li])
+            li_df = li_df.sort_values("Impressions", ascending=False)
+            st.dataframe(li_df.astype(str), use_container_width=True, hide_index=True)
+            st.caption(f"{len(all_li)} posts tracked | This month: {cv.get('linkedin',{}).get('this_month',0)} | Last month: {cv.get('linkedin',{}).get('last_month',0)}")
         else:
             st.caption("No LinkedIn post data")
     with tc2:

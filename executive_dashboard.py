@@ -116,18 +116,24 @@ def _compute_content_volume(sb, start, end, prev_start):
 
     # ── LinkedIn posts ──
     try:
-        li_posts = sb.table("linkedin_posts").select("urn,title,published_at,impressions,reactions,comments").execute().data or []
+        li_posts = sb.table("linkedin_posts").select("urn,title,published_at,impressions,reactions,comments,clicks,ctr,engagement_rate").execute().data or []
         li_by_month = defaultdict(list)
+        undated_posts = []
         for p in li_posts:
-            pub = str(p.get("published_at") or "")[:7]
-            if pub:
-                li_by_month[pub].append(p)
+            pub = p.get("published_at")
+            if pub and str(pub).strip() not in ("None","null",""):
+                month_key = str(pub)[:7]
+                li_by_month[month_key].append(p)
+            else:
+                undated_posts.append(p)
         result["linkedin"] = {
             "total_posts": len(li_posts),
             "this_month":  len(li_by_month.get(this_m, [])),
             "last_month":  len(li_by_month.get(last_m, [])),
+            "undated":     len(undated_posts),
             "by_month":    {m: len(v) for m, v in sorted(li_by_month.items())},
-            "top_posts":   sorted(li_posts, key=lambda x: x.get("impressions", 0), reverse=True)[:5],
+            "top_posts":   sorted(li_posts, key=lambda x: x.get("impressions", 0) or 0, reverse=True)[:10],
+            "all_posts":   li_posts,
         }
     except Exception:
         pass
