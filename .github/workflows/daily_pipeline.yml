@@ -156,7 +156,6 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-          SKIP_LEGACY_TELEGRAM: 'true'  # Only comprehensive_alerts sends to Telegram
         run: |
           echo "=== Pipeline Start ==="
           echo "SUPABASE_URL set: $([ -n "$SUPABASE_URL" ] && echo YES || echo NO)"

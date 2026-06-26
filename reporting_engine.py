@@ -91,8 +91,7 @@ def fmt_num(n):
 def send_telegram(message, parse_mode="HTML"):
     """Send message to Telegram group via Bot API. Uses HTML (reliable)."""
     # Allow skip via env var when comprehensive_alerts is in use
-    if os.environ.get("SKIP_LEGACY_TELEGRAM", "").lower() == "true":
-        return True  # silently skip - comprehensive_alerts will handle
+    # Telegram sender active (no skip)
     bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
     chat_id   = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
     

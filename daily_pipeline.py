@@ -371,36 +371,36 @@ def main():
 
 
 
-# ── STAGE: Customer Success Pipeline ──
-try:
-    from customer_success_scraper import run_full_pipeline as _cs_pipeline
-    print("\n[Daily] Running Customer Success scraper...")
-    _cs_result = _cs_pipeline()
-    print(f"[Daily] Customer Success: {_cs_result}")
-except Exception as _cs_e:
-    print(f"[Daily] Customer Success error: {_cs_e}")
+    # ── STAGE: Customer Success Pipeline ──
+    try:
+        from customer_success_scraper import run_full_pipeline as _cs_pipeline
+        print("\n[Daily] Running Customer Success scraper...")
+        _cs_result = _cs_pipeline()
+        print(f"[Daily] Customer Success: {_cs_result}")
+    except Exception as _cs_e:
+        print(f"[Daily] Customer Success error: {_cs_e}")
 
-# ── STAGE: LinkedIn Daily Pipeline ──
-try:
-    from linkedin_daily_pipeline import run_daily_pipeline as _li_pipeline
-    print("\n[Daily] Running LinkedIn pipeline...")
-    _li_pipeline()
-except Exception as _li_e:
-    print(f"[Daily] LinkedIn pipeline error: {_li_e}")
-
-
+    # ── STAGE: LinkedIn Daily Pipeline ──
+    try:
+        from linkedin_daily_pipeline import run_daily_pipeline as _li_pipeline
+        print("\n[Daily] Running LinkedIn pipeline...")
+        _li_pipeline()
+    except Exception as _li_e:
+        print(f"[Daily] LinkedIn pipeline error: {_li_e}")
 
 
 
 
-# ── FINAL STAGE: Send ALL 12 alerts to main Telegram group ──
-try:
-    from all_alerts import run_all as _send_all_alerts
-    print("\n[Daily] Sending all 12 alerts to Telegram group...")
-    _sent = _send_all_alerts()
-    print(f"[Daily] Sent {_sent}/12 alerts")
-except Exception as _ae:
-    print(f"[Daily] All alerts error: {_ae}")
+
+
+        # ── FINAL STAGE: Send ALL 12 alerts to main Telegram group ──
+        try:
+            from all_alerts import run_all as _send_all_alerts
+            log("Sending all 12 alerts to Telegram group...")
+            _sent = _send_all_alerts()
+            log(f"Sent {_sent}/12 alerts")
+        except Exception as _ae:
+            log(f"All alerts error: {_ae}")
 
 if __name__ == "__main__":
     sys.exit(main())
