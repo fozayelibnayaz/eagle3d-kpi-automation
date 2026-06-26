@@ -301,6 +301,23 @@ def main():
         icon = "OK" if v == "ok" else "FAIL"
         log(f"  [{icon}] {k}: {v}")
 
+    # ── SEND ALL ALERTS (runs even if some stages failed) ──
+    try:
+        from anomaly_detector import detect_and_alert
+        log("Running anomaly detection...")
+        _anomalies = detect_and_alert()
+        log(f"Anomaly alerts: {len(_anomalies)} sent")
+    except Exception as _ade:
+        log(f"Anomaly detection error: {_ade}")
+
+    try:
+        from all_alerts import run_all as _send_all_alerts
+        log("Sending all 12 alerts to Telegram group...")
+        _sent = _send_all_alerts()
+        log(f"Sent {_sent}/12 alerts")
+    except Exception as _ae:
+        log(f"All alerts error: {_ae}")
+
     # PIPELINE FAILURE CHECK: Fail if any stage failed
     failed_stages = [k for k, v in results.items() if v != "ok"]
     if failed_stages:
@@ -393,14 +410,7 @@ def main():
     except Exception as _ade:
         log(f"Anomaly detection error: {_ade}")
 
-    # ── FINAL STAGE: Send ALL 12 alerts to main Telegram group ──
-    try:
-        from all_alerts import run_all as _send_all_alerts
-        log("Sending all 12 alerts to Telegram group...")
-        _sent = _send_all_alerts()
-        log(f"Sent {_sent}/12 alerts")
-    except Exception as _ae:
-        log(f"All alerts error: {_ae}")
+
 
 if __name__ == "__main__":
     sys.exit(main())
