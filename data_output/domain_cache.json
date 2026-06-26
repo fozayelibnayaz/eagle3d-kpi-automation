@@ -5070,6 +5070,24 @@
     ],
     "reputation_score": 0.45
   },
+  "fishnone.com": {
+    "checked_at": "2026-06-26T19:50:28.174392",
+    "domain": "fishnone.com",
+    "domain_age_days": null,
+    "has_a_record": false,
+    "has_dmarc": true,
+    "has_spf": true,
+    "is_disposable": false,
+    "is_major_provider": false,
+    "mx_ok": true,
+    "mx_records": [
+      [
+        10,
+        "mail.fishnone.com"
+      ]
+    ],
+    "reputation_score": 0.4
+  },
   "fitgearsolutions.com": {
     "checked_at": "2026-06-18T06:56:57.736246",
     "domain": "fitgearsolutions.com",

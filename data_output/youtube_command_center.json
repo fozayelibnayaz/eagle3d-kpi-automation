@@ -1,0 +1,83 @@
+{
+  "fetched_at": "2026-06-26T19:51:56.398591",
+  "period_days": 90,
+  "channel": {
+    "title": "Eagle 3D Streaming",
+    "description": "Globally Deploy Unreal Applications in Minutes With Eagle\u2019s Self-Serve Pixel Streaming Platform.",
+    "subscribers": 1010,
+    "total_views": 128537,
+    "video_count": 261,
+    "country": "US",
+    "thumbnail": "https://yt3.ggpht.com/pwz22IxBNPTL_scqTHQzK7yWNFv4mCasf1up-PlSt-kQXn9X20y1Bd1FHwAjd4i0oH3ObnbXSA=s800-c-k-c0x00ffffff-no-rj"
+  },
+  "videos": [],
+  "analytics": {},
+  "traffic_sources": [],
+  "geography": [],
+  "devices": [],
+  "demographics": [],
+  "playlists": [
+    {
+      "id": "PLr2PLtcbD6Pk4FtvjilM9VIQAPiOKBWCM",
+      "title": "E3DS Workshop",
+      "description": "",
+      "thumbnail": "https://i.ytimg.com/img/no_thumbnail.jpg",
+      "video_count": 0,
+      "published_at": "2026-01-16T17:35:48.777119Z"
+    },
+    {
+      "id": "PLr2PLtcbD6Pk6iRh9SuYMOwJBqAa28W7s",
+      "title": "Customer Testimonial",
+      "description": "",
+      "thumbnail": "https://i.ytimg.com/vi/v_MaZn1mOlM/hqdefault.jpg",
+      "video_count": 1,
+      "published_at": "2025-12-26T16:02:04.408924Z"
+    },
+    {
+      "id": "PLr2PLtcbD6PnelppLUm22YUVuZVZH0Qb3",
+      "title": "Event Videos",
+      "description": "",
+      "thumbnail": "https://i.ytimg.com/vi/3IlI5k5PmHU/hqdefault.jpg",
+      "video_count": 12,
+      "published_at": "2025-02-18T08:07:41.861208Z"
+    },
+    {
+      "id": "PLr2PLtcbD6Plkn2xuJMG7PoOecEPrbE1Z",
+      "title": "E3D Control Panel Feature Videos",
+      "description": "Welcome to the E3DS Control Panel Feature Videos playlist!\n\nHere, you'll find a comprehensive collection of tutorials and demonstrations showcasing the powerful features of our new E3DS Control Panel.",
+      "thumbnail": "https://i.ytimg.com/vi/EiRIUkWJZro/hqdefault.jpg",
+      "video_count": 18,
+      "published_at": "2024-01-30T10:22:28.02931Z"
+    },
+    {
+      "id": "PLr2PLtcbD6PkB346PQYmqXhmDD0XVEMJ6",
+      "title": "Spotlight Videos",
+      "description": "",
+      "thumbnail": "https://i.ytimg.com/vi/OOIraV9cx20/hqdefault.jpg",
+      "video_count": 22,
+      "published_at": "2023-02-17T15:19:17.889534Z"
+    },
+    {
+      "id": "PLr2PLtcbD6PlxoR3ov0q0T6g7_nqThv36",
+      "title": "UE Pixel Streaming Podcast",
+      "description": "Watch the Real-Time Talk Pixel Streaming Show Every Thursday with our CEO - Quintin Anderson in - The Metaverse Podcast",
+      "thumbnail": "https://i.ytimg.com/vi/S6DcX_oMVkE/hqdefault.jpg",
+      "video_count": 68,
+      "published_at": "2022-01-18T17:21:45.305451Z"
+    },
+    {
+      "id": "PLr2PLtcbD6PmTJ_wV3v8-q5O-MtxglvST",
+      "title": "Developer Series",
+      "description": "",
+      "thumbnail": "https://i.ytimg.com/vi/YP78Mh0TdQ4/hqdefault.jpg",
+      "video_count": 37,
+      "published_at": "2022-01-07T16:41:19.285059Z"
+    }
+  ],
+  "revenue": {},
+  "subscribers": {},
+  "watch_time": {},
+  "engagement": {},
+  "error": null,
+  "oauth_status": "missing_or_invalid"
+}
