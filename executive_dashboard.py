@@ -135,10 +135,16 @@ def _compute_content_volume(sb, start, end, prev_start):
     # ── YouTube videos ──
     try:
         import json
-        yt_path = Path("data_output/youtube_command_center.json")
         yt_vids = []
-        if yt_path.exists():
-            yt_vids = json.loads(yt_path.read_text()).get("videos", [])
+        try:
+            from youtube_command_center import get_cached_or_fetch
+            yt_vids = get_cached_or_fetch(period_days=365).get("videos", [])
+        except Exception:
+            pass
+        if not yt_vids:
+            yt_path = Path("data_output/youtube_command_center.json")
+            if yt_path.exists():
+                yt_vids = json.loads(yt_path.read_text()).get("videos", [])
         yt_by_month = defaultdict(list)
         for v in yt_vids:
             pub = str(v.get("published_at") or "")[:7]
@@ -311,16 +317,27 @@ def _compute_channel_growth(sb):
         pass
 
     try:
-        # YouTube subs from cache
-        import json
-        yt_path = Path("data_output/youtube_command_center.json")
-        if yt_path.exists():
-            yt_data = json.loads(yt_path.read_text())
-            ch = yt_data.get("channel", {})
+        # YouTube subs - try API first, then cache
+        yt_ch = {}
+        try:
+            from youtube_command_center import get_cached_or_fetch
+            yt_data = get_cached_or_fetch(period_days=30)
+            yt_ch = yt_data.get("channel", {})
+        except Exception:
+            pass
+        if not yt_ch:
+            try:
+                import json
+                yt_path = Path("data_output/youtube_command_center.json")
+                if yt_path.exists():
+                    yt_ch = json.loads(yt_path.read_text()).get("channel", {})
+            except Exception:
+                pass
+        if yt_ch:
             result["youtube_subs"] = {
-                "current":     ch.get("subscribers", 0),
-                "total_views": ch.get("total_views", 0),
-                "video_count": ch.get("video_count", 0),
+                "current":     yt_ch.get("subscribers", 0),
+                "total_views": yt_ch.get("total_views", 0),
+                "video_count": yt_ch.get("video_count", 0),
             }
     except Exception:
         pass

@@ -4490,6 +4490,9 @@ elif page == "⚙️ Settings":
         ("YOUTUBE_CLIENT_SECRET", "YouTube Client Secret"),
         ("LINKEDIN_COMPANY_PAGE", "LinkedIn Company Page"),
         ("LINKEDIN_COOKIES_JSON", "LinkedIn Cookies"),
+        ("SUPABASE_URL", "Supabase URL"),
+        ("SUPABASE_SERVICE_KEY", "Supabase Service Key"),
+        ("STRIPE_SECRET_KEY", "Stripe API Key"),
         ("STRIPE_COOKIES_JSON", "Stripe Cookies"),
     ]:
         _vl = get_secret(_ky)
@@ -4503,7 +4506,7 @@ elif page == "⚙️ Settings":
     _total_s = int(kpi_all["signups"].sum()) if not kpi_all.empty and "signups" in kpi_all.columns else 0
     _total_u = int(kpi_all["first_uploads"].sum()) if not kpi_all.empty and "first_uploads" in kpi_all.columns else 0
     _total_p = int(kpi_all["paid_customers"].sum()) if not kpi_all.empty and "paid_customers" in kpi_all.columns else 0
-    _data_src = "Google Sheets (live)" if not counts_raw.empty else "Historical JSON (offline)"
+    _data_src = "Supabase (primary)" if not counts_raw.empty else "Historical JSON (offline)"
     _di = {
         "Data Source": _data_src,
         "KPI Rows": f"{len(kpi_all):,}",
