@@ -17243,6 +17243,32 @@
     ],
     "reputation_score": 0.45
   },
+  "wavemakerdevelopmentgroup.com": {
+    "checked_at": "2026-07-02T03:28:22.619633",
+    "domain": "wavemakerdevelopmentgroup.com",
+    "domain_age_days": null,
+    "has_a_record": true,
+    "has_dmarc": true,
+    "has_spf": true,
+    "is_disposable": false,
+    "is_major_provider": false,
+    "mx_ok": true,
+    "mx_records": [
+      [
+        1,
+        "aspmx.l.google.com"
+      ],
+      [
+        5,
+        "alt1.aspmx.l.google.com"
+      ],
+      [
+        5,
+        "alt2.aspmx.l.google.com"
+      ]
+    ],
+    "reputation_score": 0.45
+  },
   "wayment.com.mx": {
     "checked_at": "2026-06-18T07:01:04.000066",
     "domain": "wayment.com.mx",
